@@ -179,6 +179,11 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       activeJobModalLoading: false,
       activeJobModalSearch: "",
       activeJobModalSaving: false,
+      // ── Completed job items modal ──
+      completedJobModalJob: null,
+      completedJobModalItems: [],
+      completedJobModalLoading: false,
+      completedJobModalSearch: "",
       _loadActiveJobItemsPromise: null,
       _activeJobItemsRequestJobId: null,
       // ── Queued job editor modal ──
@@ -649,6 +654,13 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       if (!q2) return this.activeJobModalItems;
       return this.activeJobModalItems.filter((item) => {
         return (item.name || "").toLowerCase().includes(q2) || (item.path || "").toLowerCase().includes(q2);
+      });
+    },
+    completedJobModalFilteredItems() {
+      const query = (this.completedJobModalSearch || "").trim().toLowerCase();
+      if (!query) return this.completedJobModalItems;
+      return this.completedJobModalItems.filter((item) => {
+        return (item.name || "").toLowerCase().includes(query) || (item.path || "").toLowerCase().includes(query);
       });
     },
     activeJobModalCanReorder() {
@@ -3341,6 +3353,30 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       this.activeJobModalSearch = "";
       this.activeJobModalLoading = false;
       this.activeJobModalSaving = false;
+    },
+    async openCompletedJobModal(job) {
+      this.completedJobModalJob = job;
+      this.completedJobModalItems = [];
+      this.completedJobModalSearch = "";
+      this.completedJobModalLoading = true;
+      try {
+        const response = await this.apiFetch(`/api/uploads/queue/${job.job_id}/completed-items`);
+        if (this.completedJobModalJob && this.completedJobModalJob.job_id === job.job_id) {
+          this.completedJobModalItems = response.items || [];
+        }
+      } catch (error) {
+        if (!error.isOffline) {
+          this.showToast("error", "Error", "Failed to load completed job items");
+        }
+      } finally {
+        this.completedJobModalLoading = false;
+      }
+    },
+    closeCompletedJobModal() {
+      this.completedJobModalJob = null;
+      this.completedJobModalItems = [];
+      this.completedJobModalSearch = "";
+      this.completedJobModalLoading = false;
     },
     activeJobHasInspectableItems(job) {
       return this.jobHasExplicitPaths(job) || !!job?.current_item;

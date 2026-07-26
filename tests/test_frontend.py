@@ -103,8 +103,11 @@ def test_webui_performance_guards_are_present() -> None:
     assert 'params.append("known_cached_at", String(this.cachedAt));' in queue_js
     assert "this.startInterval(() => this.loadQueuedPaths(), 1e4);" not in queue_js
     assert "/api/uploads/queue/${jobId}/active-items" in queue_js
+    assert "/api/uploads/queue/${job.job_id}/completed-items" in queue_js
+    assert "completedJobModalFilteredItems()" in queue_js
     assert "this.activeJobModalItems = this.buildJobPathItems(updatedActive);" not in queue_js
     assert "pending-virtual-row" in queue_html
+    assert "Completed Job Items Modal" in queue_html
     assert "content-visibility: auto;" in core_css
 
 def test_legacy_queue_and_history_pages_redirect_to_canonical_routes() -> None:

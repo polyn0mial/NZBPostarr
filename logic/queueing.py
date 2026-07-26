@@ -432,6 +432,7 @@ class QueueServiceMixin:
         paths = self._normalize_paths(job.get("_paths"))
         if not paths:
             paths = self._normalize_paths(job.get("target_paths"))
+        job["_snapshot_paths"] = list(paths)
         job.pop("_paths", None)
         job_type = str(kwargs.get("job_type") or job.get("job_type") or "processing")
         cleanup_paths = self._normalize_paths(kwargs.pop("cleanup_paths", None))
@@ -1268,6 +1269,13 @@ class QueueServiceMixin:
                 job["_retry_request"] = retry_request
             self._set_job_target_paths(job, row.get("paths"))
 
+            prior_processed = int(row.get("items_processed") or 0)
+            prior_total = int(row.get("items_total") or 0)
+            if prior_processed > 0 or prior_total > 0:
+                job["_resume_items_processed"] = prior_processed
+                job["_resume_items_total"] = prior_total
+                job["_resume_items_skipped"] = int(row.get("items_skipped") or 0)
+
             self._jobs[job_id] = job
             recovered += 1
 
@@ -1329,6 +1337,10 @@ class QueueServiceMixin:
             str(job.get("status") or "finished"),
             str(job.get("progress") or "Job finished"),
         )
+
+        snapshot = self._normalize_paths(job.get("_snapshot_paths"))
+        if snapshot:
+            job["_completed_paths"] = snapshot
 
         database.save_job_history(
             job_id,
@@ -2432,11 +2444,29 @@ class QueueServiceMixin:
             job = self._jobs.get(job_id)
             if not job or str(job.get("status") or "") not in {"running", "paused", "stopping"}:
                 return None
+            paths = self._get_job_target_paths(job)
+            if not paths:
+                paths = self._normalize_paths(job.get("_snapshot_paths"))
             items: list[dict[str, Any]] = []
-            for idx, path in enumerate(self._get_job_target_paths(job), start=1):
+            for idx, path in enumerate(paths, start=1):
                 text = str(path)
                 items.append({"index": idx, "path": text, "name": Path(text).name or text})
             return items
+
+    def get_finished_job_items(self, job_id: str) -> Optional[list[dict[str, Any]]]:
+        """Return item paths for a recently finished job (current session only)."""
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job:
+                return None
+            status = str(job.get("status") or "")
+            if status not in {"completed", "stopped", "failed", "cancelled"}:
+                return None
+            paths = self._normalize_paths(job.get("_completed_paths"))
+            return [
+                {"index": index, "path": str(path), "name": Path(str(path)).name or str(path)}
+                for index, path in enumerate(paths, 1)
+            ]
 
     def reorder_queued_job_items(self, job_id: str, ordered_paths: list[str]) -> bool:
         with self._lock:

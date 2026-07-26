@@ -991,6 +991,18 @@ def get_active_job_items(
     return {"job_id": job_id, "items": items, "count": len(items)}
 
 
+@uploads_router.get("/queue/{job_id}/completed-items")
+def get_completed_job_items(
+    job_id: str,
+    service: UploadService = Depends(get_upload_service),
+) -> Dict[str, Any]:
+    """Retrieve item paths for a recently finished job (current session only)."""
+    items = service.get_finished_job_items(job_id)
+    if items is None:
+        raise HTTPException(status_code=404, detail="Finished job not found")
+    return {"job_id": job_id, "items": items, "count": len(items)}
+
+
 @uploads_router.put("/queue/{job_id}/items/reorder")
 async def reorder_queued_job_items_route(
     job_id: str,

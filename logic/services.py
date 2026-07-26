@@ -246,14 +246,25 @@ class UploadService(QueueServiceMixin):
         explicit_count = len(request.paths)
         updates: dict[str, Any] = {"test_mode": bool(request.test_mode)}
         if explicit_count > 0:
+            prior_processed = int(job.pop("_resume_items_processed", None) or 0)
+            prior_total = int(job.pop("_resume_items_total", None) or 0)
+            prior_skipped = int(job.pop("_resume_items_skipped", None) or 0)
+            is_resume = prior_processed > 0 or prior_total > 0
+            total = max(prior_total, prior_processed + explicit_count)
+            progress_percent = int(prior_processed / total * 100) if total > 0 else 0
+            progress_label = (
+                f"Resuming - validating {explicit_count} remaining item(s)..."
+                if is_resume
+                else f"Validating {explicit_count} selected item(s)..."
+            )
             updates.update(
                 {
-                    "items_total": explicit_count,
-                    "items_processed": 0,
-                    "items_skipped": 0,
+                    "items_total": total,
+                    "items_processed": prior_processed,
+                    "items_skipped": prior_skipped,
                     "current_stage": "VALIDATING SELECTION",
-                    "progress": f"Validating {explicit_count} selected item(s)...",
-                    "progress_percent": 0,
+                    "progress": progress_label,
+                    "progress_percent": progress_percent,
                 }
             )
         self._update_job_runtime_state(job, **updates)

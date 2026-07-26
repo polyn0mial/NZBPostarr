@@ -871,6 +871,53 @@ def test_compact_job_polling_omits_large_path_lists_and_bounds_events(tmp_path) 
     route_payload = app_mod.get_active_job_items("job-large", service=service)
     assert route_payload["count"] == 5_000
 
+
+def test_finished_job_items_are_available_for_the_current_session(tmp_path) -> None:
+    paths = [str(tmp_path / "One.mkv"), str(tmp_path / "Two.mkv")]
+    job = {
+        "job_id": "job-finished",
+        "category": "movies",
+        "status": "completed",
+        "_completed_paths": paths,
+    }
+    service = _make_upload_service_stub(jobs={"job-finished": job})
+
+    items = service.get_finished_job_items("job-finished")
+
+    assert items == [
+        {"index": 1, "path": paths[0], "name": "One.mkv"},
+        {"index": 2, "path": paths[1], "name": "Two.mkv"},
+    ]
+    route_payload = app_mod.get_completed_job_items("job-finished", service=service)
+    assert route_payload["count"] == 2
+    assert route_payload["items"] == items
+
+
+def test_resumed_job_keeps_prior_progress_when_processing_restarts(tmp_path) -> None:
+    from logic.queueing import ProcessingJobRequest
+
+    service = _make_upload_service_stub()
+    job = {
+        "job_id": "job-resume",
+        "_resume_items_processed": 4,
+        "_resume_items_total": 10,
+        "_resume_items_skipped": 1,
+    }
+    request = ProcessingJobRequest(
+        category="movies",
+        paths=(str(tmp_path / "Five.mkv"), str(tmp_path / "Six.mkv")),
+    )
+
+    service._mark_processing_job_started(job, request)
+
+    assert job["items_processed"] == 4
+    assert job["items_total"] == 10
+    assert job["items_skipped"] == 1
+    assert job["progress_percent"] == 40
+    assert job["progress"] == "Resuming - validating 2 remaining item(s)..."
+    assert "_resume_items_processed" not in job
+
+
 def test_queue_control_routes_report_confirmed_backend_state() -> None:
     class DummyService:
         def __init__(self) -> None:
