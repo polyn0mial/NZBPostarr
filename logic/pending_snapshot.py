@@ -20,6 +20,7 @@ from core.utils import (
     should_skip_file,
 )
 from logic.pending_scan import (
+    anime_lookup_candidates,
     begin_scan_cache,
     classify_video_name as shared_classify_video_name,
     detect_content_itype as shared_detect_content_itype,
@@ -663,25 +664,34 @@ def collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
     video_itypes = {"TV Show", "Movie", "Anime"}
 
     def _add(name: str) -> None:
-        if name and name not in seen:
-            seen.add(name)
-            names.append(name)
+        cleaned = str(name or "").strip()
+        identity = cleaned.casefold()
+        if cleaned and identity not in seen:
+            seen.add(identity)
+            names.append(cleaned)
+
+    def _add_item(item: Dict[str, Any], section: str = "") -> None:
+        detector_candidates = item.get("_anime_lookup_candidates")
+        if isinstance(detector_candidates, (list, tuple)):
+            for candidate in detector_candidates:
+                _add(str(candidate or ""))
+        if item.get("itype") in video_itypes or section in {"tv", "movies", "anime"}:
+            _add(str(item.get("name") or ""))
 
     items = data.get("items", {})
 
     for category_key, category_items in items.items():
-        if category_key in ("tv", "external") or not isinstance(category_items, list):
+        if category_key == "external" or not isinstance(category_items, list):
             continue
         for item in category_items:
             if not isinstance(item, dict):
                 continue
-            if category_key == "movies" or item.get("itype") in video_itypes:
-                _add(item.get("name", ""))
+            _add_item(item, category_key)
 
     for group in items.get("external", []):
         for item in group.get("items", []):
-            if item.get("itype") in video_itypes:
-                _add(item.get("name", ""))
+            if isinstance(item, dict):
+                _add_item(item)
 
     return names
 
@@ -724,8 +734,7 @@ def detect_external_category(name: str, entry_path: Path) -> str:
     has_episode_shape = bool(_ANIME_SEQUENCE_PATTERN.search(lower_name)) or bool(_SEASON_MARKER_RE.search(name or "")) or bool(_EPISODIC_TV_PATTERN.search(name or ""))
     has_video_source = bool(_SOURCE_TAG_PATTERN.search(lower_name))
     has_anime_hint = bool(re.search(r"\b(anime|dual[-\s]?audio|multi[-\s]?subs?|subbed|dubbed)\b", lower_name))
-    has_anime_bonus = bool(_ANIME_BONUS_PATTERN.search(lower_name))
-    if anime_cached is True and (has_anime_hint or has_anime_bonus or not has_episode_shape):
+    if anime_cached is True:
         return "anime"
     # Type-first guard: if this is a real video container (or strong TV source+episode shape),
     # do not let audio codec words like FLAC force music classification.
@@ -753,11 +762,7 @@ def _detect_external_category_fast(
     name: str, children_have_tv: bool, children_have_legacy_episodes: bool = False
 ) -> str:
     anime_cached = _anime_cache_lookup(name)
-    lower_name = str(name or "").lower()
-    has_episode_shape = bool(_ANIME_SEQUENCE_PATTERN.search(lower_name)) or bool(_SEASON_MARKER_RE.search(name or "")) or bool(_EPISODIC_TV_PATTERN.search(name or ""))
-    has_anime_hint = bool(re.search(r"\b(anime|dual[-\s]?audio|multi[-\s]?subs?|subbed|dubbed)\b", lower_name))
-    has_anime_bonus = bool(_ANIME_BONUS_PATTERN.search(lower_name))
-    if anime_cached is True and (has_anime_hint or has_anime_bonus or not has_episode_shape):
+    if anime_cached is True:
         return "anime"
     if looks_like_tv_name(name):
         return "tv"
@@ -804,8 +809,6 @@ def _classify_standalone_file_category(entry: Path) -> str:
         return "disc"
     if ext in _EBOOK_EXTENSIONS:
         return "books"
-    if re.search(r"\b(?:pokemon|pocket monsters|horizons)\b", name, re.IGNORECASE):
-        return "anime"
     if ext in _VIDEO_FILE_EXTENSIONS:
         if _SEASON_MARKER_RE.search(name):
             return "tv"
@@ -1390,6 +1393,8 @@ def _build_external_tree_item(
         # Keep a second alias for clients that bind nested expansion off `files`.
         "files": children,
     }
+    if top_level:
+        item["_anime_lookup_candidates"] = list(anime_lookup_candidates(node))
     if is_dir:
         try:
             item["child_count"] = sum(1 for child in node.iterdir() if not child.name.startswith("."))
@@ -1693,6 +1698,7 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
                     "auto_select_reason": detected_meta.get("auto_select_reason", ""),
                     "indexers": item_status,
                     "completed": bool(active_ids) and bool(item_status) and all(item_status.values()),
+                    "_anime_lookup_candidates": list(anime_lookup_candidates(entry)),
                 }
             )
 

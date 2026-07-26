@@ -2545,7 +2545,7 @@ def get_pending_items(
     def _slim_node(node: Any) -> Any:
         if not isinstance(node, dict):
             return node
-        slim = dict(node)
+        slim = {key: value for key, value in node.items() if not str(key).startswith("_")}
         raw_children = node.get("children")
         raw_files = node.get("files")
         child_source = raw_children if isinstance(raw_children, list) else raw_files

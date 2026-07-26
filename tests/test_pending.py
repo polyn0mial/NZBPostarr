@@ -646,6 +646,7 @@ def test_collect_anime_check_names_includes_tv_movies_and_external() -> None:
     names = app_mod._collect_anime_check_names(data)
 
     assert set(names) == {
+        "Frieren",
         "Spirited.Away.2001.1080p.BluRay",
         "Your.Name.2016.1080p.BluRay",
         "Cowboy.Bebop.1998.COMPLETE",
@@ -656,20 +657,20 @@ def test_movie_name_detection_prefers_movie_classification(monkeypatch, tmp_path
     import logic.anime_cache as anime_cache
 
     cases = [
-        ("cached-anime-with-year", "Spirited.Away.2001.1080p.BluRay.x264", "movies", True),
-        ("movie-year-parentheses", "The.Fugitive.(1993).mkv", "", False),
-        ("movie-year-subtitle", "The.Fugitive.-.Director.Cut.(1993).mkv", "", False),
-        ("movie-year-hdtv", "The.Fugitive.1993.1080i.HDTV.x264.mkv", "", False),
+        ("detector-positive-overrides-year", "Animated.Feature.2001.1080p.BluRay.x264", "movies", True, "Anime", "anime"),
+        ("movie-year-parentheses", "Feature.Title.(1993).mkv", "", False, "Movie", "movies"),
+        ("movie-year-subtitle", "Feature.Title.-.Director.Cut.(1993).mkv", "", False, "Movie", "movies"),
+        ("movie-year-hdtv", "Feature.Title.1993.1080i.HDTV.x264.mkv", "", False, "Movie", "movies"),
     ]
 
-    for case_name, name, folder_hint, cached in cases:
+    for case_name, name, folder_hint, cached, expected_itype, expected_category in cases:
         monkeypatch.setattr(anime_cache, "get_cached", lambda _name: cached)
 
-        assert app_mod._classify_video_name(name, folder_hint) == "Movie", case_name
+        assert app_mod._classify_video_name(name, folder_hint) == expected_itype, case_name
 
         movie = _touch(tmp_path / case_name / name)
-        assert pending_scan.detect_auto_category(movie) == "movies", case_name
-        assert pending_scan.detect_auto_itype(movie) == "Movie", case_name
+        assert pending_scan.detect_auto_category(movie) == expected_category, case_name
+        assert pending_scan.detect_auto_itype(movie) == expected_itype, case_name
 
 def test_resolve_explicit_path_single_item_cases(tmp_path) -> None:
     cases = [
@@ -718,19 +719,33 @@ def test_pokemon_anime_hint_survives_accent_and_source_tokens(tmp_path) -> None:
     ]
     episodes = tuple(_touch(anime_dir / name) for name in episode_names)
 
+    detector_queries = []
+
+    def detector(name):
+        detector_queries.append(name)
+        return True
+
     result = pending_scan.resolve_explicit_path(
         anime_dir,
         category_hint="anime",
-        anime_lookup=lambda _name: False,
+        anime_lookup=detector,
     )
 
     assert result.category == "anime"
     assert result.itype == "Anime"
     assert result.queue_paths == episodes
+    assert any("pokemon" in query.casefold() for query in detector_queries)
     for episode in episodes:
-        assert pending_scan.looks_like_known_anime_title(episode.name) is True
-        assert pending_scan.detect_auto_category(episode, folder_category_hint="anime") == "anime"
-        assert pending_scan.detect_auto_itype(episode, folder_category_hint="anime") == "Anime"
+        assert pending_scan.detect_auto_category(
+            episode,
+            folder_category_hint="anime",
+            anime_lookup=detector,
+        ) == "anime"
+        assert pending_scan.detect_auto_itype(
+            episode,
+            folder_category_hint="anime",
+            anime_lookup=detector,
+        ) == "Anime"
 
 
 def test_archer_remains_western_tv_even_under_anime_hint(tmp_path) -> None:
@@ -739,7 +754,7 @@ def test_archer_remains_western_tv_even_under_anime_hint(tmp_path) -> None:
     result = pending_scan.resolve_explicit_path(
         episode,
         category_hint="anime",
-        anime_lookup=lambda _name: True,
+        anime_lookup=lambda _name: False,
     )
 
     assert result.category == "tv"
@@ -747,8 +762,55 @@ def test_archer_remains_western_tv_even_under_anime_hint(tmp_path) -> None:
     assert pending_scan.classify_video_name(
         episode.name,
         "anime",
-        anime_lookup=lambda _name: True,
+        anime_lookup=lambda _name: False,
     ) == "TV Show"
+
+
+def test_detector_result_precedes_generic_episode_shape(monkeypatch) -> None:
+    from logic import pending_snapshot as pending_snapshot_mod
+
+    monkeypatch.setattr(pending_snapshot_mod, "_anime_cache_lookup", lambda _name: True)
+
+    release_name = "Any.Series.S12E34.1080p.WEB-DL"
+
+    assert pending_snapshot_mod._detect_external_category_fast(release_name, children_have_tv=True) == "anime"
+    assert pending_scan.classify_video_name(
+        release_name,
+        anime_lookup=lambda _name: True,
+    ) == "Anime"
+
+
+def test_detector_result_precedes_generic_movie_year(tmp_path) -> None:
+    release = _touch(tmp_path / "Animated.Feature.2001.1080p.BluRay.mkv")
+
+    result = pending_scan.resolve_explicit_path(
+        release,
+        category_hint="movies",
+        anime_lookup=lambda _name: True,
+    )
+
+    assert result.category == "anime"
+    assert result.itype == "Anime"
+    assert result.detection_method == "Jikan match"
+
+
+def test_production_classifier_has_no_title_specific_exception_tables() -> None:
+    source = _read_repo_text("logic", "pending_scan.py")
+    snapshot_source = _read_repo_text("logic", "pending_snapshot.py")
+
+    assert "_KNOWN_ANIME_TITLE" not in source
+    assert "_KNOWN_TV_TITLE" not in source
+    assert "_KNOWN_MOVIE_TITLE" not in source
+    assert "_KNOWN_NON_ANIME_TV_TITLE" not in source
+    assert "looks_like_known_" not in source
+    assert "pokemon|pocket monsters|horizons" not in snapshot_source
+
+
+def test_anime_cache_key_normalizes_latin_diacritics() -> None:
+    from logic import anime_cache
+
+    assert anime_cache._cache_key("Pokémon") == anime_cache._cache_key("Pokemon")
+    assert anime_cache._title_matches("Pokémon", "Pokemon") is True
 
 
 def test_resolve_explicit_path_uses_jikan_for_anime_and_filters_extras(tmp_path) -> None:
@@ -1224,13 +1286,14 @@ def test_scan_pending_all_keeps_pokemon_folder_and_episodes_anime(monkeypatch, t
         monkeypatch,
         "anime",
         anime_root,
-        anime_cache_lookup=lambda _name: False,
+        anime_cache_lookup=lambda _name: True,
     )
 
     top_item = _get_pending_top_item(result, "anime")
     assert top_item["detected_category"] == "anime"
     assert top_item["itype"] == "Anime"
     assert top_item["auto_selectable"] is True
+    assert "pokemon" in {name.casefold() for name in app_mod._collect_anime_check_names(result)}
 
 
 def test_scan_pending_all_ignored_extra_files_do_not_block_pack_completion(monkeypatch, tmp_path) -> None:

@@ -21,6 +21,7 @@ import json
 import re
 import threading
 import time
+import unicodedata
 from collections import deque
 from pathlib import Path
 from typing import Dict, Optional
@@ -39,7 +40,7 @@ _MAX_PER_MINUTE = 60
 # ── Module-level state (thread-safe via _lock) ──────────────────────────────
 # Bump this whenever the matching algorithm changes — existing caches with a
 # different (or missing) version will be discarded and rebuilt automatically.
-_CACHE_VERSION = 6
+_CACHE_VERSION = 7
 
 # Score thresholds for 2-content-word tiebreaker.
 # When the primary (romanized) title has at least one word overlap with our
@@ -69,9 +70,24 @@ _PUNC_RE = re.compile(r"[^\w\s]")
 _STOPWORDS = frozenset({"a", "an", "the", "of", "in", "on", "at", "to", "and", "or", "is", "for", "no"})
 
 
+def _fold_latin_diacritics(value: str) -> str:
+    """Fold Latin accents without altering non-Latin scripts."""
+    folded: list[str] = []
+    previous_was_latin = False
+    for char in unicodedata.normalize("NFD", value):
+        if unicodedata.combining(char):
+            if not previous_was_latin:
+                folded.append(char)
+            continue
+        previous_was_latin = "LATIN" in unicodedata.name(char, "")
+        folded.append(char)
+    return unicodedata.normalize("NFC", "".join(folded))
+
+
 def _strip_punc(s: str) -> str:
     """Remove punctuation and collapse whitespace for fuzzy title comparison."""
-    return re.sub(r"\s+", " ", _PUNC_RE.sub(" ", s)).strip()
+    folded = _fold_latin_diacritics(s)
+    return re.sub(r"\s+", " ", _PUNC_RE.sub(" ", folded)).strip()
 
 
 def _content_words(s: str) -> list[str]:
@@ -191,7 +207,7 @@ def _normalise_title(raw: str) -> str:
 
 def _cache_key(title: str) -> str:
     """Consistent lowercase key for the cache dict."""
-    return title.strip().lower()
+    return _strip_punc(title.strip().casefold())
 
 
 # ── Persistence ─────────────────────────────────────────────────────────────
