@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextvars
 import os
 import re
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set, Tuple
@@ -71,6 +72,7 @@ _GENERIC_TV_SEASON_FOLDER_RE = re.compile(
 _KNOWN_NON_ANIME_TV_TITLE_RE = re.compile(
     r"(?:"
     r"^(?:the[.\s_-]+big[.\s_-]+o)(?:[.\s_-]+S\d{1,2}|$)"
+    r"|^(?:archer)(?:[.\s_-]+S\d{1,2}|$)"
     r")",
     re.IGNORECASE,
 )
@@ -109,6 +111,9 @@ _KNOWN_ANIME_TITLE_PHRASES = (
     "one piece",
     "ore dake level up na ken",
     "oshi no ko",
+    "pocket monsters",
+    "pokemon",
+    "pokemon horizons",
     "saikyou tank no meikyuu kouryaku",
     "shakugan no shana",
     "shin ikkitousen",
@@ -452,9 +457,16 @@ def get_configured_folders(conf: Any, *, must_exist: bool = False) -> List[Path]
     return folders
 
 
+def _normalize_known_title(name: str) -> str:
+    """Normalize punctuation and accents for stable known-title matching."""
+    decomposed = unicodedata.normalize("NFKD", Path(str(name)).stem.lower())
+    ascii_title = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return re.sub(r"[^a-z0-9]+", " ", ascii_title).strip()
+
+
 def looks_like_tv_name(name: str) -> bool:
     """Return True when a release name clearly looks episodic/TV-like."""
-    normalized_title = re.sub(r"[^a-z0-9]+", " ", Path(str(name)).stem.lower()).strip()
+    normalized_title = _normalize_known_title(name)
     if normalized_title in _KNOWN_BARE_TV_TITLES:
         return True
     if any(phrase in normalized_title for phrase in _KNOWN_TV_TITLE_PHRASES):
@@ -527,17 +539,17 @@ def _is_multi_season_container_dir(entry: Path) -> bool:
 
 
 def looks_like_known_movie_title(name: str) -> bool:
-    normalized_title = re.sub(r"[^a-z0-9]+", " ", Path(str(name)).stem.lower()).strip()
+    normalized_title = _normalize_known_title(name)
     return any(phrase in normalized_title for phrase in _KNOWN_MOVIE_TITLE_PHRASES)
 
 
 def looks_like_known_tv_title(name: str) -> bool:
-    normalized_title = re.sub(r"[^a-z0-9]+", " ", Path(str(name)).stem.lower()).strip()
+    normalized_title = _normalize_known_title(name)
     return any(phrase in normalized_title for phrase in _KNOWN_TV_TITLE_PHRASES)
 
 
 def looks_like_known_anime_title(name: str) -> bool:
-    normalized_title = re.sub(r"[^a-z0-9]+", " ", Path(str(name)).stem.lower()).strip()
+    normalized_title = _normalize_known_title(name)
     return any(phrase in normalized_title for phrase in _KNOWN_ANIME_TITLE_PHRASES)
 
 
@@ -1712,18 +1724,21 @@ def _detect_file_content_itype(
         anime_mode=True,
     ):
         return "Movie"
-    if _looks_like_source_bearing_tv_episode(name):
-        return "TV Episode"
     if _KNOWN_NON_ANIME_TV_TITLE_RE.search(stem):
         return "TV Episode"
-    if _ANIME_EXTRA_RE.search(name) or looks_like_known_anime_title(name):
+    if (
+        str(folder_category or "").strip().lower() == "anime"
+        or _ANIME_EXTRA_RE.search(name)
+        or looks_like_known_anime_title(name)
+        or _lookup_anime_status(entry_path, video_files, lookup) is True
+    ):
         return "Anime"
+    if _looks_like_source_bearing_tv_episode(name):
+        return "TV Episode"
     if _matches_episode_pattern(name) or _TV_EPISODE_HINT_RE.search(stem):
         return "TV Episode"
     if looks_like_known_tv_title(name) or looks_like_tv_name(name) or _has_tv_context(entry_path):
         return "TV Episode"
-    if _lookup_anime_status(entry_path, video_files, lookup) is True:
-        return "Anime"
     if _looks_like_tv_episode_name(name) or _has_tv_context(entry_path):
         return "TV Episode"
     return "Misc"

@@ -245,18 +245,8 @@
                                         </span>
                                         <span v-if="hasRowChildren(item)" class="text-[10px] text-notion-text-placeholder flex-shrink-0 whitespace-nowrap">({{ getRowChildCount ? getRowChildCount(item) : getRowChildren(item).length }} files)</span>
                                     </div>
-                                    <!-- Category + itype badges -->
-                                    <div class="flex items-center gap-1 flex-shrink-0 hidden sm:flex">
-                                        <span :class="['h-5 px-1.5 rounded-full border border-notion-border/70 text-[9px] font-semibold uppercase tracking-wider inline-flex items-center justify-center', categoryBadgeClass(cat.id)]">{{ cat.id === 'disc' ? 'DISC' : cat.label }}</span>
-                                        <template v-if="cat.id === 'disc' && item.itype">
-                                            <span v-if="item.itype === 'Movie' || item.itype === 'Movies'" class="h-5 px-1.5 rounded-full border border-purple-500/30 text-[9px] font-semibold uppercase tracking-wider inline-flex items-center justify-center bg-purple-500/15 text-purple-400">Movie</span>
-                                            <span v-else-if="item.itype && (item.itype.includes('TV') || item.itype.includes('Series') || item.itype.includes('Episode') || item.itype.includes('Show'))" class="h-5 px-1.5 rounded-full border border-cyan-500/30 text-[9px] font-semibold uppercase tracking-wider inline-flex items-center justify-center bg-cyan-500/15 text-cyan-400">TV</span>
-                                        </template>
-                                    </div>
-                                    <div class="flex items-center justify-center gap-1 w-[5.75rem] flex-shrink-0 text-center">
-                                        <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0" title="Completed">
-                                            <lucide-icon name="check" icon-class="w-3 h-3"></lucide-icon>
-                                        </span>
+                                    <div class="flex items-center gap-1 flex-shrink-0">
+                                        <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
                                         <span v-if="isItemSkipped(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
                                         <span v-if="shouldShowYieldBubble(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
                                             <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
@@ -348,27 +338,25 @@
                                             </span>
                                             <span v-if="hasRowChildren(item)" class="text-[10px] text-notion-text-placeholder flex-shrink-0">({{ getRowChildCount(item) }} files)</span>
                                         </div>
-                                        <div class="flex items-center justify-center gap-1 flex-shrink-0 w-[5.75rem] text-center">
-                                            <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0" title="Completed">
-                                                <lucide-icon name="check" icon-class="w-3 h-3"></lucide-icon>
-                                            </span>
+                                        <select
+                                            :value="externalCategories[item.key] || getCategoryForItem(item) || ''"
+                                            @click.stop
+                                            @change="setExternalCategory(item.key, $event.target.value)"
+                                            :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(externalCategories[item.key] || getCategoryForItem(item))]"
+                                            style="text-align-last:center;"
+                                            :title="'Detected as ' + getDetectionLabel(item) + '. Click to change category.'"
+                                            :aria-label="'Change category for ' + item.name">
+                                            <option class="bg-notion-bg text-notion-text-primary normal-case" value="">Type</option>
+                                            <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in allCategoryMeta" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
+                                        </select>
+                                        <div class="flex items-center gap-1 flex-shrink-0">
+                                            <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
                                             <span v-if="isItemSkipped(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
                                             <span v-if="shouldShowYieldBubble(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
                                                 <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
                                             </span>
                                             <span v-if="isItemQueued(item) && !item.auto_select_ignored && !isItemIgnored(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
                                         </div>
-                                        <select
-                                            :value="externalCategories[item.key] || getCategoryForItem(item) || ''"
-                                            @click.stop
-                                            @change="setExternalCategory(item.key, $event.target.value)"
-                                            :class="['h-5 px-2 rounded-full border border-notion-border/70 text-[9px] font-semibold uppercase tracking-wider flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none text-center inline-flex items-center justify-center', categorySelectWidthClass(externalCategories[item.key] || getCategoryForItem(item)), categoryBadgeClass(externalCategories[item.key] || getCategoryForItem(item))]"
-                                            style="text-align-last:center;width:92px;min-width:92px;"
-                                            :title="'Detected as ' + getDetectionLabel(item) + '. Click to change category.'"
-                                            :aria-label="'Change category for ' + item.name">
-                                            <option class="bg-notion-bg text-notion-text-primary normal-case" value="">Type</option>
-                                            <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in allCategoryMeta" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
-                                        </select>
                                         <span :class="['text-[10px] font-mono w-16 text-right flex-shrink-0 hidden sm:block', sizeToneClass(item.size)]">{{ formatSize(item.size) }}</span>
                                         <div v-if="activeIndexers.length > 0 && item.indexers && Object.keys(item.indexers).length > 0" class="flex items-center justify-end gap-1 flex-shrink-0 w-[112px] hidden sm:flex">
                                             <template v-for="idx in activeIndexers" :key="idx.id">
@@ -448,27 +436,25 @@
                                                     <span class="text-[11px] text-notion-text-secondary min-w-0" style="max-width: 28vw; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ child.name }}</span>
                                                     <span v-if="hasRowChildren(child)" class="text-[10px] text-notion-text-placeholder flex-shrink-0">({{ getRowChildCount(child) }} items)</span>
                                                 </div>
-                                                <div class="flex items-center justify-center gap-1 flex-shrink-0 w-[5.5rem] text-center">
-                                                    <span v-if="isItemCompleted(child) && !isItemSkipped(child)" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0" title="Completed">
-                                                        <lucide-icon name="check" icon-class="w-3 h-3"></lucide-icon>
-                                                    </span>
+                                                <select
+                                                    :value="externalCategories[child.key] || getCategoryForItem(item) || ''"
+                                                    @click.stop
+                                                    @change="setExternalCategory(child.key, $event.target.value)"
+                                                    :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(externalCategories[child.key] || getCategoryForItem(item))]"
+                                                    style="text-align-last:center;"
+                                                    :title="'Detected as ' + getDetectionLabel(child) + '. Click to change category.'"
+                                                    :aria-label="'Change category for ' + child.name">
+                                                    <option class="bg-notion-bg text-notion-text-primary normal-case" value="">Type</option>
+                                                    <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in allCategoryMeta" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
+                                                </select>
+                                                <div class="flex items-center gap-1 flex-shrink-0">
+                                                    <span v-if="isItemCompleted(child) && !isItemSkipped(child)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
                                                     <span v-if="isItemSkipped(child)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
                                                     <span v-if="shouldShowYieldBubble(child)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
                                                         <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
                                                     </span>
                                                     <span v-if="isItemQueued(child) && !child.auto_select_ignored && !isItemIgnored(child)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
                                                 </div>
-                                                <select
-                                                    :value="externalCategories[child.key] || getCategoryForItem(item) || ''"
-                                                    @click.stop
-                                                    @change="setExternalCategory(child.key, $event.target.value)"
-                                                    :class="['h-5 px-2 rounded-full border border-notion-border/70 text-[9px] font-semibold uppercase tracking-wider flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none text-center inline-flex items-center justify-center', categorySelectWidthClass(externalCategories[child.key] || getCategoryForItem(item)), categoryBadgeClass(externalCategories[child.key] || getCategoryForItem(item))]"
-                                                    style="text-align-last:center;width:92px;min-width:92px;"
-                                                    :title="'Detected as ' + getDetectionLabel(child) + '. Click to change category.'"
-                                                    :aria-label="'Change category for ' + child.name">
-                                                    <option class="bg-notion-bg text-notion-text-primary normal-case" value="">Type</option>
-                                                    <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in allCategoryMeta" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
-                                                </select>
                                                 <span :class="['text-[10px] font-mono w-16 text-right flex-shrink-0 hidden sm:block', sizeToneClass(child.size, 'text-notion-text-placeholder')]">{{ formatSize(child.size) }}</span>
                                                 <div v-if="activeIndexers.length > 0 && child.indexers && Object.keys(child.indexers).length > 0" class="flex items-center justify-end gap-1 flex-shrink-0 w-[112px] hidden sm:flex">
                                                     <template v-for="idx in activeIndexers" :key="idx.id">
@@ -528,28 +514,26 @@
                                                         <lucide-icon :name="getExternalItemIcon(gc)" :icon-class="'w-3 h-3 text-' + getExternalItemColor(gc) + '-400 flex-shrink-0'"></lucide-icon>
                                                     </span>
                                                     <span class="text-[11px] text-notion-text-secondary min-w-0" style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" :title="gc.name">{{ gc.name }}</span>
-                                                    <div class="flex items-center justify-center gap-1 flex-shrink-0 w-[5.5rem] text-center">
-                                                        <span v-if="isItemCompleted(gc) && !isItemSkipped(gc)" class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex-shrink-0" title="Completed">
-                                                            <lucide-icon name="check" icon-class="w-3 h-3"></lucide-icon>
-                                                        </span>
-                                                        <span v-if="isItemSkipped(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
-                                                        <span v-if="shouldShowYieldBubble(gc)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
-                                                            <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
-                                                        </span>
-                                                        <span v-if="isItemQueued(gc) && !gc.auto_select_ignored && !isItemIgnored(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
-                                                    </div>
                                                     <select
-                                                    :value="externalCategories[gc.key] || getCategoryForItem(gc) || findExternalAncestorCategory(gc) || ''"
+                                                        :value="externalCategories[gc.key] || getCategoryForItem(gc) || findExternalAncestorCategory(gc) || ''"
                                                         @click.stop
                                                         @change="setExternalCategory(gc.key, $event.target.value)"
-                                                        :class="['h-5 px-2 rounded-full border border-notion-border/70 text-[9px] font-semibold uppercase tracking-wider flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none text-center inline-flex items-center justify-center', categorySelectWidthClass(getCategoryForItem(gc) || findExternalAncestorCategory(gc)), categoryBadgeClass(getCategoryForItem(gc) || findExternalAncestorCategory(gc))]"
-                                                        style="text-align-last:center;width:92px;min-width:92px;"
+                                                        :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(getCategoryForItem(gc) || findExternalAncestorCategory(gc))]"
+                                                        style="text-align-last:center;"
                                                         :title="'Detected as ' + getDetectionLabel(gc) + '. Click to change category.'"
                                                         :aria-label="'Change category for ' + gc.name">
                                                         <option class="bg-notion-bg text-notion-text-primary normal-case" value="">Type</option>
                                                         <option class="bg-notion-bg text-notion-text-primary normal-case" value="tv">TV</option>
                                                         <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in flatCategories" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
                                                     </select>
+                                                    <div class="flex items-center gap-1 flex-shrink-0">
+                                                        <span v-if="isItemCompleted(gc) && !isItemSkipped(gc)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
+                                                        <span v-if="isItemSkipped(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
+                                                        <span v-if="shouldShowYieldBubble(gc)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
+                                                            <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
+                                                        </span>
+                                                        <span v-if="isItemQueued(gc) && !gc.auto_select_ignored && !isItemIgnored(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
+                                                    </div>
                                                     <span v-if="!gc.is_dir" :class="['text-[10px] font-mono w-16 text-right flex-shrink-0 hidden sm:block ml-auto', sizeToneClass(gc.size, 'text-notion-text-placeholder')]">{{ formatSize(gc.size) }}</span>
                                                     <div v-if="activeIndexers.length > 0 && gc.indexers && Object.keys(gc.indexers).length > 0" class="flex items-center justify-end gap-1 flex-shrink-0 w-[112px] hidden sm:flex">
                                                         <template v-for="idx in activeIndexers" :key="idx.id">
@@ -817,21 +801,6 @@
                 <lucide-icon name="trash-2" icon-class="w-3.5 h-3.5"></lucide-icon>
                 Stop + Clear
             </button>
-            <span class="h-5 w-px bg-notion-divider"></span>
-            <button
-                v-if="!queueControl.paused"
-                @click="pauseQueueProcessing()"
-                class="p-1.5 rounded text-notion-text-tertiary hover:text-notion-warning hover:bg-notion-warning/10 transition-colors"
-                title="Hold the entire queue, including the active job">
-                <lucide-icon name="pause-circle" icon-class="w-4 h-4"></lucide-icon>
-            </button>
-            <button
-                v-else
-                @click="resumeQueueProcessing()"
-                class="p-1.5 rounded text-notion-warning hover:text-notion-success hover:bg-notion-success/10 transition-colors"
-                title="Release the whole-queue hold">
-                <lucide-icon name="circle-play" icon-class="w-4 h-4"></lucide-icon>
-            </button>
         </div>
     </div>
     <div :class="queueSectionClass('waiting')">
@@ -845,16 +814,12 @@
                     <div class="flex-1 min-w-0">
                         <div class="flex items-start justify-between gap-3 min-w-0">
                             <div class="flex items-center gap-2 min-w-0 flex-1">
-                                <span class="text-sm font-medium text-notion-text-primary truncate">{{ isJobQueueActiveEntry(job) ? jobTitle(job) : jobDisplayName(job) }}</span>
+                                <span class="text-sm font-medium text-notion-text-primary truncate">{{ jobDisplayName(job) }}</span>
                                 <span :class="jobQueueStatusBadgeClass(job)" class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">{{ jobQueueStatusLabel(job) }}</span>
                                 <span v-if="job.test_mode" class="bg-notion-warning/20 text-notion-warning rounded font-bold px-1.5 py-0.5 text-[10px]">TEST</span>
                             </div>
                         </div>
                         <div class="flex items-center gap-2 text-[10px] text-notion-text-tertiary uppercase tracking-wider mt-0.5 min-w-0">
-                            <template v-if="isJobQueueActiveEntry(job)">
-                                <span class="normal-case tracking-normal truncate max-w-[14rem] sm:max-w-[20rem]">{{ jobDisplayName(job) }}</span>
-                                <span class="opacity-60">&bull;</span>
-                            </template>
                             <span>{{ job.job_id }}</span>
                             <template v-if="isJobQueueActiveEntry(job)">
                                 <span class="opacity-60">&bull;</span>

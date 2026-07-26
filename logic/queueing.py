@@ -966,12 +966,22 @@ class QueueServiceMixin:
         return key.replace("_", " ").title()
 
     @classmethod
-    def _default_job_name(cls, category: str, item_count: int) -> str:
-        count = max(int(item_count), 0)
-        if count <= 0:
-            return cls._job_category_label(category)
-        noun = "item" if count == 1 else "items"
-        return f"{cls._job_category_label(category)} - {count} {noun}"
+    def _default_job_name(cls, category: str, item_count: int, paths: Any = None) -> str:
+        normalized_paths = cls._normalize_paths(paths)
+        if normalized_paths:
+            path_objects = [Path(path) for path in normalized_paths]
+            if len(path_objects) == 1:
+                candidate = path_objects[0] if path_objects[0].suffix == "" else path_objects[0].parent
+            else:
+                try:
+                    candidate = Path(os.path.commonpath([str(path) for path in path_objects]))
+                except ValueError:
+                    candidate = path_objects[0].parent
+                if candidate in path_objects and candidate.suffix:
+                    candidate = candidate.parent
+            if candidate.name:
+                return cls._normalize_job_name(candidate.name) or cls._job_category_label(category)
+        return "Selected Upload" if str(category or "").strip().lower() in {"mixed", "both", "selected"} else cls._job_category_label(category)
 
     @staticmethod
     def _parse_iso_datetime_utc(raw: Any) -> Optional[datetime]:
@@ -1902,7 +1912,7 @@ class QueueServiceMixin:
         if job_type == "processing" and targeted_request and not paths:
             raise ValueError("No valid items remained after queue filtering")
         if not display_name and paths:
-            display_name = self._default_job_name(category, len(paths))
+            display_name = self._default_job_name(category, len(paths), paths)
 
         with self._lock:
             if reuse_running:
@@ -2281,7 +2291,11 @@ class QueueServiceMixin:
                         if new_category:
                             job["category"] = new_category
                         if not str(job.get("display_name") or "").strip():
-                            job["display_name"] = self._default_job_name(str(job.get("category") or "misc"), len(new_paths))
+                            job["display_name"] = self._default_job_name(
+                                str(job.get("category") or "misc"),
+                                len(new_paths),
+                                new_paths,
+                            )
                         job["progress"] = "Revalidated against current rules"
                         updated += 1
                         job_updates.append(

@@ -709,6 +709,48 @@ def test_resolve_explicit_path_single_item_cases(tmp_path) -> None:
         if override_contains:
             assert override_contains in result.override_note, case_name
 
+
+def test_pokemon_anime_hint_survives_accent_and_source_tokens(tmp_path) -> None:
+    anime_dir = tmp_path / "Anime" / "0-Pokemon Horizon - Singles"
+    episode_names = [
+        "Pokemon.S20E45.From.So.Far.Away.Part.2.1080p.WEBRip.10bit.EAC3.2.0.x265-iVy.mkv",
+        "Pokémon.S20E112.Mega.Evolution.Roy.1080p.WEBRip.10bit.EAC3.2.0.x265-iVy.mkv",
+    ]
+    episodes = tuple(_touch(anime_dir / name) for name in episode_names)
+
+    result = pending_scan.resolve_explicit_path(
+        anime_dir,
+        category_hint="anime",
+        anime_lookup=lambda _name: False,
+    )
+
+    assert result.category == "anime"
+    assert result.itype == "Anime"
+    assert result.queue_paths == episodes
+    for episode in episodes:
+        assert pending_scan.looks_like_known_anime_title(episode.name) is True
+        assert pending_scan.detect_auto_category(episode, folder_category_hint="anime") == "anime"
+        assert pending_scan.detect_auto_itype(episode, folder_category_hint="anime") == "Anime"
+
+
+def test_archer_remains_western_tv_even_under_anime_hint(tmp_path) -> None:
+    episode = _touch(tmp_path / "Anime" / "Archer.S01E01.1080p.WEB-DL.mkv")
+
+    result = pending_scan.resolve_explicit_path(
+        episode,
+        category_hint="anime",
+        anime_lookup=lambda _name: True,
+    )
+
+    assert result.category == "tv"
+    assert result.itype == "TV Episode"
+    assert pending_scan.classify_video_name(
+        episode.name,
+        "anime",
+        anime_lookup=lambda _name: True,
+    ) == "TV Show"
+
+
 def test_resolve_explicit_path_uses_jikan_for_anime_and_filters_extras(tmp_path) -> None:
     anime_dir = tmp_path / "Movies" / "Frieren"
     episode_one = _touch(anime_dir / "[SubsPlease] Frieren - 01 (1080p).mkv", b"a")
@@ -1167,6 +1209,30 @@ def test_scan_pending_all_marks_anime_extras_ignored_for_auto_select(monkeypatch
     assert child_map[extra.name]["auto_select_ignored"] is True
     assert child_map[extra.name]["auto_select_reason"] == "No episode pattern"
 
+
+def test_scan_pending_all_keeps_pokemon_folder_and_episodes_anime(monkeypatch, tmp_path) -> None:
+    anime_root = tmp_path / "Anime"
+    show_dir = anime_root / "0-Pokemon Horizon - Singles"
+    names = [
+        "Pokemon.S20E45.From.So.Far.Away.Part.2.1080p.WEBRip.10bit.EAC3.2.0.x265-iVy.mkv",
+        "Pokémon.S20E112.Mega.Evolution.Roy.1080p.WEBRip.10bit.EAC3.2.0.x265-iVy.mkv",
+    ]
+    for name in names:
+        _touch(show_dir / name)
+
+    result = _configure_pending_scan_all(
+        monkeypatch,
+        "anime",
+        anime_root,
+        anime_cache_lookup=lambda _name: False,
+    )
+
+    top_item = _get_pending_top_item(result, "anime")
+    assert top_item["detected_category"] == "anime"
+    assert top_item["itype"] == "Anime"
+    assert top_item["auto_selectable"] is True
+
+
 def test_scan_pending_all_ignored_extra_files_do_not_block_pack_completion(monkeypatch, tmp_path) -> None:
     ext_dir = tmp_path / "TV"
     season = ext_dir / "Show.Name.S01"
@@ -1202,9 +1268,11 @@ def test_scan_pending_all_ignored_extra_files_do_not_block_pack_completion(monke
 
     assert child_map[extra.name]["auto_select_ignored"] is True
     assert child_map[extra.name]["skipped"] is True
-    assert child_map[extra.name]["completed"] is True
+    assert child_map[extra.name]["completed"] is False
+    assert child_map[extra.name]["indexers"]["idx1"] is False
     assert child_map[note.name]["auto_select_ignored"] is True
-    assert child_map[note.name]["completed"] is True
+    assert child_map[note.name]["completed"] is False
+    assert child_map[note.name]["indexers"]["idx1"] is False
     assert top_item["completed"] is True
     assert top_item["indexers"]["idx1"] is True
 
@@ -1215,6 +1283,9 @@ def test_resolve_submission_category_cases(tmp_path) -> None:
         ("rejects-ambiguous-video-misc", "Untitled.Release.mkv", "misc", "Misc", None, "cannot be submitted as Misc"),
         ("preserves-explicit-tv", "Show.Name.S00E01.1080p.WEB-DL.mkv", "tv", "Misc", "tv", None),
         ("preserves-explicit-anime", "Anime.Name.S01E01.1080p.WEB-DL.mkv", "anime", "TV Episode", "anime", None),
+        ("disc-anime-submits-as-anime", "Anime.Name.S01E01.1080p.BluRay.mkv", "disc", "Anime", "anime", None),
+        ("disc-tv-submits-as-tv", "Show.Name.S01E01.1080p.BluRay.mkv", "disc", "TV Episode", "tv", None),
+        ("disc-movie-submits-as-movies", "Movie.Name.2026.1080p.BluRay.mkv", "disc", "Movie", "movies", None),
         (
             "rejects-invalid-explicit-category",
             "Show.Name.S01E01.1080p.WEB-DL.mkv",
@@ -1235,6 +1306,29 @@ def test_resolve_submission_category_cases(tmp_path) -> None:
             continue
 
         assert processing._resolve_submission_category(target, explicit_category, detected_itype) == expected, case_name
+
+
+def test_disc_selection_queues_the_whole_release_and_routes_by_underlying_type(monkeypatch, tmp_path) -> None:
+    import logic.processing as processing
+
+    release = tmp_path / "Show.Name.S01.DVD"
+    _touch(release / "VIDEO_TS" / "VIDEO_TS.IFO")
+    monkeypatch.setattr(processing, "_processing_anime_lookup", lambda _name: False)
+    monkeypatch.setattr(processing, "_processing_cached_anime_lookup", lambda _name: False)
+
+    items = processing._collect_targeted_job_items(
+        paths=[str(release)],
+        item_hints=[{"path": str(release), "category": "disc", "itype": "Disc"}],
+        category="mixed",
+        conf=SimpleNamespace(),
+        runtime_job=None,
+        process_tv_episodes=True,
+    )
+
+    assert items == [(release, "disc")]
+    assert processing._processing_db_type(release, "disc") == "DISC"
+    assert processing._resolve_submission_category(release, "disc", "DISC") == "tv"
+
 
 def test_dashboard_snapshot_rows_skip_external_items_without_category() -> None:
     from logic import services as services_mod
@@ -1282,13 +1376,15 @@ def test_scan_pending_all_external_sizes_recurse_full_depth(monkeypatch, tmp_pat
     assert video_ts_item["size"] == expected_size
     assert vob_item["name"] == "VTS_01_1.VOB"
     assert vob_item["size"] == 15
-    assert top_item["itype"] == "Movie"
-    assert top_item["detected_category"] == "movies"
+    assert top_item["itype"] == "Disc"
+    assert top_item["detected_category"] == "disc"
     assert top_item["detection_method"] == "Disc scan"
     assert top_item["detection_flags"] == ["disc"]
-    assert vob_item["auto_select_ignored"] is True
-    assert vob_item["completed"] is True
-    assert top_item["completed"] is True
+    assert vob_item["detected_category"] == "disc"
+    assert vob_item["auto_select_ignored"] is False
+    assert vob_item["auto_selectable"] is True
+    assert vob_item["completed"] is False
+    assert top_item["completed"] is False
 
 def test_scan_pending_all_marks_ebook_folder_and_ignores_sidecars(monkeypatch, tmp_path) -> None:
     ext_dir = tmp_path / "Books"
@@ -1306,7 +1402,19 @@ def test_scan_pending_all_marks_ebook_folder_and_ignores_sidecars(monkeypatch, t
     assert top_item["detection_method"] == "File scan"
     assert child_map[book.name]["auto_selectable"] is True
     assert child_map[cover.name]["auto_select_ignored"] is True
-    assert child_map[cover.name]["completed"] is True
+    assert child_map[cover.name]["completed"] is False
+
+
+def test_video_folder_is_not_reclassified_by_book_or_audio_sidecars(tmp_path) -> None:
+    from logic import pending_snapshot as pending_snapshot_mod
+
+    release = tmp_path / "Pokemon.S20"
+    _touch(release / "Pokemon.S20E01.1080p.WEBRip.mkv")
+    _touch(release / "episode-guide.epub")
+    _touch(release / "commentary.mp3")
+
+    assert pending_snapshot_mod._directory_extension_first_category(release) == ""
+
 
 def test_pending_scan_category_folder_filtering(tmp_path) -> None:
     movies = tmp_path / "movies"

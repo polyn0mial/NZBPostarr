@@ -19,16 +19,8 @@ var FILTER_MODE_OPTIONS = [
   { value: "hideIgnored", label: "Hide Ignored" }
 ];
 var SESSION_CACHE_MAX_BYTES = 2e6;
-var SOURCE_TOKEN_PATTERN = /(?:^|[.\s_-])(?:WEB(?:[.\s_-]?DL|[.\s_-]?Rip|[.\s_-]?HD)?|WEBDL|WEBRip|WEBHD|BluRay|BDRip|BRRip|REMUX|HDRip|PDRip|HDTV|PDTV|SDTV|TV|TVRip|HQSATRip|SATRip|DSR|DVB|DVDRip|DVD|VHS(?:Rip)?|DV|UHD|AMZN|NF|NFLX|DSNP|PCOK|HMAX|MAX|HULU|ATVP|AUBC|iT|iP|STAN|CR|PMTP|PMNT|CTV|CBC|BBC|PBS|TBS|TNT|NBC|ABC|CBS|FOX|HBO|SHOWTIME|SHO)(?:[.\s_-]|$)/i;
-var HARD_IGNORE_TOKEN_RE = /\b(?:sample|nfo|screens?|proof|bonus|trailer|nced|ncop|opening|ending)\b/i;
 var TV_NAME_PATTERN = /(?:S\d{1,2}[.\s-]?E\d{1,3}|S\d{1,2}[.\s-]?(?:Complete|COMPLETE|Full)|Season[.\s-]?\d{1,2}|Series[.\s-]?\d{1,2}|(?:^|[.\s_(-])\d{1,2}x\d{2,3}(?:[.\s_)-]|$)|(?:^|[.\s_-])S\d{2}(?:[.\s_-]|$)|(?:19|20)\d{2}[.\s-]\d{2}[.\s-]\d{2})/i;
 var MOVIE_NAME_PATTERN = /(?:^|[.\s_(-])(?:19|20)\d{2}(?:[.\s_\])-]|$)/i;
-function hasSourceToken(name) {
-  return SOURCE_TOKEN_PATTERN.test(String(name || ""));
-}
-function hasHardIgnoreToken(name) {
-  return HARD_IGNORE_TOKEN_RE.test(String(name || ""));
-}
 function deepFreezePendingTree(items) {
   if (!items || typeof items !== "object") return items;
   const visit = (node) => {
@@ -1072,10 +1064,15 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     },
     findExternalNodeByKey(targetKey) {
       if (!targetKey) return null;
+      const visited = new Set();
       const walk = (node) => {
         if (!node || typeof node !== "object") return null;
+        if (visited.has(node)) return null;
+        visited.add(node);
         if (node.key === targetKey) return node;
-        const children = Array.isArray(node.children) ? node.children : [];
+        const directChildren = Array.isArray(node.children) ? node.children : [];
+        const loadedChildren = Array.isArray(this.extLoadedChildren[node.key]) ? this.extLoadedChildren[node.key] : [];
+        const children = [...directChildren, ...loadedChildren];
         for (const child of children) {
           const found = walk(child);
           if (found) return found;
@@ -1083,7 +1080,6 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         return null;
       };
       for (const group of this.items.external || []) {
-        if (group && group.allow_bulk_selection === false) continue;
         for (const item of group.items || []) {
           const found = walk(item);
           if (found) return found;
@@ -1854,31 +1850,19 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     isSelectionIgnored(item) {
       if (!item) return false;
       if (this.isAutoIgnoreOverridden(item)) return false;
-      if (String(item.status || "").toUpperCase() === "VALID" && item.eligible !== false && item.ignored !== true) return false;
       if (this.getCategoryForItem(item) === "disc") return false;
       if ((item.itype || "").toString().toUpperCase() === "DISC") return false;
-      const title = `${item.name || ""} ${item.path || ""}`;
-      if (hasHardIgnoreToken(title)) return true;
-      if (!item.is_dir && !hasSourceToken(title)) {
-        const parentTvLike = /(?:\bTV\b|season|series|S\d{1,2})/i.test(String(item.parent_path || item.path || ""));
-        const rowTvLike = TV_NAME_PATTERN.test(title);
-        if (!(parentTvLike || rowTvLike)) return true;
-      }
-      if (item.is_dir && !hasSourceToken(item.name || item.path || "")) {
-        const isTvDir = /(?:\bTV\b|season|series|S\d{1,2})/i.test(String(item.name || item.path || ""));
-        if (!isTvDir) return true;
-      }
-      if (item.auto_select_reason && /Missing media source(?: token|\/episode signal)/i.test(item.auto_select_reason)) {
-        return true;
-      }
-      return !!(item && item.auto_select_ignored && !this.isAutoIgnoreOverridden(item));
+      const status = String(item.status || "").toUpperCase();
+      return item.ignored === true
+        || item.auto_select_ignored === true
+        || status === "IGNORED"
+        || status === "SKIPPED";
     },
     isAutoSelectable(item) {
       if (!item || this.isItemSkipped(item) || this.isItemExcluded(item)) return false;
       if (String(item.status || "").toUpperCase() === "VALID" && item.eligible !== false && item.ignored !== true) return true;
       if (this.getCategoryForItem(item) === "disc") return true;
       if ((item.itype || "").toString().toUpperCase() === "DISC") return true;
-      if (item.is_dir && !hasSourceToken(item.name)) return false;
       if (this.isSelectionIgnored(item)) return false;
       return item.auto_selectable !== false;
     },
@@ -1927,7 +1911,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     },
     shouldShowYieldBubble(item) {
       if (!item) return false;
-      if (item.is_dir) return this.isFullyIgnoredTree(item);
+      if (item.is_dir) return this.isSelectionIgnored(item) || this.isPartiallyIgnored(item) || this.isFullyIgnoredTree(item);
       return this.isSelectionIgnored(item) && !this.isPartiallyIgnored(item);
     },
     getDetectionLabel(item) {
@@ -2976,19 +2960,26 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         indexer_id: indexerId || null,
         bulk_selection: true
       };
-      this.bulkPreview = null;
-      this.bulkPreviewRequest = request;
-      this.bulkPreviewMode = "bulk";
-      this.bulkPreviewIndexerName = idxName;
-      this.bulkPreviewLoading = true;
-      this.showBulkPreviewModal = true;
       try {
-        this.bulkPreview = await this.apiPost("/api/pending/preview-upload", request);
+        const res = await this.apiPost("/api/pending/force-upload", request);
+        const jobIds = res.job_ids || [];
+        const stopActions = jobIds.map((jid) => ({
+          label: "Stop Job",
+          icon: "square",
+          callback: () => this.apiPost(`/api/uploads/jobs/${jid}/stop`).catch(() => {})
+        }));
+        this.showToast(
+          "success",
+          "Upload Started",
+          `${jobIds.length} job(s) started for ${res.items_count || items.length} item(s) → ${idxName}`,
+          15e3,
+          stopActions
+        );
+        this.selectedItems = new Set();
+        this.selectedMeta = new Map();
+        this.startTimeout(() => this.loadJobs(), 500);
       } catch (e2) {
-        this.closeBulkPreviewModal();
-        this.showToast("error", "Preview Failed", e2?.message || "Failed to plan the bulk upload");
-      } finally {
-        this.bulkPreviewLoading = false;
+        this.showToast("error", "Error", e2?.message || "Failed to start upload");
       }
     },
     closeBulkPreviewModal() {
@@ -3904,21 +3895,6 @@ This only clears the staging area. Existing jobs are NOT removed.`)) return;
         misc: "bg-orange-500/15 text-orange-400"
       };
       return map[cat] || "bg-notion-bg-hover text-notion-text-tertiary";
-    },
-    categorySelectWidthClass(cat) {
-      const map = {
-        tv: "w-[3.4rem]",
-        disc: "w-[4.2rem]",
-        apps: "w-[4.2rem]",
-        misc: "w-[4.3rem]",
-        music: "w-[4.6rem]",
-        anime: "w-[4.7rem]",
-        books: "w-[4.7rem]",
-        movies: "w-[4.9rem]",
-        ebooks: "w-[4.9rem]",
-        audiobooks: "w-[6.2rem]"
-      };
-      return map[cat] || "w-[4.9rem]";
     },
     jobScheduleLabel(job) {
       if (!job || !job.run_after) return "";

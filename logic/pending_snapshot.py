@@ -317,12 +317,14 @@ def _directory_extension_first_category(entry: Path) -> str:
     """Classify by real file extensions inside a directory before any name/token inference."""
     if not entry.is_dir():
         return ""
-    counts = {"audiobooks": 0, "music": 0, "ebooks": 0}
+    counts = {"audiobooks": 0, "music": 0, "ebooks": 0, "video": 0}
     try:
         for root, _dirs, filenames in os.walk(str(entry)):
             for filename in filenames:
                 ext = Path(filename).suffix.lower()
-                if ext in _AUDIOBOOK_EXTENSIONS:
+                if ext in _VIDEO_FILE_EXTENSIONS:
+                    counts["video"] += 1
+                elif ext in _AUDIOBOOK_EXTENSIONS:
                     counts["audiobooks"] += 1
                 elif ext in _MUSIC_EXTENSIONS:
                     counts["music"] += 1
@@ -330,8 +332,9 @@ def _directory_extension_first_category(entry: Path) -> str:
                     counts["ebooks"] += 1
     except OSError:
         return ""
-    # Extension-priority gate: as soon as audio/book payloads exist in a folder,
-    # lock the directory to that non-video class and skip all video/disc fallthrough.
+    # Audio/book sidecars must not reclassify a video release.
+    if counts["video"] > 0:
+        return ""
     if counts["audiobooks"] == 0 and counts["music"] == 0 and counts["ebooks"] == 0:
         return ""
     if counts["audiobooks"] >= max(counts["music"], counts["ebooks"]):
@@ -931,19 +934,21 @@ def _mark_ignored_tree_nodes_completed(node: Dict[str, Any], active_ids: List[st
         return
 
     node["skipped"] = True
-    node["completed"] = True
+    node["completed"] = False
     if active_ids:
-        node["indexers"] = {idx_id: True for idx_id in active_ids}
+        direct_indexers = node.get("_direct_indexers", {}) if isinstance(node.get("_direct_indexers"), dict) else {}
+        node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
 
 
 def _clear_non_target_ignored_flags(node: Dict[str, Any]) -> None:
-    """Clear only source-matrix ignores for source-exempt content classes."""
+    """Keep DISC content selectable and clear source-only ignores for exempt classes."""
     if not isinstance(node, dict):
         return
     category = str(node.get("detected_category") or node.get("category") or "").strip().lower()
     reason = str(node.get("auto_select_reason") or "")
-    if category in {"disc", "books", "ebooks", "audiobooks", "music"} and reason.lower().startswith(
-        "missing media source"
+    if category == "disc" or (
+        category in {"books", "ebooks", "audiobooks", "music"}
+        and reason.lower().startswith("missing media source")
     ):
         node["auto_select_ignored"] = False
         node["auto_select_reason"] = ""
@@ -959,9 +964,10 @@ def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> 
 
     if node.get("auto_select_ignored"):
         node["skipped"] = True
-        node["completed"] = True
+        node["completed"] = False
         if active_ids:
-            node["indexers"] = {idx_id: True for idx_id in active_ids}
+            direct_indexers = node.get("_direct_indexers", {}) if isinstance(node.get("_direct_indexers"), dict) else {}
+            node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
         return
 
     if not children:
@@ -984,8 +990,8 @@ def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> 
     required_children = [child for child in children if not child.get("auto_select_ignored")]
     if not required_children:
         if active_ids:
-            node["indexers"] = {idx_id: True for idx_id in active_ids}
-        node["completed"] = True
+            node["indexers"] = {idx_id: False for idx_id in active_ids}
+        node["completed"] = False
         return
 
     if active_ids:
@@ -1397,10 +1403,6 @@ def _build_external_tree_item(
     if top_level:
         item["itype"] = resolution.itype
         forced_category = _classify_standalone_file_category(node)
-        if forced_category == "disc" and node.is_dir():
-            # Disc structure is a processing flag, not a replacement for the
-            # parent release's upload category/type.
-            forced_category = ""
         resolved_category = forced_category or resolution.category
         item["detected_category"] = (
             ""
@@ -1409,6 +1411,10 @@ def _build_external_tree_item(
             and resolution.detection_method == "Folder fallback"
             else resolved_category
         )
+        if item["detected_category"]:
+            item["category"] = item["detected_category"]
+        if item["detected_category"] == "anime":
+            item["itype"] = "Anime"
         item["detection_method"] = resolution.detection_method
         item["detection_flags"] = list(getattr(resolution, "content_flags", ()) or ())
         if resolution.override_note:

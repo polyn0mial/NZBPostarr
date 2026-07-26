@@ -951,7 +951,16 @@ export function createVuePage(pageOptions = {}) {
         // Pages can override any of these if needed.
         // ============================================================
         jobCategoryName(job) {
-            const map = { tv: 'TV', movies: 'Movies', misc: 'Misc', both: 'Both' };
+            const map = {
+                tv: 'TV',
+                movies: 'Movies',
+                anime: 'Anime',
+                disc: 'DISC',
+                misc: 'Misc',
+                both: 'Selected Upload',
+                mixed: 'Selected Upload',
+                selected: 'Selected Upload'
+            };
             const key = (job && job.category) ? String(job.category) : '';
             return map[key] || key || 'Job';
         },
@@ -959,19 +968,15 @@ export function createVuePage(pageOptions = {}) {
         jobDisplayName(job) {
             if (!job) return 'Job';
             const custom = (job.display_name || '').trim();
-            if (custom) return custom;
-
-            const base = this.jobCategoryName(job);
-            const targetCount = Array.isArray(job.target_paths) ? job.target_paths.length : 0;
-            if (targetCount > 0) {
-                return `${base} - ${targetCount} item${targetCount === 1 ? '' : 's'}`;
+            if (custom) {
+                const autoCountName = custom.match(/^(.*?)(?:\s*-\s*\d+\s+items?)$/i);
+                if (autoCountName && /^(?:TV|Movies|Anime|DISC|Misc|Both|Mixed|Selected)$/i.test(autoCountName[1].trim())) {
+                    return autoCountName[1].trim().replace(/^Mixed$/i, 'Selected Upload');
+                }
+                return custom;
             }
 
-            const total = Number(job.items_total || 0);
-            if (total > 0) {
-                return `${base} - ${total} item${total === 1 ? '' : 's'}`;
-            }
-            return base;
+            return this.jobCategoryName(job);
         },
 
         jobTitle(job) {
@@ -1022,17 +1027,17 @@ export function createVuePage(pageOptions = {}) {
 
         jobItemCount(job) {
             const total = Number(job.items_total || 0);
-            const hasCurrentItem = typeof job.current_item === 'string' && job.current_item.trim() !== '';
             if (job.status === 'completed') return `${total} items finished`;
-            const targetPaths = Array.isArray(job.target_paths) ? job.target_paths : [];
-            if (job.has_explicit_paths && job.status !== 'failed') {
-                const remaining = targetPaths.length + (hasCurrentItem ? 1 : 0);
-                return `${remaining} not uploaded`;
+            if (job.status !== 'failed') {
+                const explicitRemaining = Number(job.target_path_count || 0);
+                const processed = Number(job.items_processed || 0);
+                const calculatedRemaining = total > 0 ? Math.max(total - processed, 0) : 0;
+                const remaining = Math.max(explicitRemaining, calculatedRemaining);
+                if (job.has_explicit_paths || total > 0) {
+                    return `${remaining} item${remaining === 1 ? '' : 's'} not uploaded`;
+                }
             }
             let current = Number(job.items_processed || 0);
-            if (total > 0 && hasCurrentItem && job.status !== 'failed') {
-                current = Math.min(total, current + 1);
-            }
             return `${current} / ${total} items`;
         },
 

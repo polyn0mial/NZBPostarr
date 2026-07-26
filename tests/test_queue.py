@@ -15,6 +15,65 @@ def test_queue_page_keeps_data_loading_separate_from_queue_validation() -> None:
     assert "this.syncSelectionToVisible();" not in load_pending_block
     assert "this.syncSelectionToVisible();" not in load_queued_block
 
+
+def test_bulk_force_upload_bypasses_review_and_staging() -> None:
+    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    force_block = queue_js.split("async _doForceUploadBulk(indexerId, skipDupeCheck = false) {", 1)[1].split(
+        "closeBulkPreviewModal() {",
+        1,
+    )[0]
+
+    assert 'this.apiPost("/api/pending/force-upload", request)' in force_block
+    assert "/api/pending/preview-upload" not in force_block
+    assert "this.showBulkPreviewModal = true" not in force_block
+
+
+def test_nested_external_lookup_includes_lazy_loaded_and_ignored_groups() -> None:
+    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    lookup_block = queue_js.split("findExternalNodeByKey(targetKey) {", 1)[1].split(
+        "resolveExternalNode(itemOrKey) {",
+        1,
+    )[0]
+
+    assert "this.extLoadedChildren[node.key]" in lookup_block
+    assert "visited.has(node)" in lookup_block
+    assert "allow_bulk_selection === false" not in lookup_block
+
+
+def test_job_names_use_release_folder_without_item_count(tmp_path) -> None:
+    service = _make_queue_service_stub(tmp_path)
+    release_dir = tmp_path / "0-Pokemon Horizon - Singles"
+    episode_one = release_dir / "Pokemon.S20E01.1080p.WEBRip.mkv"
+    episode_two = release_dir / "Pokemon.S20E02.1080p.WEBRip.mkv"
+
+    assert service._default_job_name("mixed", 2, [episode_one, episode_two]) == release_dir.name
+    assert service._default_job_name("anime", 1, [release_dir]) == release_dir.name
+    assert service._default_job_name("mixed", 123) == "Selected Upload"
+
+
+def test_queue_job_count_is_below_progress_and_describes_remaining_items() -> None:
+    page_base_js = _read_repo_text("webui", "assets", "js", "page-base.js")
+    queue_html = _read_repo_text("webui", "queue.html")
+
+    assert "target_path_count" in page_base_js
+    assert "not uploaded`" in page_base_js
+    progress_bar = queue_html.index('class="h-1.5 bg-notion-bg-secondary')
+    remaining_count = queue_html.index("{{ jobItemCount(job) }}", progress_bar)
+    assert remaining_count > progress_bar
+    assert "{{ isJobQueueActiveEntry(job) ? jobTitle(job) : jobDisplayName(job) }}" not in queue_html
+    assert "Release the whole-queue hold" not in queue_html
+
+
+def test_pending_rows_restore_compact_category_and_status_badges() -> None:
+    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    queue_html = _read_repo_text("webui", "queue.html")
+
+    assert queue_html.count(">Done</span>") >= 4
+    assert queue_html.count("h-6 px-2 rounded border text-[10px]") >= 3
+    assert "categorySelectWidthClass" not in queue_js
+    assert "categorySelectWidthClass" not in queue_html
+
+
 def test_upload_service_passes_target_paths_to_processing_run_job():
     """Force/targeted uploads should pass selected paths down to processing.run_job."""
     from unittest.mock import patch

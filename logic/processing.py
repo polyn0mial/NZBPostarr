@@ -55,6 +55,7 @@ from logic.pending_scan import (
     find_configured_root,
     get_configured_folders,
     has_clear_movie_year,
+    looks_like_tv_name,
     resolve_explicit_path,
     scan_configured_items,
 )
@@ -1053,6 +1054,7 @@ def _submission_category_label(category: str) -> str:
         "tv": "TV",
         "movie": "Movie",
         "anime": "Anime",
+        "disc": "DISC",
         "music": "Music",
         "books": "Books",
         "apps": "Apps",
@@ -1065,6 +1067,21 @@ def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
     normalized_category = _normalize_processing_category(category)
     normalized_itype = _normalize_processing_type(itype)
     media_counts, _video_names = _scan_release_media(path)
+
+    if normalized_category == "disc":
+        if normalized_itype in {"anime", "tv", "tv_episode", "movie"}:
+            normalized_category = {
+                "anime": "anime",
+                "tv": "tv",
+                "tv_episode": "tv",
+                "movie": "movies",
+            }[normalized_itype]
+        elif looks_like_tv_name(path.name) or any(
+            re.search(r"S\d{1,2}[.\s_-]*E\d{1,3}", name, re.IGNORECASE) for name in _video_names
+        ):
+            normalized_category = "tv"
+        else:
+            normalized_category = "movies"
 
     allowed_categories = {"movies", "tv", "anime", "music", "books", "apps", "misc"}
     if normalized_category not in allowed_categories:
@@ -1482,6 +1499,8 @@ def _processing_db_type(path: Path, category: str) -> str:
         return "Movies"
     if category == "anime":
         return "Anime"
+    if category == "disc":
+        return "DISC"
     if category == "music":
         return "Music"
     if category == "books":
@@ -2739,6 +2758,9 @@ def _collect_targeted_job_items(
             anime_lookup=anime_lookup,
         )
         _log_explicit_resolution(resolution)
+        if normalize_submission_category(category_hint) == "disc" and "disc" in resolution.content_flags:
+            raw_items.append((selected_path, "disc"))
+            continue
         _append_targeted_resolution_items(
             raw_items,
             selected_path=selected_path,
