@@ -1,0 +1,35 @@
+[tool.mypy]
+cache_dir = ".local/cache/mypy"
+files = [
+  "core/redaction.py",
+  "logic/process_stats.py",
+  "logic/queue_metrics.py",
+  "logic/uploaders.py",
+  "logic/usenet_stream.py",
+  ".github/release.py",
+]
+follow_imports = "skip"
+strict = true
+
+# This explicit file list is the checked type frontier. New or remediated
+# modules should be added here; existing untyped orchestration remains outside
+# the release gate until its contracts have been narrowed.
+
+[tool.pytest.ini_options]
+cache_dir = ".local/cache/pytest"
+
+[tool.ruff]
+cache-dir = ".local/cache/ruff"
+
+[dependency-groups]
+dev = [
+  "pytest==9.0.3",
+  "pytest-asyncio==1.3.0",
+  "pytest-base-url==2.1.0",
+  "pytest-playwright==0.7.2",
+  "playwright==1.61.0",
+  "ruff==0.14.10",
+  "mypy==2.1.0",
+  "types-psutil==7.2.2.20260518",
+  "pip-audit==2.10.1",
+]

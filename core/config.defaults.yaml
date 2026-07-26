@@ -1,0 +1,159 @@
+# Default configuration for NZBPostarr
+# Copy this file to config.yaml and adjust values as needed.
+#
+# NOTE: This file intentionally contains NO real credentials.
+
+# Base folder paths (remote/server paths)
+base_folder: '/path/to/usenet'
+
+# Folder Paths — Each entry is scanned as an input folder.
+# Items are auto-categorized from their names and contents.
+folder_paths:
+  - path: '${base_folder}/Movies'
+    monitor: false
+    allow_bulk_selection: true
+  - path: '${base_folder}/TV'
+    monitor: false
+    allow_bulk_selection: true
+  - path: '${base_folder}/Misc'
+    monitor: false
+    allow_bulk_selection: true
+  # - path: '/srv/downloads/qbittorrent'
+  #   monitor: false
+  #   allow_bulk_selection: false
+
+# Processing controls
+process_tv_episodes: true
+dynamic_packs: true
+test_run: false
+verbose: false
+quiet: false
+enable_duplicate_checking: true
+
+# TV season-pack ignore rules.
+# These control which files inside a TV/anime season pack are marked ignored
+# and excluded from upload prep. Defaults preserve the strict current behavior.
+tv_pack_ignore:
+  enabled: true
+  ignore_non_video: true
+  ignore_extras: true
+  require_sxxexx: true
+  require_resolution: true
+  require_source: true
+
+# Anime Identification (Jikan / MyAnimeList)
+# Queries the free Jikan API to identify anime titles in TV shows.
+# When disabled, all anime detection is skipped.
+enable_anime_checking: false
+
+# Global identity for uploads
+poster_name: 'Anonymous'
+poster_email: 'anonymous@example.com'
+include_readme: true
+
+# Randomized newsgroup pool (optional)
+alt_bins:
+  - 'alt.binaries.misc'
+
+# NNTP Servers
+# The first server in this list is treated as the Primary.
+nntp_servers:
+  - name: 'Primary'
+    host: 'news.example.com'
+    user: 'YOUR_USERNAME'
+    pass: 'YOUR_PASSWORD'
+    port: 563
+    ssl: true
+    enabled: true
+    max_connections: 20
+    backbone: ['Hosted']
+
+# Tool Paths & Logic
+rar_size: '100m'
+article_size: '1M'
+nyuu_path: 'nyuu'
+parpar_path: 'parpar'
+upload_max_retries: 3
+upload_retry_delay_seconds: 5
+item_limit_per_category: 0
+folder_size_limit_gb: 99
+folder_size_limit_enabled: true
+file_size_limit_gb: 0
+file_size_limit_enabled: true
+
+# Global Backfill Control (Applied to all enabled indexers)
+enable_backfill: true
+
+# Duplicate Bypass
+enable_duplicate_bypass: true
+
+# Mediainfo
+nfolder: null
+medianfo: null
+
+# Indexer credentials (recommended)
+# You can store API keys here (or via env vars like NZBP_API_KEYS__GEEK=...)
+# api_keys:
+#   geek: 'YOUR_NZBGEEK_API_KEY'
+#   planet: 'YOUR_NZBPLANET_API_KEY'
+#   su: 'YOUR_NZBSU_API_KEY'
+#   slug: 'YOUR_NZBSLUG_API_KEY'
+#   in: 'YOUR_NZBSIN_API_KEY'
+#   omg: 'YOUR_OMGWTN_API_KEY'
+# usernames:
+#   omg: 'YOUR_OMGWTN_USERNAME'
+
+# Indexer Specific Controls (Dynamically resolved)
+# Use 'enable_{id}', 'priority_{id}', and 'backfill_{id}' (bool)
+# Example:
+# enable_geek: true
+# priority_geek: false
+# enable_su: false
+# priority_in: true
+
+# Skip Files - Filename patterns to skip during processing
+# Supports glob wildcards: * (any chars), ? (single char)
+# Categories: movies, tv, misc (empty list = applies to all)
+# Display mode: 'hidden' removes from queue, 'disabled' shows greyed out
+skip_files:
+  enabled: false
+  display_mode: 'disabled'
+  patterns: []
+  # Example patterns:
+  # - pattern: '*.nfo'
+  #   categories: []
+  # - pattern: 'Sample*'
+  #   categories: ['movies']
+  # - pattern: '*-sample.*'
+  #   categories: ['movies', 'tv']
+  # - pattern: '*.txt'
+  #   categories: ['misc']
+
+# Dashboard Settings
+dashboard_stats_enabled: true
+dashboard_stats_modules:
+  - 'cpu'
+  - 'memory'
+  - 'disk'
+  - 'free_space'
+  - 'upload'
+  - 'download'
+stats_page_enabled: true
+
+# Web Interface
+host: '0.0.0.0'
+port: 8000
+debug: false
+log_level: 'INFO'
+static_cache_max_age: 3600
+ui_refresh_seconds: 2
+
+# Optional password for the raw config editor and web login in Nzbpostarr.
+# If left null, the raw editor is accessible to anyone who can reach the web UI.
+# Set to a strong secret if your instance is publicly exposed.
+web_password: null
+
+# Nzbpostarr web login for the entire web UI and API.
+# When enable_password is true and web_password is set, all pages require login.
+enable_password: false
+web_username: admin

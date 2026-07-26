@@ -1,0 +1,55 @@
+# NZBGeek Indexer Definition
+# https://api.nzbgeek.info
+
+id: geek
+name: NZBGeek
+description: NZBGeek is a popular NZB indexer with a reliable API
+website: https://nzbgeek.info
+favicon_url: https://nzbgeek.info/favicon-32x32.png
+search_url: https://nzbgeek.info/geekseek.php?browsepostedby={poster}
+api_key: '' # Set in config.yaml
+icon: globe
+color: '#6366f1'
+
+# API Configuration
+submit_url: https://api.nzbgeek.info/submit
+method: POST
+
+# Authentication
+auth:
+  method: query_param
+  api_key_param: apikey
+
+# Category Mapping (newznab standard)
+categories:
+  tv: '5040' # TV/HD
+  movie: '2040' # Movies/HD
+  movie_sd: '2030' # Movies/SD
+  movie_hd: '2040' # Movies/HD
+  movie_uhd: '2045' # Movies/UHD
+  movie_dvd: '2030' # DVD content falls back to SD on NZBGeek
+  anime: '5070' # TV/Anime
+  music: '3010' # Audio/MP3
+  books: '7020' # Books/Ebook
+  apps: '' # No trusted explicit app mapping configured
+  misc: '5000' # TV/Other
+  default: ''
+category_param: cat
+
+# File Upload Fields
+files:
+  nzb: nzb
+  nfo: nfo
+  nzb_mime: application/x-nzb
+
+# Success Detection
+success:
+  json_path: response.@attributes.API
+  json_value: OK
+  text_patterns:
+    - 'OK'
+    - 'REGISTER'
+  duplicate_patterns:
+    - duplicate
+
+timeout: 30

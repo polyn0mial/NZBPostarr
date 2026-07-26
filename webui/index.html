@@ -1,0 +1,707 @@
+{% extends "base.html" %} {% block title %}Dashboard{% endblock %} {% block page_title %}Dashboard{% endblock %} {% block header_title %}Dashboard{% endblock %} {% block header_divider_classes %}pb-0 mb-0 border-b-0{% endblock %} {% block header_actions %}
+<div class="flex items-center border border-notion-border rounded-md overflow-hidden h-8">
+    <button @click="loadDashboard()" title="Refresh" class="px-2.5 h-full bg-notion-bg-hover text-notion-text-secondary hover:bg-notion-bg-active transition-colors flex items-center justify-center border-r border-notion-border">
+        <lucide-icon name="refresh-cw" icon-class="size-4"></lucide-icon>
+    </button>
+    <button
+        @click="toggleEditMode()"
+        :title="editMode ? 'Save layout' : 'Edit layout'"
+        class="px-2.5 h-full transition-colors flex items-center justify-center"
+        :class="editMode ? 'bg-notion-accent text-white hover:bg-notion-accent/80' : 'bg-notion-bg-hover text-notion-text-secondary hover:bg-notion-bg-active'">
+        <lucide-icon :name="editMode ? 'save' : 'pencil'" icon-class="size-4"></lucide-icon>
+    </button>
+</div>
+{% endblock %} {% block extra_head %} {% endblock %} {% block content %}
+<div class="flex flex-col gap-6" ref="cardContainer">
+    <section v-if="showUpdateBanner" class="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div class="flex items-start gap-2">
+            <lucide-icon name="badge-alert" icon-class="size-4 text-amber-400 mt-0.5"></lucide-icon>
+            <div class="text-xs leading-relaxed">
+                <div class="text-notion-text-primary font-semibold">Update available: {{ latestVersionLabel }}</div>
+                <div class="text-notion-text-secondary">Running {{ appVersionLabel }}. Open Settings to install from GitHub, upload a ZIP, or roll back.</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="/settings#updates" class="px-3 h-8 rounded border border-notion-border bg-notion-bg text-notion-text-primary text-xs font-medium flex items-center">Open Updates</a>
+            <button @click="dismissUpdateBanner" class="px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary text-xs font-medium">Dismiss</button>
+        </div>
+    </section>
+
+    <!-- Primary Stats Section -->
+    <section
+        v-if="shouldRenderCard('overview')"
+        class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-all duration-200"
+        :class="[cardDragClass('overview'), dashboardCardStateClass('overview')]"
+        :style="{ order: cardOrder('overview') }"
+        data-card="overview"
+        :draggable="editMode"
+        @dragstart="onCardDragStart($event, 'overview')"
+        @dragover.prevent="onCardDragOver($event, 'overview')"
+        @drop="onCardDrop($event, 'overview')"
+        @dragend="onCardDragEnd()">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none" @click="toggleSection('overview')">
+            <div class="flex items-center gap-2">
+                <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded" @click.stop>
+                    <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <lucide-icon :name="isSectionExpanded('overview') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="layout-grid" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Overview</h2>
+            </div>
+            <div class="flex items-center gap-2" @click.stop>
+                <button
+                    v-show="editMode"
+                    @click="toggleDashboardCard('overview')"
+                    :class="['dashboard-toggle-btn', isDashboardCardEnabled('overview') ? 'is-enabled' : '']"
+                    :title="isDashboardCardEnabled('overview') ? 'Disable card' : 'Enable card'"
+                    class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <lucide-icon :name="isDashboardCardEnabled('overview') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                    <span>{{ isDashboardCardEnabled('overview') ? 'Disable' : 'Enable' }}</span>
+                </button>
+            </div>
+        </div>
+        <div :class="sectionContentClass('overview')">
+            <div>
+                <div class="p-3">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 relative">
+                        <!-- Last 24h -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-green-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="calendar-check" icon-class="size-3.5 text-notion-success"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Last 24h</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.today }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Rolling 24h Window</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Total Inventories -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-indigo-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="folder-open" icon-class="size-3.5 text-indigo-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Total (TV/Movies)</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.totalInventory.pending }} / {{ stats.totalInventory.complete }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Total items</div>
+                                <div class="infotip-footer">Inventory breakdown: Pending / Complete</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Total Uploads (all-time DB count) -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger" title="Total releases successfully uploaded since start of database">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-notion-accent-muted rounded-md flex items-center justify-center shrink-0">
+                                    <img src="/assets/images/logo.png" alt="NZBPostarr" class="dark:hidden size-4 object-contain" />
+                                    <img src="/assets/images/logo_white.png" alt="NZBPostarr" class="hidden dark:block size-4 object-contain" />
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Total Uploads</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.total }}</p>
+                                </div>
+                            </div>
+                            <div class="infotip-content">
+                                <div class="infotip-header">All-time uploaded (DB count)</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- 24h Avg Speed -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger" title="Average speed from last 24 hours">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-yellow-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="zap" icon-class="size-3.5 text-notion-warning"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">24h Avg Speed</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ formatSpeed(stats.speed) }}</p>
+                                </div>
+                            </div>
+                            <div class="infotip-content">
+                                <div class="infotip-header">Average upload speed (last 24h)</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- GB per Hour -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger" title="GB uploaded per hour of active upload time (24h window)">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-emerald-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="gauge" icon-class="size-3.5 text-emerald-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">GB/Hour</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.gbPerHour }}</p>
+                                </div>
+                            </div>
+                            <div class="infotip-content">
+                                <div class="infotip-header">GB per active upload hour (last 24h)</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- TV Pending -->
+                        <div v-if="isTvEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-cyan-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="tv" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">TV Pending</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.tv.pending }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('tv')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- TV Complete -->
+                        <div v-if="isTvEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-teal-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="tv-2" icon-class="size-3.5 text-teal-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">TV Complete</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.tv.complete }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('tv')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- TV Episodes -->
+                        <div v-if="isTvEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-violet-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="list-video" icon-class="size-3.5 text-violet-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">TV (Episodes)</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.tv.episodes.uploaded }} / {{ stats.tv.episodes.total }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('tv')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Movies Pending -->
+                        <div v-if="isMoviesEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-rose-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="film" icon-class="size-3.5 text-rose-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Movies Pending</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.movies.pending }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('movies')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Movies Complete -->
+                        <div v-if="isMoviesEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-red-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="clapperboard" icon-class="size-3.5 text-red-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Movies Complete</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.movies.complete }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('movies')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Uploads by Indexer Subsection -->
+                    <div class="mt-3 pt-3 border-t border-notion-divider">
+                        <div class="flex items-center gap-2 mb-2">
+                            <lucide-icon name="database" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-xs font-medium text-notion-text-secondary uppercase tracking-wide">Uploads by Indexer</span>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+                            <div
+                                v-for="indexer in loadedIndexers"
+                                :key="indexer.id"
+                                class="bg-notion-bg border border-notion-border rounded-lg p-3 hover:border-notion-accent/30 transition-colors infotip-trigger relative"
+                                :class="[!indexer.enabled ? 'opacity-40 grayscale' : '', indexer.search_url && indexer.enabled ? 'cursor-pointer' : '']">
+                                <!-- Enable/Disable toggle -->
+                                <label class="absolute top-1.5 right-1.5 z-5 cursor-pointer opacity-50 hover:opacity-100 transition-opacity" @click.stop title="Toggle indexer on/off">
+                                    <input type="checkbox" :checked="indexer.enabled" @change="toggleIndexer(indexer)" class="size-2.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                                </label>
+                                <a v-if="indexer.search_url && indexer.enabled" :href="getSearchUrl(indexer)" target="_blank" class="absolute inset-0 z-1 rounded-lg"></a>
+                                <div class="flex items-center gap-2 relative z-0">
+                                    <div class="size-7 rounded-md flex items-center justify-center shrink-0 bg-notion-bg-hover">
+                                        <img v-if="indexer.favicon_url && !indexer.faviconError" :src="indexer.favicon_url" referrerpolicy="no-referrer" class="size-4 object-contain" @error="handleFaviconError(indexer)" />
+                                        <lucide-icon v-else :name="indexer.icon || 'database'" :icon-class="['size-3.5', getColorClasses(indexer.color).text]" :icon-style="getColorClasses(indexer.color).style?.text"></lucide-icon>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-[10px] text-notion-text-tertiary uppercase tracking-wide truncate">{{ indexer.name }}</p>
+                                        <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ formatIndexerStats(indexer.stats) }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    {% include "partials/upload_form.html" %} {% include "partials/stream_form.html" %}
+
+    <!-- Active Job Section (Collapsible) -->
+    <section
+        v-if="shouldRenderCard('active-jobs')"
+        class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden transition-all duration-200"
+        :class="[cardDragClass('active-jobs'), dashboardCardStateClass('active-jobs')]"
+        :style="{ order: cardOrder('active-jobs') }"
+        data-card="active-jobs"
+        :draggable="editMode"
+        @dragstart="onCardDragStart($event, 'active-jobs')"
+        @dragover.prevent="onCardDragOver($event, 'active-jobs')"
+        @drop="onCardDrop($event, 'active-jobs')"
+        @dragend="onCardDragEnd()">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none" @click="toggleSection('active-jobs')">
+            <div class="flex items-center gap-2 min-w-0 overflow-hidden">
+                <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded shrink-0" @click.stop>
+                    <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <lucide-icon :name="isSectionExpanded('active-jobs') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="activity" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Active Job</h2>
+                <span v-if="primaryRunningJob" class="px-1.5 py-0.5 bg-notion-accent-muted text-notion-accent rounded text-xs font-medium">Running</span>
+                <!-- Header Summary (only when collapsed) -->
+                <div v-if="!isSectionExpanded('active-jobs') && primaryRunningJob" class="flex items-center gap-1.5 ml-2 truncate flex-1">
+                    <span class="opacity-60 text-xs text-notion-text-tertiary">|</span>
+                    <span class="text-xs text-notion-text-tertiary truncate">{{ primaryRunningJob.current_item || primaryRunningJob.category }}</span>
+                    <span class="text-xs text-notion-accent font-medium">{{ jobItemPercent(primaryRunningJob) }}</span>
+                    <span v-if="primaryRunningJob.item_size_str" class="text-notion-text-tertiary px-1 bg-notion-bg rounded uppercase text-[10px]">{{ primaryRunningJob.item_size_str }}</span>
+                </div>
+                <div v-if="!isSectionExpanded('active-jobs') && !primaryRunningJob && nextQueueItem" class="flex items-center gap-1.5 ml-2 truncate flex-1">
+                    <span class="opacity-60 text-xs text-notion-text-tertiary">|</span>
+                    <span class="text-[10px] text-notion-text-tertiary">Idle</span>
+                    <span class="opacity-40 text-xs text-notion-text-tertiary">&mdash;</span>
+                    <span class="text-xs text-notion-text-tertiary truncate">Next: {{ nextQueueItem.name }}</span>
+                </div>
+                <div v-if="!isSectionExpanded('active-jobs') && !primaryRunningJob && !nextQueueItem && streamMonitorRows.length" class="flex items-center gap-1.5 ml-2 truncate flex-1">
+                    <span class="opacity-60 text-xs text-notion-text-tertiary">|</span>
+                    <span class="text-[10px] text-notion-text-tertiary">Watching</span>
+                    <span class="opacity-40 text-xs text-notion-text-tertiary">&mdash;</span>
+                    <span class="text-xs text-notion-text-tertiary truncate">{{ monitorRowTitle(streamMonitorRows[0]) }}</span>
+                    <span class="text-xs text-notion-accent font-medium">{{ monitorRowStatusLabel(streamMonitorRows[0]) }}</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2" @click.stop>
+                <a v-show="isSectionExpanded('active-jobs')" href="/queue" class="shrink-0 text-xs text-notion-accent hover:underline transition-colors">View Queue</a>
+                <button
+                    v-show="editMode"
+                    @click="toggleDashboardCard('active-jobs')"
+                    :class="['dashboard-toggle-btn', isDashboardCardEnabled('active-jobs') ? 'is-enabled' : '']"
+                    :title="isDashboardCardEnabled('active-jobs') ? 'Disable card' : 'Enable card'"
+                    class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <lucide-icon :name="isDashboardCardEnabled('active-jobs') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                    <span>{{ isDashboardCardEnabled('active-jobs') ? 'Disable' : 'Enable' }}</span>
+                </button>
+            </div>
+        </div>
+        <div :class="sectionContentClass('active-jobs')">
+            <div>
+                <!-- Running Job -->
+                <div v-if="primaryRunningJob" class="p-4 bg-notion-bg hover:bg-notion-bg-hover transition-all duration-300 overflow-hidden min-w-0">
+                    <div class="flex items-center justify-between mb-3">
+                        <div class="flex items-center gap-3 min-w-0 overflow-hidden">
+                            <div :class="jobStatusBgClass(primaryRunningJob)" class="shrink-0">
+                                <lucide-icon :name="getStatusConfig(primaryRunningJob.status).icon" icon-class="size-4" :icon-class="getStatusConfig(primaryRunningJob.status).color"></lucide-icon>
+                            </div>
+                            <div class="min-w-0">
+                                <h3 class="text-sm font-medium text-notion-text-primary leading-none mb-1 truncate">{{ jobTitle(primaryRunningJob) }}</h3>
+                                <div class="flex items-center gap-2 uppercase tracking-wider text-notion-text-tertiary text-[10px]">
+                                    <span class="normal-case tracking-normal truncate max-w-56 sm:max-w-80">{{ jobDisplayName(primaryRunningJob) }}</span>
+                                    <span class="opacity-60">&bull;</span>
+                                    <span>{{ primaryRunningJob.job_id }}</span>
+                                    <span class="opacity-60">&bull;</span>
+                                    <span>{{ formatDate(primaryRunningJob.started_at) }}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 shrink-0">
+                            <div :class="jobSpeedBadgeClass()">
+                                <span class="w-1.5 h-1.5 bg-notion-accent rounded-full animate-pulse"></span>
+                                {{ jobDisplaySpeed(primaryRunningJob) }}
+                            </div>
+                            <button @click="stopJob(primaryRunningJob.job_id)" class="p-1 hover:text-notion-error transition-colors flex items-center gap-1" title="Stop Job">
+                                <lucide-icon name="stop-circle" icon-class="size-4"></lucide-icon>
+                                <span class="text-[10px] font-bold uppercase">Stop</span>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="space-y-1.5 min-w-0 overflow-hidden">
+                        <div class="flex justify-between text-[11px] min-w-0">
+                            <span :class="jobInfoClass()">{{ jobItemInfo(primaryRunningJob) }}</span>
+                            <span :class="jobPctClass()" class="shrink-0 ml-2">{{ jobItemPercent(primaryRunningJob) }}</span>
+                        </div>
+                        <div class="h-1.5 bg-notion-bg-secondary rounded-full overflow-hidden">
+                            <div class="h-full bg-notion-accent rounded-full transition-all duration-500 ease-out" :style="{width: jobItemPercent(primaryRunningJob)}"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-notion-text-tertiary">
+                            <span>{{ jobItemCount(primaryRunningJob) }}</span>
+                            <span>{{ jobItemSize(primaryRunningJob) }} total</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="streamMonitorRows.length" class="px-4 py-3 bg-notion-bg border-t border-notion-divider space-y-3">
+                    <div class="flex items-center justify-between gap-3">
+                        <div>
+                            <div class="text-xs font-semibold text-notion-text-primary">Stream Monitors</div>
+                            <div class="text-[11px] text-notion-text-tertiary">Watched folders with their latest stream job status.</div>
+                        </div>
+                        <span class="px-2 py-0.5 rounded bg-notion-bg-hover text-notion-text-secondary text-[10px] font-bold uppercase">{{ streamMonitorRows.length }} active</span>
+                    </div>
+                    <div class="space-y-2">
+                        <div v-for="monitor in streamMonitorRows" :key="monitor.id" class="rounded-lg border border-notion-border bg-notion-bg-secondary/70 px-3 py-3">
+                            <div class="flex items-start justify-between gap-3">
+                                <div class="min-w-0 flex items-start gap-3">
+                                    <div class="size-8 rounded-lg flex items-center justify-center bg-notion-bg-hover shrink-0">
+                                        <lucide-icon :name="monitor.active ? 'radio' : 'folder'" icon-class="size-4 text-notion-accent"></lucide-icon>
+                                    </div>
+                                    <div class="min-w-0">
+                                        <div class="flex flex-wrap items-center gap-2">
+                                            <h3 class="text-sm font-medium text-notion-text-primary truncate">{{ monitorRowTitle(monitor) }}</h3>
+                                            <span :class="monitorRowStatusClass(monitor)" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">{{ monitorRowStatusLabel(monitor) }}</span>
+                                        </div>
+                                        <div class="mt-1 text-[11px] text-notion-text-tertiary truncate">{{ shortPath(monitor.folder_path) }}</div>
+                                        <div class="mt-1 text-[10px] text-notion-text-tertiary uppercase tracking-wider">{{ monitorRowMeta(monitor) }}</div>
+                                    </div>
+                                </div>
+                                <button
+                                    v-if="monitor.currentJob && ['running', 'queued', 'paused', 'stopping'].includes(monitor.currentJob.status)"
+                                    @click="stopJob(monitor.currentJob.job_id)"
+                                    class="p-1 hover:text-notion-error transition-colors flex items-center gap-1 shrink-0"
+                                    title="Stop Job">
+                                    <lucide-icon name="stop-circle" icon-class="size-4"></lucide-icon>
+                                    <span class="text-[10px] font-bold uppercase">Stop</span>
+                                </button>
+                            </div>
+                            <div class="mt-3 space-y-1.5 min-w-0 overflow-hidden">
+                                <div class="flex justify-between text-[11px] min-w-0">
+                                    <span :class="jobInfoClass()">{{ monitorRowInfo(monitor) }}</span>
+                                    <span :class="jobPctClass()" class="shrink-0 ml-2">{{ monitorRowPercent(monitor) }}</span>
+                                </div>
+                                <div class="h-1.5 bg-notion-bg rounded-full overflow-hidden">
+                                    <div class="h-full bg-notion-accent rounded-full transition-all duration-500 ease-out" :style="{width: monitorRowPercent(monitor)}"></div>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-notion-text-tertiary">
+                                    <span>{{ monitor.displayJob ? jobItemCount(monitor.displayJob) : 'Watching for new files' }}</span>
+                                    <span>{{ monitor.displayJob ? jobItemSize(monitor.displayJob) : 'No jobs yet' }}</span>
+                                </div>
+                                <div class="flex justify-between text-[10px] text-notion-text-tertiary">
+                                    <span>{{ monitor.currentJob ? 'Live job ' + monitor.currentJob.job_id : 'Last update ' + monitorRowUpdated(monitor) }}</span>
+                                    <span v-if="monitor.displayJob && monitor.displayJob.job_id">Job {{ monitor.displayJob.job_id }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Next Queue Item (peek — max 1) -->
+                <div v-if="nextQueueItem" class="flex items-center gap-3 px-4 py-2.5 bg-notion-bg border-t border-notion-divider">
+                    <div class="size-6 rounded flex items-center justify-center bg-notion-bg-hover shrink-0">
+                        <lucide-icon name="clock" icon-class="size-3 text-notion-text-tertiary"></lucide-icon>
+                    </div>
+                    <span class="text-[10px] font-bold text-notion-text-tertiary uppercase tracking-wider shrink-0">Up Next</span>
+                    <span :class="categoryBadgeClass(nextQueueItem.category)" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0">{{ nextQueueItem.category }}</span>
+                    <span class="text-xs text-notion-text-primary truncate flex-1 min-w-0">{{ nextQueueItem.name }}</span>
+                    <span v-if="queueItemCount > 1" class="text-[10px] text-notion-text-tertiary shrink-0">+{{ queueItemCount - 1 }} more</span>
+                </div>
+
+                <!-- Idle State -->
+                <div v-if="!primaryRunningJob && !nextQueueItem && !streamMonitorRows.length" class="px-4 py-6 text-center text-notion-text-tertiary text-sm">
+                    <lucide-icon name="coffee" icon-class="size-8 mx-auto mb-2 opacity-30"></lucide-icon>
+                    <p>Idle &mdash; no active job</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Console Output (Collapsible, Resizable, default collapsed) -->
+    <section
+        v-if="shouldRenderCard('console')"
+        :class="[consoleSectionClass, cardDragClass('console'), dashboardCardStateClass('console')]"
+        class="transition-all duration-200"
+        :style="{ order: cardOrder('console') }"
+        data-card="console"
+        :draggable="editMode"
+        @dragstart="onCardDragStart($event, 'console')"
+        @dragover.prevent="onCardDragOver($event, 'console')"
+        @drop="onCardDrop($event, 'console')"
+        @dragend="onCardDragEnd()">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none console-header" @click="toggleSection('console')">
+            <div class="flex items-center gap-2 shrink-0">
+                <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded" @click.stop>
+                    <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <lucide-icon :name="isSectionExpanded('console') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="terminal" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Console Output</h2>
+            </div>
+            <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3" @click.stop>
+                <div class="flex flex-wrap items-center gap-2 sm:gap-3 console-controls-row" v-show="isSectionExpanded('console')">
+                    <!-- Activity indicator - shown when job is running -->
+                    <span v-show="isJobRunning" class="flex items-center gap-1.5">
+                        <span class="size-2 bg-notion-accent rounded-full animate-pulse"></span>
+                        <span class="text-xs text-notion-accent hidden xs:inline">Processing...</span>
+                    </span>
+                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer" title="Expand console width">
+                        <input type="checkbox" v-model="consoleConfig.wide" class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                        Wide
+                    </label>
+                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer" title="Wrap long console lines">
+                        <input type="checkbox" v-model="consoleConfig.wordWrap" class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                        Wrap
+                    </label>
+                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer">
+                        <input type="checkbox" v-model="consoleConfig.autoScroll" checked class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                        Auto-scroll
+                    </label>
+                    <button @click="copyConsoleLogs()" class="flex items-center text-xs text-notion-text-tertiary hover:text-notion-accent transition-colors" title="Copy to clipboard">
+                        <lucide-icon name="copy" icon-class="size-3.5"></lucide-icon>
+                    </button>
+                    <button @click="clearConsoleLogs()" class="flex items-center text-xs text-notion-text-tertiary hover:text-notion-text-secondary transition-colors" title="Clear console">
+                        <lucide-icon name="x" icon-class="size-3.5"></lucide-icon>
+                    </button>
+                    <a href="/api/console/log-file" target="_blank" class="flex items-center text-xs text-notion-text-tertiary hover:text-notion-accent transition-colors" title="Open raw log file">
+                        <lucide-icon name="file-text" icon-class="size-3.5"></lucide-icon>
+                    </a>
+                </div>
+                <button
+                    v-show="editMode"
+                    @click="toggleDashboardCard('console')"
+                    :class="['dashboard-toggle-btn', isDashboardCardEnabled('console') ? 'is-enabled' : '']"
+                    :title="isDashboardCardEnabled('console') ? 'Disable card' : 'Enable card'"
+                    class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <lucide-icon :name="isDashboardCardEnabled('console') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                    <span>{{ isDashboardCardEnabled('console') ? 'Disable' : 'Enable' }}</span>
+                </button>
+            </div>
+        </div>
+        <div :class="sectionContentClass('console')">
+            <div class="console-inner">
+                <div ref="consoleScroller" :style="{ height: consoleConfig.height + 'px' }" :class="consoleInnerClass">
+                    <div v-if="consoleLogs.length === 0" class="text-notion-text-tertiary">Waiting for logs...</div>
+                    <div v-for="log in consoleLogs" :key="log.id" :class="logClass(log)">
+                        <span class="opacity-60 text-notion-text-tertiary">
+                            [
+                            <span v-if="log.ts_date" class="hidden sm:inline">{{ log.ts_date }}</span>
+                            {{ log.ts_time }} ]
+                        </span>
+                        <span>
+                            <template v-for="(seg, i) in log.segments" :key="i">
+                                <span :class="seg.cls" :style="seg.style">{{ seg.text }}</span>
+                            </template>
+                        </span>
+                    </div>
+                    <div ref="consoleTarget" class="console-scroll-target h-0"></div>
+                </div>
+                <!-- Resize handle -->
+                <div @mousedown="initResize" class="absolute bottom-0 right-0 size-4 cursor-se-resize flex items-center justify-center" title="Drag to resize">
+                    <svg class="size-3 text-notion-text-tertiary" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22 22H20V20H22V22ZM22 18H20V16H22V18ZM18 22H16V20H18V22ZM22 14H20V12H22V14ZM18 18H16V16H18V18ZM14 22H12V20H14V22Z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Server Stats Section (Collapsible) -->
+    <section
+        v-if="uiSettings.dashboard_stats_enabled && shouldRenderCard('server-stats')"
+        class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-all duration-200"
+        :class="[cardDragClass('server-stats'), dashboardCardStateClass('server-stats')]"
+        :style="{ order: cardOrder('server-stats') }"
+        data-card="server-stats"
+        :draggable="editMode"
+        @dragstart="onCardDragStart($event, 'server-stats')"
+        @dragover.prevent="onCardDragOver($event, 'server-stats')"
+        @drop="onCardDrop($event, 'server-stats')"
+        @dragend="onCardDragEnd()">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none" @click="toggleSection('server-stats')">
+            <div class="flex items-center gap-2">
+                <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded shrink-0" @click.stop>
+                    <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <lucide-icon :name="isSectionExpanded('server-stats') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="cpu" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Server Stats</h2>
+                <span class="text-xs text-notion-text-tertiary ml-1 hidden sm:inline">{{ serverStats.hostname }}</span>
+            </div>
+            <div class="flex items-center gap-2" @click.stop>
+                <button v-show="isSectionExpanded('server-stats')" @click="refreshServerStats()" class="text-xs text-notion-text-tertiary hover:text-notion-text-secondary transition-colors flex items-center gap-1">
+                    <lucide-icon name="refresh-cw" icon-class="size-3"></lucide-icon>
+                    Refresh
+                </button>
+                <button
+                    v-show="editMode"
+                    @click="toggleDashboardCard('server-stats')"
+                    :class="['dashboard-toggle-btn', isDashboardCardEnabled('server-stats') ? 'is-enabled' : '']"
+                    :title="isDashboardCardEnabled('server-stats') ? 'Disable card' : 'Enable card'"
+                    class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <lucide-icon :name="isDashboardCardEnabled('server-stats') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                    <span>{{ isDashboardCardEnabled('server-stats') ? 'Disable' : 'Enable' }}</span>
+                </button>
+            </div>
+        </div>
+        <div :class="sectionContentClass('server-stats')">
+            <div>
+                <div class="p-3">
+                    <!-- System Info Row -->
+                    <div class="flex items-center gap-4 mb-2 text-xs text-notion-text-tertiary">
+                        <span class="flex items-center gap-1">
+                            <lucide-icon name="monitor" icon-class="size-3"></lucide-icon>
+                            <span>{{ serverStats.platform || '-' }}</span>
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <lucide-icon name="clock" icon-class="size-3"></lucide-icon>
+                            <span>Uptime: {{ formatUptime(serverStats.uptime_seconds) }}</span>
+                        </span>
+                    </div>
+
+                    <div v-if="editMode" class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <span class="px-2 py-1 rounded-full bg-notion-bg border border-notion-border text-[10px] font-semibold uppercase tracking-wide text-notion-text-secondary">{{ orderedEnabledServerStatsModules.length }}/6 enabled</span>
+                    </div>
+
+                    <!-- System Stats (Dynamic Cards) -->
+                    <div v-if="editMode" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
+                        <div
+                            v-for="mod in serverStatsEditorModules"
+                            :key="mod.id"
+                            :class="[serverStatsModuleDragClass(mod.id), !mod.enabled ? 'dashboard-card-disabled' : '']"
+                            class="relative rounded-lg transition-all duration-200"
+                            :draggable="editMode"
+                            @dragstart="onServerStatsModuleDragStart($event, mod.id)"
+                            @dragover.prevent="onServerStatsModuleDragOver($event, mod.id)"
+                            @drop="onServerStatsModuleDrop($event, mod.id)"
+                            @dragend="onServerStatsModuleDragEnd()">
+                            <button @click.stop="toggleServerStatsModule(mod.id)" :class="['dashboard-toggle-icon-btn', mod.enabled ? 'is-enabled' : '']" :title="mod.enabled ? 'Disable' : 'Enable'" class="absolute top-2 right-2 z-10">
+                                <lucide-icon :name="mod.enabled ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                            <stats-card :title="mod.title" :icon="mod.icon" :color="mod.color" :value="mod.value" :unit="mod.unit" :progress="mod.progress" :spark-data="mod.sparkData" :peak-key="mod.peakKey" :value-suffix="mod.valueSuffix">
+                                <template #extra v-if="mod.extra">
+                                    <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ mod.extra }}</p>
+                                </template>
+                            </stats-card>
+                        </div>
+                    </div>
+                    <div v-else-if="uiSettings.dashboard_stats_enabled" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
+                        <stats-card v-for="mod in serverStatsList" :key="mod.id" :title="mod.title" :icon="mod.icon" :color="mod.color" :value="mod.value" :unit="mod.unit" :progress="mod.progress" :spark-data="mod.sparkData" :peak-key="mod.peakKey" :value-suffix="mod.valueSuffix">
+                            <template #extra v-if="mod.extra">
+                                <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ mod.extra }}</p>
+                            </template>
+                        </stats-card>
+                    </div>
+                    <div v-else class="rounded-lg border border-dashed border-notion-border bg-notion-bg px-4 py-6 text-center text-sm text-notion-text-tertiary mb-6">No server stat cards are enabled.</div>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %} {% block scripts %}
+<script type="module" crossorigin src="/assets/js/dist/pages/dashboard.js?t=[[ cache_bust ]]"></script>
+{% endblock %}

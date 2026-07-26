@@ -1,0 +1,47 @@
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  darkMode: 'class',
+  content: ['./*.html', './partials/**/*.html', './assets/js/**/*.js'],
+  theme: {
+    screens: { xs: '400px', sm: '640px', md: '768px', lg: '1024px', xl: '1280px' },
+    extend: {
+      keyframes: {
+        'slide-in': { '0%': { transform: 'translateX(100%)', opacity: '0' }, '100%': { transform: 'translateX(0)', opacity: '1' } },
+      },
+      animation: { 'slide-in': 'slide-in 0.2s ease-out' },
+      colors: {
+        'notion-bg': 'var(--notion-bg)',
+        'notion-bg-secondary': 'var(--notion-bg-secondary)',
+        'notion-bg-elevated': 'var(--notion-bg-elevated)',
+        'notion-bg-hover': 'var(--notion-bg-hover)',
+        'notion-bg-active': 'var(--notion-bg-active)',
+        'notion-text-primary': 'var(--notion-text-primary)',
+        'notion-text-secondary': 'var(--notion-text-secondary)',
+        'notion-text-tertiary': 'var(--notion-text-tertiary)',
+        'notion-text-placeholder': 'var(--notion-text-placeholder)',
+        'notion-link': 'var(--notion-link)',
+        'notion-border': 'var(--notion-border)',
+        'notion-border-strong': 'var(--notion-border-strong)',
+        'notion-divider': 'var(--notion-divider)',
+        'notion-accent': 'var(--notion-accent)',
+        'notion-accent-muted': 'var(--notion-accent-muted)',
+        'notion-success': 'var(--notion-success)',
+        'notion-warning': 'var(--notion-warning)',
+        'notion-error': 'var(--notion-error)',
+        'idx-purple': 'var(--idx-purple)',
+        'idx-orange': 'var(--idx-orange)',
+        'idx-blue': 'var(--idx-blue)',
+        'idx-pink': 'var(--idx-pink)',
+        'idx-green': 'var(--idx-green)',
+        'idx-cyan': 'var(--idx-cyan)',
+        'idx-rose': 'var(--idx-rose)',
+        'idx-red': 'var(--idx-red)',
+        'idx-amber': 'var(--idx-amber)',
+      },
+      fontFamily: {
+        sans: ['ui-sans-serif', '-apple-system', 'BlinkMacSystemFont', '"Segoe UI Variable Display"', '"Segoe UI"', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', '"Fira Sans"', '"Droid Sans"', '"Helvetica Neue"', 'sans-serif'],
+        mono: ['"SFMono-Regular"', 'Menlo', 'Consolas', '"PT Mono"', '"Liberation Mono"', 'Courier', 'monospace'],
+      },
+    },
+  },
+};

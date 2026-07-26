@@ -1,0 +1,147 @@
+<!-- Bulk Upload Section (Collapsible, inline) -->
+<section
+    v-if="shouldRenderCard('new-upload')"
+    class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-all duration-200"
+    :class="[cardDragClass('new-upload'), dashboardCardStateClass('new-upload')]"
+    :style="{ order: cardOrder('new-upload') }"
+    data-card="new-upload"
+    :draggable="editMode"
+    @dragstart="onCardDragStart($event, 'new-upload')"
+    @dragover.prevent="onCardDragOver($event, 'new-upload')"
+    @drop="onCardDrop($event, 'new-upload')"
+    @dragend="onCardDragEnd()">
+    <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none" @click="toggleSection('new-upload')">
+        <div class="flex items-center gap-2">
+            <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded" @click.stop>
+                <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+            </div>
+            <lucide-icon :name="isSectionExpanded('new-upload') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+            <lucide-icon name="upload" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Bulk Upload</h2>
+        </div>
+        <div class="flex items-center gap-2" @click.stop>
+            <div class="relative group">
+                <button type="button" class="p-1.5 rounded-md text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover transition-colors" aria-label="Bulk upload help">
+                    <lucide-icon name="info" icon-class="size-4"></lucide-icon>
+                </button>
+                <div class="absolute right-0 top-full mt-2 w-80 rounded-lg border border-notion-border bg-notion-bg shadow-xl p-3 text-xs leading-relaxed text-notion-text-secondary opacity-0 invisible -translate-y-1 group-hover:opacity-100 group-hover:visible group-hover:translate-y-0 transition-all z-50 pointer-events-none">
+                    Bulk Upload scans the selected folder paths, groups matches by category, and starts one job per category so multiple queues can run from one action. Category and folder-path filters narrow what gets scanned, indexer selections restrict where uploads go, and Limit caps successful uploads per started job. Test Mode runs the pipeline without posting.
+                </div>
+            </div>
+            <button
+                v-show="editMode"
+                @click="toggleDashboardCard('new-upload')"
+                :class="['dashboard-toggle-btn', isDashboardCardEnabled('new-upload') ? 'is-enabled' : '']"
+                :title="isDashboardCardEnabled('new-upload') ? 'Disable card' : 'Enable card'"
+                class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                <lucide-icon :name="isDashboardCardEnabled('new-upload') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                <span>{{ isDashboardCardEnabled('new-upload') ? 'Disable' : 'Enable' }}</span>
+            </button>
+        </div>
+    </div>
+    <div :class="sectionContentClass('new-upload')">
+        <div>
+            <form @submit.prevent="handleUploadSubmit" class="p-4">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-4">
+                    <div class="setting-item flex flex-col gap-1.5 relative" data-upload-filter-dropdown>
+                        <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Category</label>
+                        <button type="button" @click.stop="toggleUploadDropdown('category')" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2.5 h-9 sm:h-8 rounded border border-notion-border flex items-center justify-between gap-2 hover:bg-notion-bg-hover transition-colors text-left">
+                            <span class="truncate">{{ uploadCategorySummary() }}</span>
+                            <lucide-icon :name="activeUploadDropdown === 'category' ? 'chevron-up' : 'chevron-down'" icon-class="size-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
+                        </button>
+                        <div v-if="activeUploadDropdown === 'category'" class="absolute left-0 right-0 top-full mt-1 rounded-lg border border-notion-border bg-notion-bg shadow-xl z-40 overflow-hidden">
+                            <label v-for="cat in uploadCategoryOptions" :key="cat.value" class="flex items-center gap-2 px-3 py-2 text-xs text-notion-text-primary hover:bg-notion-bg-hover cursor-pointer">
+                                <input type="checkbox" :checked="isUploadCategorySelected(cat.value)" @change="toggleUploadCategory(cat.value)" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span>{{ cat.label }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="setting-item flex flex-col gap-1.5 relative" data-upload-filter-dropdown>
+                        <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Folder Paths</label>
+                        <button type="button" @click.stop="toggleUploadDropdown('folder-paths')" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2.5 h-9 sm:h-8 rounded border border-notion-border flex items-center justify-between gap-2 hover:bg-notion-bg-hover transition-colors text-left">
+                            <span class="truncate">{{ uploadFolderSummary() }}</span>
+                            <lucide-icon :name="activeUploadDropdown === 'folder-paths' ? 'chevron-up' : 'chevron-down'" icon-class="size-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
+                        </button>
+                        <div v-if="activeUploadDropdown === 'folder-paths'" class="absolute left-0 right-0 top-full mt-1 rounded-lg border border-notion-border bg-notion-bg shadow-xl z-40 overflow-hidden max-h-72 overflow-y-auto">
+                            <label class="flex items-center gap-2 px-3 py-2 text-xs text-notion-text-primary hover:bg-notion-bg-hover cursor-pointer border-b border-notion-divider">
+                                <input type="checkbox" :checked="areAllUploadFolderPathsSelected()" @change="clearUploadFolderPaths()" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span>All Paths</span>
+                            </label>
+                            <label v-for="folder in uploadFolderPathOptions" :key="folder.value" class="flex items-center gap-2 px-3 py-2 text-xs text-notion-text-primary hover:bg-notion-bg-hover cursor-pointer">
+                                <input type="checkbox" :checked="isUploadFolderPathSelected(folder.value)" @change="toggleUploadFolderPath(folder.value)" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span class="truncate">{{ folder.label }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="setting-item flex flex-col gap-1.5 relative" data-upload-filter-dropdown>
+                        <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Indexer</label>
+                        <button type="button" @click.stop="toggleUploadDropdown('indexer')" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2.5 h-9 sm:h-8 rounded border border-notion-border flex items-center justify-between gap-2 hover:bg-notion-bg-hover transition-colors text-left">
+                            <span class="truncate">{{ uploadIndexerSummary() }}</span>
+                            <lucide-icon :name="activeUploadDropdown === 'indexer' ? 'chevron-up' : 'chevron-down'" icon-class="size-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
+                        </button>
+                        <div v-if="activeUploadDropdown === 'indexer'" class="absolute left-0 right-0 top-full mt-1 rounded-lg border border-notion-border bg-notion-bg shadow-xl z-40 overflow-hidden max-h-72 overflow-y-auto">
+                            <label class="flex items-center gap-2 px-3 py-2 text-xs text-notion-text-primary hover:bg-notion-bg-hover cursor-pointer border-b border-notion-divider">
+                                <input type="checkbox" :checked="areAllUploadIndexersSelected()" @change="clearUploadIndexers()" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span>All Enabled</span>
+                            </label>
+                            <label v-for="idx in uploadIndexerOptions" :key="idx.id" class="flex items-center gap-2 px-3 py-2 text-xs text-notion-text-primary hover:bg-notion-bg-hover cursor-pointer">
+                                <input type="checkbox" :checked="isUploadIndexerSelected(idx.id)" @change="toggleUploadIndexer(idx.id)" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span class="truncate">{{ idx.name }}</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="setting-item flex flex-col gap-1.5">
+                        <label for="limit_input" class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Limit</label>
+                        <input id="limit_input" type="number" v-model.number="uploadForm.limit" min="1" placeholder="No limit" class="w-full bg-notion-bg text-notion-text-primary text-xs px-3 h-9 sm:h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" />
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-4">
+                    <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <label v-show="showFullTvTest" class="flex items-center gap-2 cursor-pointer group">
+                            <input type="checkbox" v-model="uploadForm.full_tv_test" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent transition-all group-hover:border-notion-accent/50" />
+                            <span class="text-xs text-notion-text-secondary group-hover:text-notion-text-primary transition-colors">Full TV Test</span>
+                        </label>
+
+                        <label class="flex items-center gap-2 cursor-pointer group" title="Bypass the database duplicate check for this job">
+                            <input type="checkbox" v-model="uploadForm.skip_duplicate_check" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent transition-all group-hover:border-notion-accent/50" />
+                            <span class="text-xs text-notion-text-secondary group-hover:text-notion-text-primary transition-colors">Skip Dupe Check</span>
+                        </label>
+
+                        <label v-if="!uploadTargetsMoviesOnly" class="flex items-center gap-2 cursor-pointer group" title="Ignore collection/pack releases and only process individual items">
+                            <input type="checkbox" v-model="uploadForm.skip_packs" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent transition-all group-hover:border-notion-accent/50" />
+                            <span class="text-xs text-notion-text-secondary group-hover:text-notion-text-primary transition-colors">Skip Packs</span>
+                        </label>
+
+                        <label v-if="!uploadTargetsMoviesOnly" class="flex items-center gap-2 cursor-pointer group" title="Skip individual TV episode files and only process season packs">
+                            <input type="checkbox" v-model="uploadForm.skip_episodes" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent transition-all group-hover:border-notion-accent/50" />
+                            <span class="text-xs text-notion-text-secondary group-hover:text-notion-text-primary transition-colors">Skip Episodes</span>
+                        </label>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-3 ml-auto">
+                        <label class="flex items-center gap-2 cursor-pointer group" title="Run the upload process without actually uploading to the indexer">
+                            <input type="checkbox" v-model="uploadForm.test_mode" class="size-4 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent transition-all group-hover:border-notion-accent/50" />
+                            <span class="text-xs text-notion-text-secondary group-hover:text-notion-text-primary transition-colors">Test Mode</span>
+                        </label>
+
+                        <button
+                            type="submit"
+                            :disabled="loading"
+                            :class="[
+                                'w-full xs:w-auto px-6 h-10 sm:h-9 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 active:transform active:scale-95',
+                                isJobRunning ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-notion-accent hover:bg-notion-accent/90 text-white',
+                                loading ? 'opacity-50 cursor-not-allowed' : ''
+                            ]">
+                            <lucide-icon :name="isJobRunning ? 'square' : 'upload-cloud'" icon-class="size-4"></lucide-icon>
+                            <span>{{ submitButtonText }}</span>
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</section>

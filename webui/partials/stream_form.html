@@ -1,0 +1,246 @@
+<!-- Usenet Stream Section (Collapsible, inline) -->
+<section
+    v-if="shouldRenderCard('usenet-stream')"
+    class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-all duration-200"
+    :class="[cardDragClass('usenet-stream'), dashboardCardStateClass('usenet-stream')]"
+    :style="{ order: cardOrder('usenet-stream') }"
+    data-card="usenet-stream"
+    :draggable="editMode"
+    @dragstart="onCardDragStart($event, 'usenet-stream')"
+    @dragover.prevent="onCardDragOver($event, 'usenet-stream')"
+    @drop="onCardDrop($event, 'usenet-stream')"
+    @dragend="onCardDragEnd()">
+    <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none" @click="toggleSection('usenet-stream')">
+        <div class="flex items-center gap-2">
+            <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded" @click.stop>
+                <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+            </div>
+            <lucide-icon :name="isSectionExpanded('usenet-stream') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+            <lucide-icon name="shuffle" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Usenet Stream</h2>
+            <span class="hidden md:block text-xs text-notion-text-tertiary truncate">Repost an NZB directly from Usenet without staging on disk.</span>
+        </div>
+        <div class="flex items-center gap-2" @click.stop>
+            <button
+                v-show="editMode"
+                @click="toggleDashboardCard('usenet-stream')"
+                :class="['dashboard-toggle-btn', isDashboardCardEnabled('usenet-stream') ? 'is-enabled' : '']"
+                :title="isDashboardCardEnabled('usenet-stream') ? 'Disable card' : 'Enable card'"
+                class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                <lucide-icon :name="isDashboardCardEnabled('usenet-stream') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                <span>{{ isDashboardCardEnabled('usenet-stream') ? 'Disable' : 'Enable' }}</span>
+            </button>
+        </div>
+    </div>
+    <div :class="sectionContentClass('usenet-stream')">
+        <div>
+            <form @submit.prevent="handleUsenetStreamSubmit" class="px-4 pt-3 pb-4">
+                <!-- Source Row -->
+                <div class="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-2.5 border-b border-notion-divider">
+                    <span class="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wide text-notion-text-tertiary">Source</span>
+                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 min-w-0">
+                        <div class="inline-flex rounded-md border border-notion-border bg-notion-bg p-0.5 gap-0.5 shrink-0">
+                            <button
+                                type="button"
+                                @click="setStreamSourceMode('upload')"
+                                :class="['px-2.5 h-7 rounded text-xs font-semibold transition-colors', isStreamUploadMode ? 'bg-notion-bg-elevated text-notion-text-primary shadow-sm' : 'text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover']">
+                                Upload NZB
+                            </button>
+                            <button
+                                type="button"
+                                @click="setStreamSourceMode('server_path')"
+                                :class="['px-2.5 h-7 rounded text-xs font-semibold transition-colors', isStreamPathMode ? 'bg-notion-bg-elevated text-notion-text-primary shadow-sm' : 'text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover']">
+                                Server Path
+                            </button>
+                        </div>
+                        <template v-if="isStreamUploadMode">
+                            <input ref="streamNzbPicker" type="file" accept=".nzb,application/x-nzb" class="hidden" @change="handleStreamNzbSelect" />
+                            <input type="text" readonly :value="streamForm.selectedFileName" placeholder="Browser upload for manifest..." class="flex-1 min-w-0 bg-notion-bg text-notion-text-tertiary text-xs px-3 h-8 rounded border border-notion-border cursor-default focus:outline-none" />
+                            <button v-if="streamForm.selectedFile" type="button" @click="clearStreamFile" class="shrink-0 px-2 h-8 text-xs text-notion-text-tertiary hover:text-notion-text-primary transition-colors">×</button>
+                            <button type="button" @click="browseStreamFile" class="shrink-0 px-3 h-8 rounded border border-notion-border bg-notion-bg text-notion-text-secondary hover:bg-notion-bg-hover text-xs font-semibold transition-colors flex items-center gap-1.5">
+                                <lucide-icon name="upload-cloud" icon-class="size-3.5"></lucide-icon>
+                                Choose File...
+                            </button>
+                        </template>
+                        <template v-else>
+                            <input
+                                type="text"
+                                v-model.trim="streamForm.server_path"
+                                placeholder="D:/incoming/example.nzb or watch folder path"
+                                class="flex-1 min-w-0 bg-notion-bg text-notion-text-primary text-xs px-3 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent" />
+                            <button
+                                type="button"
+                                @click="openStreamFolderBrowser()"
+                                class="shrink-0 px-3 h-8 rounded border border-notion-border bg-notion-bg text-notion-text-secondary hover:bg-notion-bg-hover text-xs font-semibold transition-colors flex items-center gap-1.5"
+                                title="Browse server folders">
+                                <lucide-icon name="folder-open" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                            <label class="flex items-center gap-1.5 cursor-pointer group shrink-0">
+                                <input type="checkbox" v-model="streamForm.monitor_folder" class="size-3.5 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span class="text-xs text-notion-text-secondary whitespace-nowrap group-hover:text-notion-text-primary transition-colors">Watch Folder</span>
+                            </label>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- Routing Row -->
+                <div class="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-2.5 border-b border-notion-divider">
+                    <span class="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wide text-notion-text-tertiary">Routing</span>
+                    <div class="flex flex-wrap sm:flex-nowrap items-center gap-2 flex-1 min-w-0">
+                        <select v-model="streamForm.posting_server_name" class="flex-1 min-w-0 bg-notion-bg text-notion-text-primary text-xs px-2.5 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent cursor-pointer">
+                            <option v-for="server in streamPostingServers" :key="server.name" :value="server.name">Server: {{ server.name }}</option>
+                        </select>
+                        <select
+                            v-model="streamForm.indexer_id"
+                            :disabled="!streamUsesIndexerSubmission"
+                            :class="['flex-1 min-w-0 bg-notion-bg text-notion-text-primary text-xs px-2.5 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent cursor-pointer', !streamUsesIndexerSubmission ? 'opacity-50 cursor-not-allowed' : '']">
+                            <option :value="null">Indexer: All Enabled</option>
+                            <option v-for="idx in loadedIndexers.filter(i => i.enabled)" :key="idx.id" :value="idx.id">{{ idx.name }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Execution Row -->
+                <div class="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-2.5" :class="streamForm.show_more_options ? 'border-b border-notion-divider' : ''">
+                    <span class="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wide text-notion-text-tertiary">Execution</span>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 flex-1">
+                        <div class="inline-flex rounded-md border border-notion-border bg-notion-bg p-0.5 gap-0.5 shrink-0">
+                            <button
+                                type="button"
+                                @click="streamForm.submit_mode = 'post_only'"
+                                :class="['px-2.5 h-7 rounded text-xs font-semibold transition-colors', streamForm.submit_mode === 'post_only' ? 'bg-notion-bg-elevated text-notion-text-primary shadow-sm' : 'text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover']">
+                                Post Only
+                            </button>
+                            <button
+                                type="button"
+                                @click="streamForm.submit_mode = 'post_and_submit'"
+                                :class="['px-2.5 h-7 rounded text-xs font-semibold transition-colors', streamForm.submit_mode === 'post_and_submit' ? 'bg-notion-bg-elevated text-notion-text-primary shadow-sm' : 'text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover']">
+                                Post & Submit
+                            </button>
+                        </div>
+                        <div class="flex items-center gap-x-4 ml-auto">
+                            <label class="flex items-center gap-1.5 cursor-pointer group" title="Parse the NZB and validate the source providers without posting the new copy">
+                                <input type="checkbox" v-model="streamForm.test_mode" class="size-3.5 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span class="text-xs text-notion-text-secondary group-hover:text-notion-text-primary transition-colors">Test Mode</span>
+                            </label>
+                            <label class="flex items-center gap-1.5 cursor-pointer group" title="Bypass duplicate checks for the reposted release name">
+                                <input type="checkbox" v-model="streamForm.skip_duplicate_check" class="size-3.5 rounded border-notion-border bg-notion-bg text-notion-accent focus:ring-notion-accent" />
+                                <span class="text-xs text-notion-text-secondary group-hover:text-notion-text-primary transition-colors">Skip Dupe Check</span>
+                            </label>
+                            <button
+                                type="button"
+                                @click="streamForm.show_more_options = !streamForm.show_more_options"
+                                class="inline-flex items-center gap-1.5 px-2.5 h-7 rounded border border-notion-border bg-notion-bg text-xs font-semibold text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover transition-colors">
+                                <span>More</span>
+                                <lucide-icon :name="streamForm.show_more_options ? 'chevron-up' : 'chevron-down'" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- More Row -->
+                <div v-if="streamForm.show_more_options" class="flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2 py-2.5">
+                    <span class="w-20 shrink-0 text-[10px] font-bold uppercase tracking-wide text-notion-text-tertiary">More</span>
+                    <div class="grid grid-cols-2 gap-2 flex-1 min-w-0">
+                        <input type="text" v-model.trim="streamForm.release_name" placeholder="Custom Name (optional)" class="w-full min-w-0 bg-notion-bg text-notion-text-primary text-xs px-3 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent" />
+                        <select v-model="streamForm.category" class="w-full min-w-0 bg-notion-bg text-notion-text-primary text-xs px-2.5 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent cursor-pointer">
+                            <option value="">Category: From NZB</option>
+                            <option v-for="cat in streamCategories" :key="cat.value" :value="cat.value">Category: {{ cat.label }}</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Footer -->
+                <div class="flex justify-end pt-3">
+                    <button
+                        type="submit"
+                        :disabled="streamLoading"
+                        :class="[
+                            'px-5 h-9 rounded-lg text-xs font-bold transition-all flex items-center gap-2 active:transform active:scale-95 bg-notion-accent hover:bg-notion-accent/90 text-white',
+                            streamLoading ? 'opacity-50 cursor-not-allowed' : ''
+                        ]">
+                        <lucide-icon :name="streamLoading ? 'loader-circle' : (streamForm.monitor_folder && isStreamPathMode ? 'folder-plus' : 'play')" icon-class="size-4"></lucide-icon>
+                        <span>{{ streamLoading ? 'Queueing Stream...' : (streamForm.monitor_folder && isStreamPathMode ? 'Save Monitor' : 'Start Stream') }}</span>
+                    </button>
+                </div>
+            </form>
+
+            <div v-if="streamMonitors.length" class="px-4 pb-4">
+                <div class="rounded-lg border border-notion-border bg-notion-bg overflow-hidden">
+                    <div class="px-3 py-2 border-b border-notion-divider flex items-center justify-between gap-3">
+                        <div>
+                            <div class="text-xs font-semibold text-notion-text-primary">Active Stream Monitors</div>
+                            <div class="text-[11px] text-notion-text-tertiary">New NZB files in these folders will queue stream repost jobs automatically.</div>
+                        </div>
+                    </div>
+                    <div class="divide-y divide-notion-divider">
+                        <div v-for="monitor in streamMonitors" :key="monitor.id" class="px-3 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="text-xs font-medium text-notion-text-primary truncate">{{ monitor.folder_path }}</div>
+                                <div class="text-[11px] text-notion-text-tertiary flex flex-wrap gap-x-3 gap-y-1 mt-1">
+                                    <span>Category: {{ monitor.uses_nzb_category ? 'From NZB' : monitor.category }}</span>
+                                    <span>Server: {{ monitor.posting_server_name }}</span>
+                                    <span>Mode: {{ monitor.submit_mode === 'post_only' ? 'Post Only' : 'Post and Submit' }}</span>
+                                    <span v-if="monitor.indexer_id">Indexer: {{ monitor.indexer_id }}</span>
+                                    <span v-else-if="monitor.submit_mode !== 'post_only'">Indexer: All Enabled</span>
+                                </div>
+                            </div>
+                            <button type="button" @click="removeStreamMonitor(monitor.id)" class="self-start md:self-auto px-3 h-8 rounded-md border border-notion-border text-xs font-semibold text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover transition-colors">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stream Folder Browser Modal -->
+    <div v-if="streamFolderBrowser.open" class="fixed inset-0 bg-black/50 z-100 flex items-center justify-center" @click.self="closeStreamFolderBrowser()">
+        <Transition name="modal">
+            <div v-if="streamFolderBrowser.open" class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[70vh]">
+                <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between shrink-0">
+                    <div class="flex items-center gap-2">
+                        <lucide-icon name="folder-open" icon-class="size-4 text-notion-accent"></lucide-icon>
+                        <h3 class="text-sm font-semibold text-notion-text-primary">Browse Folders</h3>
+                    </div>
+                    <button @click="closeStreamFolderBrowser()" class="p-1 rounded hover:bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
+                        <lucide-icon name="x" icon-class="size-4"></lucide-icon>
+                    </button>
+                </div>
+                <div class="px-4 py-2 border-b border-notion-border bg-notion-bg flex items-center gap-2 shrink-0">
+                    <lucide-icon name="map-pin" icon-class="size-3 text-notion-text-tertiary shrink-0"></lucide-icon>
+                    <span class="text-xs font-mono text-notion-text-secondary truncate">{{ streamFolderBrowser.currentPath }}</span>
+                </div>
+                <div class="overflow-y-auto flex-1 min-h-0">
+                    <button v-if="streamFolderBrowser.parentPath !== null" @click="browseStreamTo(streamFolderBrowser.parentPath)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left border-b border-notion-divider">
+                        <lucide-icon name="corner-left-up" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                        <span class="text-xs text-notion-accent font-medium">..</span>
+                    </button>
+                    <div v-if="streamFolderBrowser.loading" class="px-4 py-8 text-center text-notion-text-tertiary">
+                        <lucide-icon name="loader-2" icon-class="size-5 mx-auto mb-2 animate-spin opacity-50"></lucide-icon>
+                        <p class="text-xs">Loading...</p>
+                    </div>
+                    <div v-else-if="streamFolderBrowser.dirs.length === 0" class="px-4 py-8 text-center text-notion-text-tertiary">
+                        <lucide-icon name="folder-x" icon-class="size-6 mx-auto mb-2 opacity-40"></lucide-icon>
+                        <p class="text-xs">No subdirectories found</p>
+                    </div>
+                    <button v-else v-for="dir in streamFolderBrowser.dirs" :key="dir.path" @click="browseStreamTo(dir.path)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left group">
+                        <lucide-icon name="folder" icon-class="size-3.5 text-notion-text-tertiary group-hover:text-notion-accent transition-colors"></lucide-icon>
+                        <span class="text-xs text-notion-text-primary truncate">{{ dir.name }}</span>
+                    </button>
+                </div>
+                <div class="px-4 py-3 border-t border-notion-border flex items-center justify-between shrink-0 bg-notion-bg">
+                    <span class="text-[10px] text-notion-text-tertiary">Navigate to the desired folder, then click Select</span>
+                    <div class="flex items-center gap-2">
+                        <button @click="closeStreamFolderBrowser()" class="px-3 h-8 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
+                        <button @click="selectStreamBrowsedFolder()" class="px-4 h-8 bg-notion-accent text-white rounded-md text-xs font-bold hover:brightness-95 transition-all flex items-center gap-2">
+                            <lucide-icon name="check" icon-class="size-3.5"></lucide-icon>
+                            Select
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </Transition>
+    </div>
+</section>

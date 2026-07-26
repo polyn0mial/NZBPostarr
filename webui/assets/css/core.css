@@ -1,0 +1,960 @@
+/* ============================================================
+   NZBPostarr - Core CSS
+   Mobile-first responsive styles & theme variables
+   ============================================================ */
+
+/* ---- Theme Variables (matches ui_framework_v3_design.md) ---- */
+:root {
+    --notion-bg: #ffffff;
+    --notion-bg-secondary: #f7f7f5;
+    --notion-bg-elevated: #ffffff;
+    --notion-bg-hover: rgba(55, 53, 47, 0.08);
+    --notion-bg-active: rgba(55, 53, 47, 0.16);
+    --notion-text-primary: #37352f;
+    --notion-text-secondary: #73726e;
+    --notion-text-tertiary: #9b9a97;
+    --notion-text-placeholder: rgba(55, 53, 47, 0.2);
+    --notion-link: #2383e2;
+    --notion-border: rgba(55, 53, 47, 0.16);
+    --notion-border-strong: rgba(55, 53, 47, 0.32);
+    --notion-divider: rgba(55, 53, 47, 0.09);
+    --notion-accent: #2383e2;
+    --notion-accent-muted: rgba(35, 131, 226, 0.07);
+    --notion-accent-surface: rgba(35, 131, 226, 0.1);
+    --notion-accent-surface-hover: rgba(35, 131, 226, 0.2);
+    --notion-accent-border: rgba(35, 131, 226, 0.28);
+    --notion-accent-border-strong: rgba(17, 94, 163, 0.68);
+    --notion-success: #0e7a5d;
+    --notion-success-ring: rgba(14, 122, 93, 0.7);
+    --notion-success-surface: rgba(14, 122, 93, 0.1);
+    --notion-success-surface-hover: rgba(14, 122, 93, 0.2);
+    --notion-success-border: rgba(14, 122, 93, 0.26);
+    --notion-warning: #d9730d;
+    --notion-warning-surface: rgba(217, 115, 13, 0.1);
+    --notion-warning-surface-hover: rgba(217, 115, 13, 0.2);
+    --notion-warning-border: rgba(217, 115, 13, 0.26);
+    --notion-error: #d4402a;
+    --notion-error-ring: rgba(212, 64, 42, 0.7);
+    --notion-error-surface: rgba(212, 64, 42, 0.1);
+    --notion-error-surface-hover: rgba(212, 64, 42, 0.2);
+    --notion-error-border: rgba(212, 64, 42, 0.26);
+    --idx-purple: #7c3aed;
+    --idx-orange: #ea580c;
+    --idx-blue: #2563eb;
+    --idx-pink: #db2777;
+    --idx-green: #16a34a;
+    --idx-cyan: #0891b2;
+    --idx-rose: #e11d48;
+    --idx-red: #dc2626;
+    --idx-amber: #d97706;
+}
+
+.dark,
+[data-theme='dark'] {
+    --notion-bg: #191919;
+    --notion-bg-secondary: #202020;
+    --notion-bg-elevated: #252525;
+    --notion-bg-hover: rgba(255, 255, 255, 0.055);
+    --notion-bg-active: rgba(255, 255, 255, 0.08);
+    --notion-text-primary: #ebebeb;
+    --notion-text-secondary: #9b9a97;
+    --notion-text-tertiary: #72706c;
+    --notion-text-placeholder: #5a5a5a;
+    --notion-link: #428efb;
+    --notion-border: rgba(255, 255, 255, 0.09);
+    --notion-border-strong: rgba(255, 255, 255, 0.13);
+    --notion-divider: rgba(255, 255, 255, 0.06);
+    --notion-accent: #428efb;
+    --notion-accent-muted: rgba(66, 142, 251, 0.15);
+    --notion-accent-surface: rgba(66, 142, 251, 0.12);
+    --notion-accent-surface-hover: rgba(66, 142, 251, 0.2);
+    --notion-accent-border: rgba(66, 142, 251, 0.18);
+    --notion-accent-border-strong: rgba(21, 84, 153, 0.58);
+    --notion-success: #4dab9a;
+    --notion-success-ring: rgba(77, 171, 154, 0.7);
+    --notion-success-surface: rgba(77, 171, 154, 0.12);
+    --notion-success-surface-hover: rgba(77, 171, 154, 0.2);
+    --notion-success-border: rgba(77, 171, 154, 0.18);
+    --notion-warning: #cb912f;
+    --notion-warning-surface: rgba(203, 145, 47, 0.12);
+    --notion-warning-surface-hover: rgba(203, 145, 47, 0.2);
+    --notion-warning-border: rgba(203, 145, 47, 0.18);
+    --notion-error: #eb5757;
+    --notion-error-ring: rgba(235, 87, 87, 0.7);
+    --notion-error-surface: rgba(235, 87, 87, 0.12);
+    --notion-error-surface-hover: rgba(235, 87, 87, 0.2);
+    --notion-error-border: rgba(235, 87, 87, 0.18);
+    --idx-purple: #a78bfa;
+    --idx-orange: #fb923c;
+    --idx-blue: #60a5fa;
+    --idx-pink: #f472b6;
+    --idx-green: #4ade80;
+    --idx-cyan: #22d3ee;
+    --idx-rose: #fb7185;
+    --idx-red: #f87171;
+    --idx-amber: #fbbf24;
+}
+
+/* ---- Base Resets ---- */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+input {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Disable number input arrows globally */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+    -webkit-appearance: none !important;
+    margin: 0 !important;
+}
+
+input[type='number'] {
+    -moz-appearance: textfield !important;
+    appearance: none !important;
+}
+
+.dark input[type='date'],
+.dark input[type='time'],
+[data-theme='dark'] input[type='date'],
+[data-theme='dark'] input[type='time'] {
+    color-scheme: dark;
+}
+
+.dark input[type='date']::-webkit-calendar-picker-indicator,
+.dark input[type='time']::-webkit-calendar-picker-indicator,
+[data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator,
+[data-theme='dark'] input[type='time']::-webkit-calendar-picker-indicator {
+    filter: invert(1);
+    opacity: 0.9;
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    box-shadow: none;
+    cursor: pointer;
+    font-size: 0.75rem;
+    line-height: 1;
+    white-space: nowrap;
+    transition:
+        background-color 0.15s ease,
+        border-color 0.15s ease,
+        color 0.15s ease,
+        opacity 0.15s ease;
+}
+
+.action-btn--default {
+    height: 32px;
+    padding-inline: 1rem;
+}
+
+.action-btn--compact {
+    height: 28px;
+    padding-inline: 0.75rem;
+}
+
+.action-btn--accent {
+    background: var(--notion-accent-surface);
+    border-color: var(--notion-accent-border);
+    color: var(--notion-accent);
+}
+
+.action-btn--accent:hover:not(:disabled) {
+    background: var(--notion-accent-surface-hover);
+}
+
+.action-btn--accent-solid {
+    background: var(--notion-accent);
+    border-color: var(--notion-accent-border-strong);
+    color: #ffffff;
+}
+
+.action-btn--accent-solid:hover:not(:disabled) {
+    opacity: 0.9;
+}
+
+.action-btn--success {
+    background: var(--notion-success-surface);
+    border-color: var(--notion-success-border);
+    color: var(--notion-success);
+}
+
+.action-btn--success:hover:not(:disabled) {
+    background: var(--notion-success-surface-hover);
+}
+
+.action-btn--warning {
+    background: var(--notion-warning-surface);
+    border-color: var(--notion-warning-border);
+    color: var(--notion-warning);
+}
+
+.action-btn--warning:hover:not(:disabled) {
+    background: var(--notion-warning-surface-hover);
+}
+
+.action-btn--error {
+    background: var(--notion-error-surface);
+    border-color: var(--notion-error-border);
+    color: var(--notion-error);
+}
+
+.action-btn--error:hover:not(:disabled) {
+    background: var(--notion-error-surface-hover);
+}
+
+button[class~='border-notion-accent/20'],
+button[class~='border-notion-accent/30'],
+a[class~='border-notion-accent/20'],
+a[class~='border-notion-accent/30'],
+input[type='button'][class~='border-notion-accent/20'],
+input[type='button'][class~='border-notion-accent/30'],
+input[type='submit'][class~='border-notion-accent/20'],
+input[type='submit'][class~='border-notion-accent/30'] {
+    border-color: var(--notion-accent-border) !important;
+}
+
+button[class~='border-notion-success/20'],
+button[class~='border-notion-success/30'],
+a[class~='border-notion-success/20'],
+a[class~='border-notion-success/30'],
+input[type='button'][class~='border-notion-success/20'],
+input[type='button'][class~='border-notion-success/30'],
+input[type='submit'][class~='border-notion-success/20'],
+input[type='submit'][class~='border-notion-success/30'] {
+    border-color: var(--notion-success-border) !important;
+}
+
+button[class~='border-notion-warning/20'],
+button[class~='border-notion-warning/30'],
+a[class~='border-notion-warning/20'],
+a[class~='border-notion-warning/30'],
+input[type='button'][class~='border-notion-warning/20'],
+input[type='button'][class~='border-notion-warning/30'],
+input[type='submit'][class~='border-notion-warning/20'],
+input[type='submit'][class~='border-notion-warning/30'] {
+    border-color: var(--notion-warning-border) !important;
+}
+
+button[class~='border-notion-error/20'],
+button[class~='border-notion-error/30'],
+a[class~='border-notion-error/20'],
+a[class~='border-notion-error/30'],
+input[type='button'][class~='border-notion-error/20'],
+input[type='button'][class~='border-notion-error/30'],
+input[type='submit'][class~='border-notion-error/20'],
+input[type='submit'][class~='border-notion-error/30'] {
+    border-color: var(--notion-error-border) !important;
+}
+
+/* ---- Notion-style Checkboxes ---- */
+input[type='checkbox'] {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent !important;
+    border: 1.5px solid var(--notion-border-strong) !important;
+    border-radius: 3px;
+    cursor: pointer;
+    position: relative;
+    transition:
+        border-color 0.15s,
+        background-color 0.15s;
+    flex-shrink: 0;
+}
+input[type='checkbox']:hover {
+    border-color: var(--notion-accent) !important;
+}
+input[type='checkbox']:checked {
+    background: var(--notion-accent) !important;
+    border-color: var(--notion-accent) !important;
+}
+input[type='checkbox']:checked::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 14 14' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M3.5 7L6 9.5L10.5 4.5' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+}
+input[type='checkbox']:focus {
+    outline: none;
+    box-shadow: none;
+}
+input[type='checkbox']:indeterminate {
+    background: var(--notion-accent) !important;
+    border-color: var(--notion-accent) !important;
+}
+input[type='checkbox']:indeterminate::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 14 14' fill='none' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M4 7H10' stroke='white' stroke-width='2' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+}
+
+body {
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
+.dashboard-card-disabled {
+    opacity: 0.45;
+    filter: grayscale(0.35);
+}
+
+.dashboard-toggle-btn,
+.dashboard-toggle-icon-btn {
+    border: none;
+    background: var(--notion-bg-hover);
+    color: var(--notion-text-secondary);
+    transition:
+        background-color 0.15s ease,
+        color 0.15s ease,
+        opacity 0.15s ease;
+}
+
+.dashboard-toggle-btn:hover,
+.dashboard-toggle-icon-btn:hover {
+    background: var(--notion-bg-active);
+    color: var(--notion-text-primary);
+}
+
+.dashboard-toggle-btn.is-enabled,
+.dashboard-toggle-icon-btn.is-enabled {
+    background: var(--notion-accent-muted);
+    color: var(--notion-accent);
+}
+
+.dashboard-toggle-icon-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 0.375rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.uploads-table {
+    overflow-y: hidden;
+}
+
+.uploads-table table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+}
+
+/* Prevent horizontal overflow on mobile.
+   Using `clip` (not `hidden`) so nested overflow-x:auto scroll containers
+   still receive touch-scroll events on iOS Safari. */
+#app {
+    overflow-x: clip;
+    min-height: 100dvh;
+}
+
+/* ---- Touch-friendly tap targets ---- */
+@media (pointer: coarse) {
+    /* Comfortable touch targets without inflating the layout */
+    button,
+    a,
+    [role='button'],
+    select {
+        min-height: 36px;
+    }
+
+    /* Dense UI areas - no forced minimums */
+    table button,
+    table a,
+    .compact-touch button,
+    .compact-touch a,
+    button.compact-touch,
+    a.compact-touch {
+        min-height: unset;
+        min-width: unset;
+    }
+
+    /* Checkboxes/radios need padding around them for touch, not resized */
+    input[type='checkbox'],
+    input[type='radio'] {
+        min-height: unset;
+        min-width: unset;
+        padding: 8px;
+    }
+
+    /* Toggle switches must keep their compact pill shape */
+    .toggle-switch,
+    .toggle-switch span {
+        min-height: unset !important;
+        min-width: unset !important;
+    }
+
+    /* Nav links - ensure comfortable touch */
+    .nav-link {
+        min-height: 44px;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+
+    /* Hover-only tooltip behavior is intentionally omitted on touch devices. */
+}
+
+/* ---- Mobile Navigation Adjustments ---- */
+@media (max-width: 639px) {
+    /* Tighter header on small screens */
+    header .max-w-5xl {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+
+    /* Compact nav gap on mobile */
+    nav {
+        gap: 0.125rem;
+    }
+}
+
+/* ---- Mobile Page Layout ---- */
+@media (max-width: 639px) {
+    main.max-w-5xl {
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+    }
+
+    /* Reduce page title size on mobile */
+    h1.text-2xl {
+        font-size: 1.25rem;
+    }
+}
+
+/* ---- Mobile Toast Adjustments ---- */
+@media (max-width: 479px) {
+    /* Toast - full width on very small screens */
+    .fixed.bottom-4.right-4 {
+        left: 0.5rem;
+        right: 0.5rem;
+    }
+    .fixed.bottom-4.right-4 > * > div {
+        min-width: unset !important;
+        max-width: 100%;
+    }
+}
+
+/* ---- Mobile Table Improvements ---- */
+@media (max-width: 639px) {
+    /* Make table cells more compact on mobile */
+    table th,
+    table td {
+        padding-left: 0.375rem;
+        padding-right: 0.375rem;
+    }
+}
+
+/* ---- Settings Page Mobile ---- */
+@media (max-width: 767px) {
+    /* Stack indexer row controls vertically on mobile */
+    .indexer-mobile-stack {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    .indexer-mobile-stack > .flex.items-center.gap-3 {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
+/* ---- Indexer toggle group: always below name on mobile ---- */
+@media (max-width: 639px) {
+    .grid-cols-1 > .space-y-0\.5 > .setting-item[data-search*='indexer'],
+    .grid-cols-1 > div > .setting-item[data-search*='indexer'] {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+/* ---- Stats summary cards: 4-in-row on mobile ---- */
+@media (max-width: 639px) {
+    .grid-cols-2.sm\:grid-cols-4 {
+        grid-template-columns: repeat(4, 1fr);
+        gap: 0.375rem;
+    }
+    .grid-cols-2.sm\:grid-cols-4 > div {
+        padding: 0.375rem 0.25rem;
+    }
+    .grid-cols-2.sm\:grid-cols-4 > div p.text-2xl {
+        font-size: 1rem;
+        line-height: 1.25;
+    }
+    .grid-cols-2.sm\:grid-cols-4 > div p.text-xs {
+        font-size: 9px;
+        line-height: 1.2;
+    }
+}
+
+/* ---- Pending page: mobile collapsed row simplification ---- */
+@media (max-width: 639px) {
+    /* Hide size column on collapsed show/movie rows */
+    .pending-row-mobile .pending-hide-mobile {
+        display: none !important;
+    }
+    /* Pending sub-items: indented MORE than season for visual step */
+    .pending-subitem-mobile {
+        padding-left: 1.65rem !important;
+    }
+    /* Pending season headers: less indent than items */
+    .pending-season-mobile {
+        padding-left: 1rem !important;
+    }
+    /* Hide elements on pending sub-items */
+    .pending-sub-hide-mobile {
+        display: none !important;
+    }
+}
+
+/* ---- Uploads page: mobile compact view ---- */
+@media (max-width: 639px) {
+    /* Hide action column header and cells */
+    .uploads-table .col-actions {
+        display: none !important;
+    }
+    /* Favicons as small colored dots */
+    .uploads-table .dest-dot-mobile {
+        width: 8px !important;
+        height: 8px !important;
+        border-radius: 50%;
+    }
+    .uploads-table .dest-dot-mobile img,
+    .uploads-table .dest-dot-mobile svg {
+        display: none;
+    }
+    /* Hide chevron + folder icon on group headers */
+    .uploads-table .group-hide-mobile {
+        display: none !important;
+    }
+    /* Badge text: icon-only on mobile */
+    .uploads-table .badge-text-mobile {
+        display: none;
+    }
+    /* Hide 'items' word on mobile */
+    .uploads-table .items-word-mobile {
+        display: none;
+    }
+    /* Reduce right padding on last visible cells */
+    .uploads-table td[class*='pr-6'] {
+        padding-right: 0.5rem !important;
+    }
+    .uploads-table th[class*='pr-6'] {
+        padding-right: 0.5rem !important;
+    }
+    /* Tighter horizontal padding on mobile */
+    .uploads-table td[class*='px-4'] {
+        padding-left: 0.375rem !important;
+        padding-right: 0.375rem !important;
+    }
+    .uploads-table td[class*='px-3'] {
+        padding-left: 0.375rem !important;
+        padding-right: 0.375rem !important;
+    }
+    .uploads-table td[class*='pl-3'] {
+        padding-left: 0.375rem !important;
+    }
+    /* Reduce group/season indent on mobile */
+    .uploads-table td[class*='pl-8'] {
+        padding-left: 0.75rem !important;
+    }
+    .uploads-table td[class*='pl-12'] {
+        padding-left: 1.25rem !important;
+    }
+    /* Shrink size column */
+    .uploads-table .col-size-mobile {
+        width: 3.5rem !important;
+        padding-left: 0.125rem !important;
+        padding-right: 0.125rem !important;
+        font-size: 9px !important;
+    }
+    /* Shrink dests column */
+    .uploads-table .col-dests-mobile {
+        width: auto !important;
+        padding-left: 0.125rem !important;
+        padding-right: 0.25rem !important;
+    }
+    .uploads-table .col-dests-mobile .gap-1 {
+        gap: 2px !important;
+    }
+}
+
+/* ---- Search toolbar: literal checkbox inline with search ---- */
+.toolbar-search-row {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 0.375rem;
+}
+@media (max-width: 639px) {
+    .toolbar-search-row {
+        width: 100%;
+    }
+    .toolbar-search-row .search-input-wrap {
+        flex: 1;
+        min-width: 0;
+    }
+}
+
+/* ---- Pending items: horizontal scroll reveals hidden columns on mobile ---- */
+@media (max-width: 639px) {
+    /* Show elements that are hidden on mobile inside the horizontal scroll context */
+    .pending-scroll-inner .sm\:block {
+        display: block !important;
+    }
+    .pending-scroll-inner .sm\:flex {
+        display: flex !important;
+    }
+    .pending-scroll-inner .sm\:inline-flex {
+        display: inline-flex !important;
+    }
+    /* Action buttons: always visible on touch devices (no hover support) */
+    .pending-scroll-inner .group-hover\:opacity-100 {
+        opacity: 1 !important;
+    }
+    /* Restore proper indentation inside scroll (was reduced for mobile) */
+    .pending-scroll-inner .pending-subitem-mobile {
+        padding-left: 3.5rem !important;
+    }
+    .pending-scroll-inner .pending-season-mobile {
+        padding-left: 2rem !important;
+    }
+}
+
+/* ---- Upload Queue items: show hover-only buttons on mobile ---- */
+@media (max-width: 639px) {
+    #upload-queue-section .opacity-0 {
+        opacity: 1 !important;
+    }
+}
+
+/* ---- Mobile floating action button (queue page) ---- */
+.scroll-fab {
+    position: fixed;
+    bottom: 1.5rem;
+    right: 1.25rem;
+    z-index: 45;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: var(--notion-accent);
+    color: #fff;
+    border: none;
+    box-shadow: 0 2px 14px rgba(0, 0, 0, 0.28);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition:
+        transform 0.15s ease,
+        opacity 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+.scroll-fab:active {
+    transform: scale(0.9);
+    opacity: 0.85;
+}
+@media (min-width: 640px) {
+    .scroll-fab {
+        display: none !important;
+    }
+}
+
+/* ---- Alternating row colors for all tables ---- */
+table tbody tr:nth-child(even) {
+    background-color: rgba(255, 255, 255, 0.015);
+}
+table tbody tr:nth-child(odd) {
+    background-color: transparent;
+}
+
+/* ---- Jobs page: mobile compact ---- */
+@media (max-width: 639px) {
+    .jobs-table .col-jobid {
+        font-size: 10px !important;
+    }
+    .jobs-table .col-jobid .font-mono {
+        font-size: 10px !important;
+    }
+    .jobs-table .col-category {
+        display: none !important;
+    }
+    .jobs-table .status-text-mobile {
+        display: none;
+    }
+    .jobs-table .status-badge-mobile {
+        padding: 0.25rem !important;
+        min-width: 0 !important;
+        gap: 0 !important;
+    }
+    .jobs-table .col-started {
+        font-size: 9px !important;
+        padding-right: 0.375rem !important;
+    }
+    .jobs-table .col-items {
+        font-size: 10px !important;
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
+        white-space: nowrap;
+    }
+    .jobs-table .col-size {
+        font-size: 9px !important;
+        padding-left: 0.25rem !important;
+        padding-right: 0.25rem !important;
+        white-space: nowrap;
+    }
+}
+
+/* ---- Scrollbar Styling ---- */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+::-webkit-scrollbar-thumb {
+    background: var(--notion-border-strong);
+    border-radius: 10px;
+    border: 1px solid transparent;
+    background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+    background: var(--notion-text-tertiary);
+    background-clip: content-box;
+}
+
+/* Ensure horizontal scrollbar is visible when needed in console */
+.console-inner div {
+    scrollbar-width: thin;
+    scrollbar-color: var(--notion-border-strong) transparent;
+}
+
+/* ---- Smooth Scroll ---- */
+@media (prefers-reduced-motion: no-preference) {
+    html {
+        scroll-behavior: smooth;
+    }
+}
+
+/* ---- Safe area insets for notched devices ---- */
+@supports (padding: env(safe-area-inset-bottom)) {
+    .fixed.bottom-4 {
+        padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+    }
+
+    footer {
+        padding-bottom: calc(2rem + env(safe-area-inset-bottom));
+    }
+}
+
+/* ---- Infotip Touch Support ---- */
+/* On touch devices, allow tap to toggle tooltips */
+@media (hover: none) {
+    .infotip-trigger .infotip-content {
+        /* Hidden by default on touch - toggled by JS */
+        pointer-events: auto;
+    }
+
+    /* Don't rely on hover for tooltips on touch */
+    .infotip-trigger:hover .infotip-content {
+        visibility: hidden;
+        opacity: 0;
+    }
+
+    .infotip-trigger.infotip-active .infotip-content {
+        visibility: visible !important;
+        opacity: 1 !important;
+    }
+}
+
+/* ---- Console section mobile ---- */
+@media (max-width: 639px) {
+    /* Console controls wrap on mobile */
+    .console-controls {
+        flex-wrap: wrap;
+        gap: 0.375rem;
+    }
+}
+
+/* ---- Active Jobs mobile ---- */
+@media (max-width: 639px) {
+    .job-card-header {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 0.5rem;
+    }
+    .job-card-header .job-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    .job-card-title {
+        max-width: 100%;
+        overflow: hidden;
+    }
+    .job-card-title h3 {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: calc(100vw - 6rem);
+    }
+}
+
+/* ---- Active Jobs overflow containment ---- */
+.divide-y > div > div[class*='p-4'] {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+/* ---- Console header mobile ---- */
+@media (max-width: 639px) {
+    .console-header {
+        flex-direction: column;
+        align-items: flex-start !important;
+        gap: 0.5rem;
+    }
+    .console-header .console-controls-row {
+        width: 100%;
+    }
+}
+
+/* ---- Mobile hamburger menu ---- */
+.mobile-menu-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+.mobile-menu-overlay.active {
+    opacity: 1;
+    pointer-events: auto;
+}
+.mobile-menu-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 280px;
+    max-width: 85vw;
+    background: var(--notion-bg-secondary);
+    border-left: 1px solid var(--notion-border);
+    z-index: 101;
+    transform: translateX(100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+}
+.mobile-menu-drawer.active {
+    transform: translateX(0);
+}
+
+/* ---- Stats table mobile ---- */
+@media (max-width: 639px) {
+    .top-dirs-table td.dir-name-cell {
+        max-width: 180px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+    .top-dirs-table .hide-mobile {
+        display: none;
+    }
+}
+
+/* Top dirs table - rank numbers */
+.top-dirs-table td:first-child {
+    font-size: 11px;
+}
+
+.top-dirs-table {
+    table-layout: fixed;
+}
+.top-dirs-table th:nth-child(1) {
+    width: 2rem;
+}
+.top-dirs-table th:nth-child(2) {
+    width: auto;
+}
+.top-dirs-table th:nth-child(3) {
+    width: 5rem;
+}
+
+/* ---- Print Styles ---- */
+@media print {
+    header,
+    footer,
+    .fixed {
+        display: none !important;
+    }
+    main {
+        max-width: 100% !important;
+        padding: 0 !important;
+    }
+}
+
+/* ---- Job List Transitions ---- */
+.job-list-enter-active,
+.job-list-leave-active {
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.job-list-enter-from {
+    opacity: 0;
+    transform: translateY(20px);
+}
+.job-list-leave-to {
+    opacity: 0;
+    transform: scale(0.95) translateY(-10px);
+}
+.job-list-move {
+    transition: transform 0.4s ease;
+}
+/* Ensure leaving elements don't block layout for moving elements */
+.job-list-leave-active {
+    position: absolute;
+    width: 100%;
+    z-index: 0;
+    pointer-events: none;
+}
+
+/* ---- Pending page: excluded item visuals ---- */
+/* Row-level dim for excluded episodes (non-uploadable extras like NCEDs, NCOPs) */
+.pending-excluded-row {
+    opacity: 0.55;
+}
+.pending-excluded-row:hover {
+    opacity: 0.7;
+}
+/* Red border around the filename text of excluded items */
+.pending-excluded-name {
+    border: 1px solid var(--notion-error);
+    border-radius: 3px;
+    padding: 1px 5px;
+}
+
+/*
+ * Large pending inventories can contain thousands of rows.  Keep them in the
+ * document for native search/selection while letting the browser skip layout
+ * and paint work for rows outside the scroll viewport.
+ */
+.pending-virtual-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 30px;
+}

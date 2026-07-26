@@ -1,0 +1,56 @@
+# OMGwtfnzbs Indexer Definition
+# https://omgwtfnzbs.org
+# NOTE: This indexer uses curl for submission due to specific SSL/form requirements
+
+id: omg
+name: OMGwtfnzbs
+description: OMGwtfnzbs indexer (uses curl for compatibility)
+website: https://omgwtfnzbs.org
+favicon_url: https://omgwtfnzbs.org/favicon.ico
+search_url: https://omgwtfnzbs.org/browse.php?search=%22-{poster}%22
+api_key: '' # Set in config.yaml
+username: '' # Set in config.yaml
+icon: zap
+color: '#22c55e'
+
+# API Configuration - Uses CURL method
+method: CURL
+submit_url: https://omgwtfnzbs.org/api-upload.php
+curl_template: 'https://omgwtfnzbs.org/api-upload.php?user={username}&api={api_key}'
+
+# Authentication
+auth:
+  method: curl_url
+
+# Category Mapping (OMG uses different category system)
+categories:
+  tv: tv
+  movie: movie
+  movie_sd: '15'
+  movie_hd: '16'
+  movie_uhd: '31'
+  movie_dvd: '17'
+  movie_full_br: '35'
+  anime: tv # OMG accepts anime submissions under TV
+  music: music
+  books: '29'
+  apps: ''
+  misc: ''
+  default: ''
+category_param: catid
+
+# NFO is required
+requires_nfo: true
+
+# Success Detection
+success:
+  text_patterns:
+    - 'OK'
+    - 'SAVED'
+    - 'SUCCESS'
+  duplicate_patterns:
+    - 'DUPLICATE'
+    - 'ALREADY EXISTS'
+    - 'ALREADY UPLOADED'
+
+timeout: 30

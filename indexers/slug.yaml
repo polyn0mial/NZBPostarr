@@ -1,0 +1,49 @@
+# DrunkenSlug Indexer Definition
+# https://nzbs.drunkenslug.com
+
+id: slug
+name: DrunkenSlug
+description: DrunkenSlug indexer (simple file upload)
+website: https://drunkenslug.com
+favicon_url: https://drunkenslug.com/favicon.ico
+search_url: https://drunkenslug.com/search?searchadvr=&searchadvposter={poster}&searchadvgroups=-1&search_type=adv
+api_key: '' # Set in config.yaml
+icon: beer
+color: '#f59e0b'
+
+# API Configuration
+submit_url: https://nzbs.drunkenslug.com/upload.php
+method: POST
+
+# Authentication - DrunkenSlug's uploader expects the API key in X-API-Key
+auth:
+  method: header
+  header_name: X-API-Key
+  header_template: "{api_key}"
+
+# Categories not used for submission
+categories:
+  tv: ''
+  movie: ''
+  anime: ''
+  music: ''
+  books: ''
+  apps: ''
+  misc: ''
+  default: ''
+
+# File Upload Fields
+files:
+  nzb: 'files[]'
+  nfo: null
+  nzb_mime: application/x-nzb
+
+# Success Detection
+success:
+  text_patterns:
+    - 'true'
+  duplicate_patterns:
+    - duplicate
+    - 'already exists'
+
+timeout: 30

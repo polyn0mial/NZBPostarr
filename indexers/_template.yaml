@@ -1,0 +1,115 @@
+# Indexer Template
+# Copy this file and rename it to your_indexer.yaml
+# Then fill in the configuration for your indexer
+
+# Required: Unique identifier (lowercase, no spaces)
+id: my_indexer
+
+# Required: Display name shown in the UI
+name: My Indexer Name
+
+# Optional: Description for the UI
+description: A brief description of this indexer
+
+# Optional: Website URL
+website: https://example-indexer.com
+
+# Optional: Hardcoded favicon URL (used instead of automated discovery)
+favicon_url: https://example-indexer.com/favicon.ico
+
+# Optional: Lucide icon name (see https://lucide.dev/icons)
+icon: globe
+
+# Optional: Indexer color (hex code used for logs and UI)
+color: '#808080'
+
+# Required: API endpoint URL
+submit_url: https://api.example-indexer.com/submit
+
+# HTTP method: POST, PUT, or CURL (for curl-based submissions)
+method: POST
+
+# For CURL method only:
+# curl_template: "https://example.com/api?user={username}&api={api_key}"
+
+# Authentication configuration
+auth:
+  # Method: query_param, header, form_field, curl_url, or none
+  method: query_param
+
+  # Parameter name for the API key
+  api_key_param: apikey
+
+  # For indexers requiring username:
+  # username_param: user
+
+  # For header-based auth:
+  # header_name: Authorization
+  # header_template: "Bearer {api_key}"
+
+# Category mapping
+# Maps content types to indexer-specific category codes
+categories:
+  tv: '5040' # TV content
+  movie: '2040' # Movie content
+  movie_sd: '2030' # Movies / SD
+  movie_hd: '2040' # Movies / HD
+  movie_uhd: '2045' # Movies / UHD
+  movie_dvd: '2070' # Movies / DVD
+  movie_full_br: '2050' # Movies / Full BR
+  anime: '5070' # Anime
+  music: '3010' # Music
+  books: '7020' # Books / ebooks
+  apps: '' # Leave blank to reject app uploads until mapped
+  misc: '5000' # Miscellaneous
+  default: '' # Leave blank; strict mode does not use fallback defaults
+
+# Parameter name for category
+category_param: cat
+
+# File upload field names
+files:
+  # Field name for NZB file
+  nzb: nzb
+
+  # Field name for NFO file (set to null to disable)
+  nfo: nfo
+
+  # Separate field for mediainfo (optional)
+  # mediainfo: mediainfo
+
+  # MIME type for NZB file
+  nzb_mime: application/x-nzb
+
+# Optional: Parameter name for release name
+name_param: name
+
+# Optional: Extra static query parameters
+extra_params: {}
+  # t: nzbadd
+  # output: json
+
+# Optional: Extra form data fields
+extra_form_data: {}
+
+# Success detection patterns
+success:
+  # JSON path to check for success (optional)
+  # json_path: response.status
+  # json_value: OK
+
+  # Text patterns that indicate success
+  text_patterns:
+    - 'SUCCESS'
+    - 'OK'
+
+  # Text patterns that indicate duplicate (treated as success)
+  duplicate_patterns:
+    - 'duplicate'
+    - 'already exists'
+
+# Request timeout in seconds
+timeout: 30
+
+# If true, creates an empty NFO file when none is provided
+requires_nfo: false

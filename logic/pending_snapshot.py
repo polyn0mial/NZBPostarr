@@ -1,0 +1,2058 @@
+"""Pending snapshot scanning, classification, and filtering helpers."""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import time
+import zlib
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Set
+
+from loguru import logger
+
+from core import database
+from core.config import get_config
+from core.utils import (
+    compute_size_uncached,
+    log_backend_timing,
+    should_skip_file,
+)
+from logic.pending_scan import (
+    begin_scan_cache,
+    classify_video_name as shared_classify_video_name,
+    detect_content_itype as shared_detect_content_itype,
+    detect_external_category as shared_detect_external_category,
+    end_scan_cache,
+    get_configured_category_folders,
+    has_clear_movie_year as shared_has_clear_movie_year,
+    looks_like_tv_name,
+    relative_key,
+    resolve_explicit_path,
+)
+from logic.queue_metrics import (
+    count_pending_indexer_slots,
+    incomplete_pending_indexer_ids,
+    log_queue_update,
+    required_pending_indexer_ids,
+)
+
+
+def stamp_skip_flags(result: Dict[str, Any], skip_config: Optional[Dict[str, Any]]) -> None:
+    """Post-process scan results to add 'skipped' flags to all items."""
+    if not skip_config or not skip_config.get("enabled"):
+        return
+
+    for category_key, category_items in result.items():
+        if not isinstance(category_items, list):
+            continue
+
+        if category_key == "external":
+            for group in category_items:
+                for item in group.get("items", []):
+                    item["skipped"] = should_skip_file(item["name"], "external", skip_config)
+        elif category_key != "tv":
+            for item in category_items:
+                item["skipped"] = should_skip_file(item["name"], category_key, skip_config)
+
+
+def _normalize_dashboard_lookup_values(values: Any) -> Set[str]:
+    normalized: Set[str] = set()
+    if values is None:
+        return normalized
+    if isinstance(values, (str, Path)):
+        raw_values = [values]
+    else:
+        try:
+            raw_values = list(values)
+        except TypeError:
+            raw_values = [values]
+    for raw in raw_values:
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        normalized.add(text.casefold())
+        normalized.add(text.replace("\\", "/").casefold())
+    return normalized
+
+
+def _lookup_completed_dashboard_item(completed_lookup: Set[str], *candidate_values: Any) -> bool:
+    if not completed_lookup:
+        return False
+    normalized_candidates = _normalize_dashboard_lookup_values(candidate_values)
+    strong_candidates = {
+        candidate
+        for candidate in normalized_candidates
+        if isinstance(candidate, str)
+        and (
+            candidate.startswith("ext:")
+            or "/" in candidate
+            or "\\" in candidate
+            or (len(candidate) > 2 and candidate[1] == ":" and candidate[2] in ("/", "\\"))
+        )
+    }
+    return bool(strong_candidates.intersection(completed_lookup))
+
+
+def _lookup_upload_map_indexers(upload_map: Dict[str, Set[str]], *candidate_values: Any) -> Set[str]:
+    """Merge indexer matches across exact keys plus basename/path variants."""
+    if not upload_map:
+        return set()
+
+    matches: Set[str] = set()
+    seen: Set[str] = set()
+    candidates: List[str] = []
+
+    for raw in candidate_values:
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if not text:
+            continue
+        variants = [text, text.replace("\\", "/")]
+        for variant in variants:
+            if variant not in seen:
+                seen.add(variant)
+                candidates.append(variant)
+            if "/" in variant:
+                basename = variant.rsplit("/", 1)[-1]
+                if basename and basename not in seen:
+                    seen.add(basename)
+                    candidates.append(basename)
+
+    for candidate in candidates:
+        matches.update(upload_map.get(candidate, set()))
+
+    return matches
+
+
+_EPISODE_TAG_RE = re.compile(r"S\d{1,2}[.\s_&-]*E\d{1,3}", re.IGNORECASE)
+_SOURCE_EXEMPT_NAME_RE = re.compile(
+    r"(?i)(?:\.(?:mp3|flac|m4a|aac|ogg|opus|wav|wma|aif|aiff|alac|ape|mka|cue)(?:$|\b)|\b(?:music|audiobook|audiobooks|ebook|ebooks|disc|cd|vinyl|lossless|podcast)\b)"
+)
+_SEASON_MARKER_RE = re.compile(r"(?:\bS\d{1,2}\b|\bS\d{1,2}X?E\d{1,3}\b|\bSeason\b|\b\d{1,2}x\d{1,3}\b|\bEp(?:isode)?\.?\s?\d{1,3}\b)", re.IGNORECASE)
+_SCENE_VIDEO_TAG_RE = re.compile(
+    r"(?:\b(?:19|20)\d{2}\b|\b(?:480|576|720|1080|1440|2160|4320)[pi]\b|\b(?:bluray|bdrip|brrip|webrip|web[-_.\s]?dl|remux|hdtv|dvdrip|x26[45]|h\.?26[45])\b)",
+    re.IGNORECASE,
+)
+_VIDEO_FILE_EXTENSIONS = {
+    ".mkv",
+    ".mp4",
+    ".avi",
+    ".mov",
+    ".m4v",
+    ".wmv",
+    ".ts",
+    ".m2ts",
+    ".mpg",
+    ".mpeg",
+    ".webm",
+    ".flv",
+}
+_DISC_EXTENSIONS = {
+    ".iso",
+    ".img",
+    ".mdf",   # Alcohol 120% image
+    ".mds",   # Alcohol 120% descriptor
+    ".nrg",   # Nero image
+    ".vob",   # DVD Video Object
+    ".ifo",   # DVD Information
+    ".bup",   # DVD Backup
+}
+_DISC_PATH_MARKERS = {"bdmv", "video_ts", "audio_ts", "certificate"}
+_DISC_FOLDER_MARKERS = {"bdmv", "video_ts", "audio_ts", "certificate"}
+_DISC_PARENT_BUBBLE_FILE_EXTS = {".iso", ".img", ".mdf", ".mds", ".nrg", ".vob", ".ifo", ".bup"}
+# Matches disc-numbered folder names: "Disc 1", "(Disc 2)", "D1", "DISC3", etc.
+_DISC_NUMBERED_FOLDER_RE = re.compile(r"(?i)(?:\bdisc\b|\bd\d{1,2}\b)")
+_AUDIOBOOK_EXTENSIONS = {".m4b"}
+_MUSIC_EXTENSIONS = {".m4a", ".mp3", ".flac", ".cue"}
+_EBOOK_EXTENSIONS = {".epub", ".pdf", ".mobi"}
+_ANIME_SEQUENCE_PATTERN = re.compile(
+    r"(?i)(?:"
+    r"\bS\d{1,2}[.\s_-]*E\d{1,3}(?:[.\s_-]*-[.\s_-]*\d{1,3})?\b"
+    r"|(?:^|[.\s_-])\d{1,2}x\d{1,3}(?:[.\s_-]|$)"
+    r"|\bEP\d{1,3}\b"
+    r"|\bEp\.\d{1,3}\b"
+    r"|\bEpisode[.\s_-]+\d{1,3}\b"
+    r"|\bOVA[.\s_-]*\d{1,3}\b"
+    r"|\[\d{1,3}(?:v\d+)?\]"
+    r"|\(\d{1,3}(?:v\d+)?\)"
+    r"|(?:^|[.\s_-])-\s?\d{1,3}(?:v\d+)?(?:$|[.\s_-])"
+    r"|\b\d{4}[.\-_]\d{2}[.\-_]\d{2}\b"
+    r"|\bSeason[.\s_-]+\d{1,2}\b"
+    r"|\bS\d{1,2}\b"
+    r"|\bComplete[.\s_-]+Series\b"
+    r")"
+)
+_VIDEO_CHILD_EXTENSIONS = {".mkv", ".mp4", ".avi"}
+_CHILD_BURNLIST_PATTERN = re.compile(r"(?i)(?:\bNCED\b|\bNCOP\b|\bsample\b|\.nfo\b)")
+_ANIME_BONUS_PATTERN = re.compile(r"(?i)(?:\bncop\b|\bnced\b|\bcreditless\b|(?:^|[.\s_-])op\d{0,2}(?:$|[.\s_-])|(?:^|[.\s_-])ed\d{0,2}(?:$|[.\s_-]))")
+_EPISODIC_TV_PATTERN = re.compile(r"(?i)(?:\bS\d{1,2}X?E\d{1,3}\b|\bSeason\b|\bEp(?:isode)?\.?\s?\d{1,3}\b|\b\d{1,2}x\d{1,3}\b)")
+_SOURCE_TAG_TOKENS = [
+    "Bluray",
+    "BluRay",
+    "Blu-Ray",
+    "BD",
+    "BDRip",
+    "BRRip",
+    "4K-UHD",
+    "UHD",
+    "REMUX",
+    "BD-Remux",
+    "UHD-Remux",
+    "COMPLETE.BLURAY",
+    "WEB-DL",
+    "WEBDL",
+    "WEB_DL",
+    "WEB-Rip",
+    "WEBRip",
+    "WEB_Rip",
+    "WEB",
+    "WebHD",
+    "DVDRip",
+    "DVD-Rip",
+    "DVD",
+    "NTSC",
+    "PAL",
+    "DVDR",
+    "DVD5",
+    "DVD9",
+    "HDTV",
+    "HDTVRip",
+    "SDTV",
+    "EDTV",
+    "PDTV",
+    "DSR",
+    "DSRip",
+    "DVB",
+    "DVBRip",
+    "SATRip",
+    "HQSATRip",
+    "DTV",
+    "DTVRip",
+    "TVRip",
+    "SATELLITE",
+    "MPEG2",
+    "VHS",
+    "VHSRip",
+    "CAM",
+    "CAMRip",
+    "TS",
+    "TELESYNC",
+    "TC",
+    "TELECINE",
+    "WORKPRINT",
+    "WP",
+    "SCREENER",
+    "SCR",
+    "DVDSCR",
+    "BDSRC",
+    "PPV",
+    "PPVRip",
+    "INTERNAL",
+    "INT",
+]
+_SOURCE_TAG_PATTERN = re.compile(
+    r"(?i)(?<![a-z0-9])(?:"
+    + "|".join(re.escape(token).replace(r"\-", "[-_.\\s]?").replace(r"\.", r"[._\\s]?") for token in _SOURCE_TAG_TOKENS)
+    + r")(?![a-z0-9])"
+)
+
+
+def _has_disc_structure_signature(entry: Path) -> bool:
+    """Return True when a file/folder matches any DISC structural signature."""
+    try:
+        if entry.is_file():
+            if entry.suffix.lower() in _DISC_EXTENSIONS:
+                return True
+            lower_parts = [part.lower() for part in entry.parts]
+            return any(marker in lower_parts for marker in _DISC_FOLDER_MARKERS)
+        if entry.is_dir():
+            if _name_contains_disc_marker(entry.name):
+                return True
+            for root, dirnames, filenames in os.walk(str(entry)):
+                if any(_name_contains_disc_marker(d) for d in dirnames):
+                    return True
+                if any(Path(filename).suffix.lower() in _DISC_EXTENSIONS for filename in filenames):
+                    return True
+    except OSError:
+        return False
+    return False
+
+
+def _name_contains_disc_marker(name: str) -> bool:
+    """Return True if name is a disc-structure folder marker or contains one as a token."""
+    lower = name.strip().lower()
+    if lower in _DISC_FOLDER_MARKERS:
+        return True
+    # Strip punctuation before checking structural markers (handles "(disc", "d1)", etc.)
+    words = re.split(r"[^a-z0-9]+", lower)
+    if any(part in _DISC_FOLDER_MARKERS for part in words if part):
+        return True
+    # Disc-numbered folders: "Disc 1", "(Disc 2)", "D1", "D2", "DISC3", etc.
+    return bool(_DISC_NUMBERED_FOLDER_RE.search(name))
+
+
+def _directory_disc_bubble_up(entry: Path) -> bool:
+    """Fast parent-row DISC promotion based on folder contents before name inference."""
+    if not entry.is_dir():
+        return False
+    try:
+        children = list(entry.iterdir())
+    except OSError:
+        return False
+    for child in children:
+        if child.is_dir() and _name_contains_disc_marker(child.name):
+            return True
+        if child.is_file() and child.suffix.lower() in _DISC_PARENT_BUBBLE_FILE_EXTS:
+            return True
+    # Fallback: deeper structure probe for nested disc roots/files.
+    return _has_disc_structure_signature(entry)
+
+
+def _directory_extension_first_category(entry: Path) -> str:
+    """Classify by real file extensions inside a directory before any name/token inference."""
+    if not entry.is_dir():
+        return ""
+    counts = {"audiobooks": 0, "music": 0, "ebooks": 0}
+    try:
+        for root, _dirs, filenames in os.walk(str(entry)):
+            for filename in filenames:
+                ext = Path(filename).suffix.lower()
+                if ext in _AUDIOBOOK_EXTENSIONS:
+                    counts["audiobooks"] += 1
+                elif ext in _MUSIC_EXTENSIONS:
+                    counts["music"] += 1
+                elif ext in _EBOOK_EXTENSIONS:
+                    counts["ebooks"] += 1
+    except OSError:
+        return ""
+    # Extension-priority gate: as soon as audio/book payloads exist in a folder,
+    # lock the directory to that non-video class and skip all video/disc fallthrough.
+    if counts["audiobooks"] == 0 and counts["music"] == 0 and counts["ebooks"] == 0:
+        return ""
+    if counts["audiobooks"] >= max(counts["music"], counts["ebooks"]):
+        return "audiobooks"
+    if counts["ebooks"] >= counts["music"]:
+        return "books"
+    return "music"
+
+
+def _source_matrix_ignore_reason(category: str, title: str) -> str:
+    """Return ignore reason when MOVIES/TV/ANIME item lacks source/episode signals."""
+    cat = str(category or "").strip().lower()
+    if cat not in {"movies", "tv", "anime"}:
+        return ""
+    title_text = str(title or "").lower()
+    if _SOURCE_TAG_PATTERN.search(title_text) or _ANIME_SEQUENCE_PATTERN.search(title_text):
+        return ""
+    return "Missing media source/episode signal (source-matrix validation)"
+
+
+def _has_video_container_and_source_signal(name: str, path_text: str = "") -> bool:
+    """True when a node is a real video container with a real video-source token."""
+    combined = f"{name or ''} {path_text or ''}".lower()
+    suffix = Path(path_text or name or "").suffix.lower()
+    return suffix in _VIDEO_FILE_EXTENSIONS and bool(
+        _SOURCE_TAG_PATTERN.search(combined) or _SCENE_VIDEO_TAG_RE.search(combined)
+    )
+
+
+def _force_video_processing_state(node: Dict[str, Any], fallback_folder_hint: str = "") -> None:
+    """Force a node to VALID/eligible video processing state for REMUX/BLURAY/Web sources."""
+    if not isinstance(node, dict):
+        return
+    name = str(node.get("name") or "")
+    ptxt = str(node.get("path") or "")
+    existing_category = str(node.get("detected_category") or node.get("category") or "").strip().lower()
+    # Keep historical Jikan/anime inheritance behavior:
+    # once a row resolves to ANIME, do not let later source-token normalization
+    # demote it back to TV/MOVIES.
+    if existing_category == "anime":
+        node["status"] = "VALID"
+        node["eligible"] = True
+        node["ignored"] = False
+        node["skip_reason"] = ""
+        return
+    if _ANIME_BONUS_PATTERN.search(f"{name} {ptxt}".lower()):
+        return
+    if not _has_video_container_and_source_signal(name, ptxt):
+        return
+    guessed = classify_video_name(name, fallback_folder_hint, assume_movie_if_unknown=True).strip().lower()
+    if guessed in {"tv show", "tv"}:
+        cat = "tv"
+    elif guessed == "anime":
+        cat = "anime"
+    else:
+        cat = "movies"
+    node["detected_category"] = cat
+    node["category"] = cat
+    node["auto_select_ignored"] = False
+    node["auto_select_reason"] = ""
+    node["auto_selectable"] = True
+    # Compatibility flags requested by UI/queue workers.
+    node["status"] = "VALID"
+    node["eligible"] = True
+    node["ignored"] = False
+    node["skip_reason"] = ""
+    if "requirements_met" in node:
+        node["requirements_met"] = True
+
+
+def _node_has_source_or_episode_signal(item: Dict[str, Any]) -> bool:
+    """Check parent + descendants for source or episode-pattern signals (case-insensitive)."""
+    if not isinstance(item, dict):
+        return False
+    text = f"{item.get('name') or ''} {item.get('path') or ''}".lower()
+    if _SOURCE_TAG_PATTERN.search(text) or _ANIME_SEQUENCE_PATTERN.search(text):
+        return True
+    for child in item.get("children", []) or []:
+        if _node_has_source_or_episode_signal(child):
+            return True
+    return False
+
+
+def _apply_source_matrix_guard(item: Dict[str, Any]) -> None:
+    """Mark MOVIES/TV items ignored when source matrix tokens are absent."""
+    category = str(item.get("detected_category") or item.get("category") or "").strip().lower()
+    if category in {"disc", "ebooks", "books", "audiobooks", "music"}:
+        return
+    if category in {"movies", "tv", "anime"} and _node_has_source_or_episode_signal(item):
+        return
+    reason = _source_matrix_ignore_reason(category, f"{item.get('name') or ''} {item.get('path') or ''}")
+    if reason:
+        item["auto_select_ignored"] = True
+        item["auto_select_reason"] = reason
+        item["auto_selectable"] = False
+
+
+def _validate_child_video_items(node: Dict[str, Any]) -> None:
+    """Validate each child video independently; parent pass does not grant child pass."""
+    if not isinstance(node, dict):
+        return
+
+    def walk(item: Dict[str, Any]) -> None:
+        children = item.get("children", []) or []
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            path_text = str(child.get("path") or "")
+            name_text = str(child.get("name") or "")
+            ext = Path(path_text or name_text).suffix.lower()
+            child_category = str(child.get("detected_category") or child.get("category") or "").strip().lower()
+            # Non-video classes are exempt.
+            if child_category in {"books", "ebooks", "music", "audiobooks", "disc"}:
+                walk(child)
+                continue
+            if ext in _VIDEO_CHILD_EXTENSIONS:
+                if _ANIME_BONUS_PATTERN.search(name_text):
+                    # Keep historical behavior: anime bonus assets are always ANIME rows,
+                    # then marked ignored as bonus/non-episode content.
+                    child["detected_category"] = "anime"
+                    child["category"] = "anime"
+                    child["auto_select_ignored"] = True
+                    child["auto_select_reason"] = "Anime bonus asset (NCOP/NCED/OP/ED/Creditless)"
+                    child["auto_selectable"] = False
+                elif _CHILD_BURNLIST_PATTERN.search(name_text):
+                    child["auto_select_ignored"] = True
+                    child["auto_select_reason"] = "Burn-list exclusion (NCED/NCOP/sample/nfo)"
+                    child["auto_selectable"] = False
+                else:
+                    reason = _source_matrix_ignore_reason(child_category or "anime", name_text)
+                    if reason:
+                        child["auto_select_ignored"] = True
+                        child["auto_select_reason"] = reason
+                        child["auto_selectable"] = False
+            walk(child)
+
+    walk(node)
+
+
+def _force_tree_category(node: Dict[str, Any], category: str) -> None:
+    """Force a category across a node and all descendants (case-insensitive safe-zone use)."""
+    cat = str(category or "").strip().lower()
+    if not isinstance(node, dict) or not cat:
+        return
+    node["detected_category"] = cat
+    node["category"] = cat
+    if cat == "disc":
+        node["itype"] = "Disc"
+    if cat in {"disc", "books", "ebooks", "audiobooks", "music"}:
+        node["auto_select_ignored"] = False
+        node["auto_select_reason"] = ""
+        node["auto_selectable"] = True
+    for child in node.get("children", []) or []:
+        if isinstance(child, dict):
+            _force_tree_category(child, cat)
+
+
+def _inherit_category_from_children(node: Dict[str, Any]) -> None:
+    """Promote parent category from descendants when structure clearly indicates one type."""
+    if not isinstance(node, dict):
+        return
+
+    def walk(n: Dict[str, Any]) -> None:
+        children = [c for c in (n.get("children") or []) if isinstance(c, dict)]
+        for child in children:
+            walk(child)
+        if not children:
+            return
+
+        current = str(n.get("detected_category") or n.get("category") or "").strip().lower()
+        child_cats = [str(c.get("detected_category") or c.get("category") or "").strip().lower() for c in children]
+        child_set = {c for c in child_cats if c}
+        if not child_set:
+            return
+
+        # DISC remains highest precedence.
+        if "disc" in child_set:
+            _force_tree_category(n, "disc")
+            return
+
+        # For regular media packs, let strong child consensus set the parent.
+        tv_count = sum(1 for c in child_cats if c == "tv")
+        anime_count = sum(1 for c in child_cats if c == "anime")
+        movie_count = sum(1 for c in child_cats if c == "movies")
+        anime_bonus_count = sum(
+            1
+            for c in children
+            if _ANIME_BONUS_PATTERN.search(str(c.get("name") or "").lower())
+        )
+        parent_anime_cached = _anime_cache_lookup(str(n.get("name") or "")) is True
+        has_desc_anime_cached = any(
+            _anime_cache_lookup(str(c.get("name") or "")) is True for c in children
+        )
+
+        promote = ""
+        if (
+            (parent_anime_cached or has_desc_anime_cached)
+            and not (tv_count > 0 and anime_count == 0 and anime_bonus_count == 0)
+        ):
+            promote = "anime"
+        elif anime_bonus_count > 0:
+            # Presence of NCOP/NCED bonus markers should lock the enclosing pack to ANIME.
+            promote = "anime"
+        elif anime_count > 0 and movie_count == 0:
+            promote = "anime"
+        elif tv_count > 0 and movie_count == 0:
+            promote = "tv"
+        elif current in {"", "misc"} and movie_count > 0:
+            promote = "movies"
+
+        if promote:
+            n["detected_category"] = promote
+            n["category"] = promote
+
+    walk(node)
+
+
+def _inherit_anime_context_to_children(node: Dict[str, Any]) -> None:
+    """If a parent resolves to ANIME, keep descendants in ANIME context."""
+    if not isinstance(node, dict):
+        return
+
+    def walk(n: Dict[str, Any], parent_cat: str = "") -> None:
+        current = str(n.get("detected_category") or n.get("category") or "").strip().lower()
+        effective = current or parent_cat
+        if parent_cat == "anime" and current in {"", "misc", "movies", "tv"}:
+            n["detected_category"] = "anime"
+            n["category"] = "anime"
+            effective = "anime"
+        for child in n.get("children", []) or []:
+            if isinstance(child, dict):
+                walk(child, effective)
+
+    walk(node)
+
+
+def _stamp_failed_item(item: Dict[str, Any], failed_map: Dict[str, Dict[str, str]], active_ids: List[str]) -> None:
+    """Stamp ``indexer_errors`` onto a single item if it has failed submissions."""
+    key = item.get("key", "")
+    name = item.get("name", "")
+    path = item.get("path", "")
+    errors: Dict[str, str] = {}
+    for lookup in (key, name, path):
+        if lookup in failed_map:
+            for idx_id, error in failed_map[lookup].items():
+                if idx_id in active_ids and idx_id not in errors:
+                    errors[idx_id] = error
+    if errors:
+        item["indexer_errors"] = errors
+        if active_ids:
+            indexers = dict(item.get("indexers") or {})
+            for idx_id in errors:
+                if idx_id in active_ids:
+                    indexers[idx_id] = False
+            item["indexers"] = {idx_id: bool(indexers.get(idx_id, False)) for idx_id in active_ids}
+        item["completed"] = False
+
+
+def _stamp_failed_indexer_flags(
+    result: Dict[str, Any], failed_map: Dict[str, Dict[str, str]], active_ids: List[str]
+) -> None:
+    """Walk the pending snapshot and stamp ``indexer_errors`` on items with failed submissions.
+
+    This adds a dict ``{indexer_id: error_message}`` alongside the existing
+    ``indexers`` boolean dict so the UI can distinguish 'failed' (yellow) from
+    'pending' (red) without changing the existing boolean contract.
+    """
+    # Flat categories (movies, misc, custom)
+    for cat_key, cat_items in result.items():
+        if cat_key in ("tv", "external") or not isinstance(cat_items, list):
+            continue
+        for item in cat_items:
+            if isinstance(item, dict):
+                _stamp_failed_item(item, failed_map, active_ids)
+
+    # External folder groups
+    for group in result.get("external", []):
+        for item in group.get("items", []):
+            if isinstance(item, dict):
+                _stamp_failed_item(item, failed_map, active_ids)
+                for child in item.get("children", []):
+                    if isinstance(child, dict):
+                        _stamp_failed_item(child, failed_map, active_ids)
+
+
+def _external_group_order_key(group: Dict[str, Any]) -> str:
+    raw_key = str(
+        group.get("key")
+        or group.get("folder_path")
+        or group.get("folder_name")
+        or group.get("id")
+        or ""
+    ).strip()
+    if not raw_key:
+        return ""
+    normalized_key = raw_key.replace("\\", "/").rstrip("/").casefold()
+    return f"external:{normalized_key}"
+
+
+def _sort_external_groups(groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    conf = get_config()
+    raw_order = getattr(conf, "pending_external_group_order", []) or []
+    if not isinstance(raw_order, list):
+        raw_order = []
+    order_map = {str(key): idx for idx, key in enumerate(raw_order) if str(key).strip()}
+    if not order_map:
+        return groups
+
+    def sort_key(group: Dict[str, Any]) -> tuple[int, str]:
+        key = _external_group_order_key(group)
+        order_index = order_map.get(key, len(order_map))
+        label = str(group.get("folder_name") or group.get("key") or key or "").casefold()
+        return order_index, label
+
+    return sorted(groups, key=sort_key)
+
+
+def stamp_exclusion_flags(_result: Dict[str, Any]) -> None:
+    """No-op — legacy TV exclusion logic removed (all folders are external now)."""
+
+
+def collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
+    """Extract unique candidate titles for anime lookups from a pending snapshot."""
+    seen: set[str] = set()
+    names: list[str] = []
+    video_itypes = {"TV Show", "Movie", "Anime"}
+
+    def _add(name: str) -> None:
+        if name and name not in seen:
+            seen.add(name)
+            names.append(name)
+
+    items = data.get("items", {})
+
+    for category_key, category_items in items.items():
+        if category_key in ("tv", "external") or not isinstance(category_items, list):
+            continue
+        for item in category_items:
+            if not isinstance(item, dict):
+                continue
+            if category_key == "movies" or item.get("itype") in video_itypes:
+                _add(item.get("name", ""))
+
+    for group in items.get("external", []):
+        for item in group.get("items", []):
+            if item.get("itype") in video_itypes:
+                _add(item.get("name", ""))
+
+    return names
+
+
+def collect_uncached_anime_check_names(data: Dict[str, Any]) -> list[str]:
+    """Return anime-check candidates that are not already cached."""
+    from logic.anime_cache import get_cached
+
+    return [name for name in collect_anime_check_names(data) if get_cached(name) is None]
+
+
+def _has_clear_movie_year(name: str) -> bool:
+    return shared_has_clear_movie_year(name)
+
+
+def _anime_cache_lookup(name: str) -> Optional[bool]:
+    from logic.anime_cache import get_cached as anime_cached
+
+    return anime_cached(name)
+
+
+def classify_video_name(name: str, folder_category: str = "", assume_movie_if_unknown: bool = True) -> str:
+    """Classify a video release name as TV Show, Anime, Movie, or Misc."""
+    return shared_classify_video_name(
+        name,
+        folder_category,
+        assume_movie_if_unknown,
+        anime_lookup=_anime_cache_lookup,
+    )
+
+
+def detect_external_category(name: str, entry_path: Path) -> str:
+    """Auto-detect category for an external folder/file based on naming patterns."""
+    lower_name = str(name or "").lower()
+    if _ANIME_BONUS_PATTERN.search(lower_name):
+        return "anime"
+    suffix = entry_path.suffix.lower()
+    is_video_container = suffix in _VIDEO_FILE_EXTENSIONS
+    anime_cached = _anime_cache_lookup(str(name or ""))
+    has_episode_shape = bool(_ANIME_SEQUENCE_PATTERN.search(lower_name)) or bool(_SEASON_MARKER_RE.search(name or "")) or bool(_EPISODIC_TV_PATTERN.search(name or ""))
+    has_video_source = bool(_SOURCE_TAG_PATTERN.search(lower_name))
+    has_anime_hint = bool(re.search(r"\b(anime|dual[-\s]?audio|multi[-\s]?subs?|subbed|dubbed)\b", lower_name))
+    has_anime_bonus = bool(_ANIME_BONUS_PATTERN.search(lower_name))
+    if anime_cached is True and (has_anime_hint or has_anime_bonus or not has_episode_shape):
+        return "anime"
+    # Type-first guard: if this is a real video container (or strong TV source+episode shape),
+    # do not let audio codec words like FLAC force music classification.
+    if is_video_container:
+        classified_video = classify_video_name(name, "", assume_movie_if_unknown=True).strip().lower()
+        if classified_video == "anime":
+            return "anime"
+        if has_anime_hint:
+            return "anime"
+        if has_episode_shape:
+            return "tv"
+        if has_video_source:
+            return "movies"
+        return "movies"
+    if has_episode_shape and has_video_source:
+        return "tv"
+    # Historical behavior: directory/file names that clearly express seasonal packs
+    # should not fall back to MOVIES just because year/source tokens are present.
+    if _SEASON_MARKER_RE.search(name or ""):
+        return "tv"
+    return shared_detect_external_category(name, entry_path)
+
+
+def _detect_external_category_fast(
+    name: str, children_have_tv: bool, children_have_legacy_episodes: bool = False
+) -> str:
+    anime_cached = _anime_cache_lookup(name)
+    lower_name = str(name or "").lower()
+    has_episode_shape = bool(_ANIME_SEQUENCE_PATTERN.search(lower_name)) or bool(_SEASON_MARKER_RE.search(name or "")) or bool(_EPISODIC_TV_PATTERN.search(name or ""))
+    has_anime_hint = bool(re.search(r"\b(anime|dual[-\s]?audio|multi[-\s]?subs?|subbed|dubbed)\b", lower_name))
+    has_anime_bonus = bool(_ANIME_BONUS_PATTERN.search(lower_name))
+    if anime_cached is True and (has_anime_hint or has_anime_bonus or not has_episode_shape):
+        return "anime"
+    if looks_like_tv_name(name):
+        return "tv"
+    if children_have_tv or children_have_legacy_episodes:
+        return "tv"
+    if _has_clear_movie_year(name):
+        if re.search(r"(?:^|[.\s_-])S\d{2}(?:[.\s_-]|$)", name, re.IGNORECASE):
+            return "tv"
+        return "movies"
+    return ""
+
+
+def detect_content_itype(name: str, entry_path: Path, folder_category: str) -> str:
+    """Detect the display content type for a pending item."""
+    return shared_detect_content_itype(
+        name,
+        entry_path,
+        folder_category,
+        anime_lookup=_anime_cache_lookup,
+    )
+
+
+def _classify_standalone_file_category(entry: Path) -> str:
+    """Classify a loose file by filename + extension only, without parent-path hints."""
+    # DISC has absolute priority over ebook/music/audiobook extension detection.
+    # A Blu-ray or DVD folder may contain companion PDFs — it is still disc, not ebooks.
+    if _directory_disc_bubble_up(entry):
+        return "disc"
+    if _has_disc_structure_signature(entry):
+        return "disc"
+    ext_first_category = _directory_extension_first_category(entry)
+    if ext_first_category:
+        return ext_first_category
+    name = entry.name
+    ext = entry.suffix.lower()
+    lower_parts = [part.lower() for part in entry.parts]
+    lower_path = str(entry).replace("\\", "/").lower()
+    # DISC matrix has highest precedence and overrides generic folder/path inferences.
+    if _has_disc_structure_signature(entry):
+        return "disc"
+    if any(marker in lower_parts for marker in _DISC_PATH_MARKERS):
+        return "disc"
+    if "/bdmv/" in lower_path or "/video_ts/" in lower_path or "/audio_ts/" in lower_path or "/certificate/" in lower_path:
+        return "disc"
+    if ext in _EBOOK_EXTENSIONS:
+        return "books"
+    if re.search(r"\b(?:pokemon|pocket monsters|horizons)\b", name, re.IGNORECASE):
+        return "anime"
+    if ext in _VIDEO_FILE_EXTENSIONS:
+        if _SEASON_MARKER_RE.search(name):
+            return "tv"
+        if _SCENE_VIDEO_TAG_RE.search(name):
+            return "movies"
+    return ""
+
+
+def _itype_to_category_id(itype: str) -> str:
+    """Map a detected item type to its upload category id."""
+    normalized = str(itype or "").strip().lower()
+    return {
+        "tv show": "tv",
+        "tv episode": "tv",
+        "anime": "anime",
+        "movie": "movies",
+        "movies": "movies",
+        "music": "music",
+        "audiobook": "audiobooks",
+        "ebook": "books",
+        "books": "books",
+        "app": "apps",
+        "apps": "apps",
+        "game": "apps",
+        "misc": "misc",
+    }.get(normalized, "")
+
+
+def _build_virtual_pack_name(sample_episode: str, show_name: str, season_num: int) -> str:
+    stem = sample_episode
+    if "." in stem:
+        parts = stem.rsplit(".", 1)
+        if len(parts[1]) <= 4 and parts[1].lower() in ("mkv", "mp4", "avi", "ts", "m4v", "wmv"):
+            stem = parts[0]
+
+    match = re.search(r"(\.S\d{1,2})E\d+[^.]*", stem, re.IGNORECASE)
+    if match:
+        before = stem[: match.start()]
+        season_tag = match.group(1)
+        after_episode = re.sub(r"^[.\s-]+", ".", stem[match.end() :])
+        pack_name = f"{before}{season_tag}{after_episode}"
+    else:
+        pack_name = f"{show_name.replace(' ', '.')}.S{season_num:02d}"
+    return pack_name.strip(". ")
+
+
+def _selection_path_identity(value: str | Path) -> str:
+    text = str(value)
+    try:
+        resolved = str(Path(text).resolve())
+    except OSError:
+        resolved = text
+    return resolved.casefold()
+
+
+def _row_source_exempt(node: Dict[str, Any]) -> bool:
+    category = str(node.get("detected_category") or node.get("category") or "").strip().lower()
+    itype = str(node.get("itype") or "").strip().lower()
+    name_text = f"{node.get('name') or ''} {node.get('path') or ''}".strip()
+    if _SOURCE_EXEMPT_NAME_RE.search(name_text):
+        return True
+    return category in {"music", "books", "ebooks", "audiobooks", "disc"} or itype in {
+        "music",
+        "ebook",
+        "audiobook",
+        "disc",
+    }
+
+
+def _stamp_tree_selection_state(item: Dict[str, Any], resolution: Any) -> bool:
+    """Annotate tree nodes with auto-select metadata from explicit-path resolution."""
+    selectable = {_selection_path_identity(path) for path in getattr(resolution, "queue_paths", ())}
+    ignored = {_selection_path_identity(entry.path): entry.reason for entry in getattr(resolution, "ignored_paths", ())}
+
+    def visit(node: Dict[str, Any]) -> bool:
+        child_selected = False
+        for child in node.get("children", []) or []:
+            child_selected = visit(child) or child_selected
+
+        node_identity = _selection_path_identity(node.get("path", ""))
+        ignored_reason = ignored.get(node_identity)
+        if (
+            ignored_reason
+            and _row_source_exempt(node)
+            and ignored_reason.lower().startswith("missing media source")
+        ):
+            ignored_reason = ""
+        node_selected = node_identity in selectable
+        # A pack/folder is valid (selectable) if it has ≥1 valid episode child
+        is_dir = bool(node.get("is_dir"))
+        children = [c for c in node.get("children", []) or [] if isinstance(c, dict)]
+        is_leaf_file = not is_dir and not children
+        leaf_fallback_selected = is_leaf_file and not ignored_reason
+        if is_dir and child_selected and ignored_reason:
+            ignored_reason = ""
+        effectively_selected = node_selected or leaf_fallback_selected or (is_dir and child_selected)
+
+        node["auto_selectable"] = bool(effectively_selected)
+        node["auto_select_ignored"] = bool(ignored_reason)
+        # Track whether this directory became selectable via its children
+        # (pack folder) vs being directly in queue_paths (movie folder).
+        if not node_selected and is_dir and child_selected:
+            node["_pack_via_children"] = True
+        if ignored_reason:
+            node["auto_select_reason"] = ignored_reason
+        elif child_selected and not node_selected and not is_dir:
+            node["auto_select_reason"] = "Selectable descendants only"
+        else:
+            node.pop("auto_select_reason", None)
+
+        return node_selected or child_selected or leaf_fallback_selected
+
+    has_selectable = visit(item)
+    if not has_selectable and ignored:
+        item["auto_selectable"] = False
+        item["auto_select_ignored"] = True
+        item["auto_select_reason"] = next(iter(ignored.values()))
+    return has_selectable
+
+
+def _mark_ignored_tree_nodes_completed(node: Dict[str, Any], active_ids: List[str]) -> None:
+    for child in node.get("children", []) or []:
+        _mark_ignored_tree_nodes_completed(child, active_ids)
+
+    if not node.get("auto_select_ignored"):
+        return
+
+    node["skipped"] = True
+    node["completed"] = True
+    if active_ids:
+        node["indexers"] = {idx_id: True for idx_id in active_ids}
+
+
+def _clear_non_target_ignored_flags(node: Dict[str, Any]) -> None:
+    """Clear only source-matrix ignores for source-exempt content classes."""
+    if not isinstance(node, dict):
+        return
+    category = str(node.get("detected_category") or node.get("category") or "").strip().lower()
+    reason = str(node.get("auto_select_reason") or "")
+    if category in {"disc", "books", "ebooks", "audiobooks", "music"} and reason.lower().startswith(
+        "missing media source"
+    ):
+        node["auto_select_ignored"] = False
+        node["auto_select_reason"] = ""
+        node["auto_selectable"] = True
+    for child in node.get("children", []) or []:
+        _clear_non_target_ignored_flags(child)
+
+
+def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
+    children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
+    for child in children:
+        _rollup_external_completion(child, active_ids)
+
+    if node.get("auto_select_ignored"):
+        node["skipped"] = True
+        node["completed"] = True
+        if active_ids:
+            node["indexers"] = {idx_id: True for idx_id in active_ids}
+        return
+
+    if not children:
+        direct_indexers = node.get("_direct_indexers", {}) if isinstance(node.get("_direct_indexers"), dict) else {}
+        indexers = direct_indexers or (node.get("indexers", {}) if isinstance(node.get("indexers"), dict) else {})
+        if active_ids:
+            node["indexers"] = {idx_id: bool(indexers.get(idx_id, False)) for idx_id in active_ids}
+        node["completed"] = bool(active_ids) and bool(indexers) and all(indexers.values())
+        return
+
+    direct_indexers = node.get("_direct_indexers", {}) if isinstance(node.get("_direct_indexers"), dict) else {}
+    if node.get("is_dir") and node.get("auto_selectable") and not node.get("_pack_via_children"):
+        if active_ids:
+            node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
+            node["completed"] = bool(node["indexers"]) and all(node["indexers"].values())
+        else:
+            node["completed"] = False
+        return
+
+    required_children = [child for child in children if not child.get("auto_select_ignored")]
+    if not required_children:
+        if active_ids:
+            node["indexers"] = {idx_id: True for idx_id in active_ids}
+        node["completed"] = True
+        return
+
+    if active_ids:
+        node["indexers"] = {
+            idx_id: all(
+                (child.get("indexers") or {}).get(idx_id, bool(child.get("completed"))) for child in required_children
+            )
+            for idx_id in active_ids
+        }
+        node["completed"] = all(node["indexers"].values())
+    else:
+        node["completed"] = all(bool(child.get("completed")) for child in required_children)
+
+
+def _propagate_pack_completion_down(node: Dict[str, Any], inherited_indexers: Optional[Dict[str, bool]] = None) -> None:
+    """Propagate a pack's upload status down to children that have no individual upload record.
+
+    Runs after _rollup_external_completion (bottom-up) to fill in children whose rel_path
+    was never individually recorded in the DB (e.g. files inside a pack uploaded as a unit).
+    Only updates nodes with no direct record; nodes with their own DB entries keep their values.
+    Skipped/ignored items are excluded — they carry their own (False) completion state.
+    """
+    children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
+
+    if inherited_indexers is not None:
+        direct = node.get("_direct_indexers") or {}
+        # Don't overwrite skipped items — they were explicitly excluded from upload selection
+        if not any(direct.values()) and not node.get("skipped"):
+            node["indexers"] = dict(inherited_indexers)
+            node["completed"] = all(inherited_indexers.values())
+
+    current = node.get("indexers") or {}
+    propagate_down = current if any(current.values()) else (inherited_indexers or current)
+    for child in children:
+        _propagate_pack_completion_down(child, propagate_down)
+
+
+def _enforce_child_source_requirement(node: Dict[str, Any]) -> None:
+    """Mark child video files as ignored when they lack a quality source token in their filename.
+
+    A child file without WEB-DL/BluRay/HDTV/DVD/etc. in its own name cannot be auto-selected
+    for individual upload — the parent pack (which carries the source token) is the upload unit.
+    Episode numbers like S03E01 are NOT sufficient on their own.
+
+    Must run after _stamp_tree_selection_state (which grants leaf-fallback eligibility) and after
+    _clear_non_target_ignored_flags so this acts as the final authority on child eligibility.
+    """
+    for child in node.get("children", []) or []:
+        if not isinstance(child, dict):
+            continue
+        _enforce_child_source_requirement(child)
+
+        if child.get("auto_select_ignored"):
+            continue
+
+        name = str(child.get("name") or "")
+        ext = Path(name).suffix.lower()
+        if ext not in _VIDEO_CHILD_EXTENSIONS:
+            continue
+
+        category = str(child.get("detected_category") or child.get("category") or "").strip().lower()
+        if category in {"disc", "books", "ebooks", "audiobooks", "music"}:
+            continue
+
+        # Check only the file's own name — parent folder tokens do not count
+        if _SOURCE_TAG_PATTERN.search(name):
+            continue
+
+        child["auto_select_ignored"] = True
+        child["auto_select_reason"] = "Missing quality source in filename (WEB-DL/BluRay/HDTV/DVD/etc. required for individual upload)"
+        child["auto_selectable"] = False
+
+
+def _inherit_parent_valid_state(node: Dict[str, Any]) -> bool:
+    """Bubble child VALID/eligible state upward so healthy episode packs keep parent selectable."""
+    if not isinstance(node, dict):
+        return False
+    children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
+    child_has_valid = False
+    for child in children:
+        if _inherit_parent_valid_state(child):
+            child_has_valid = True
+    self_valid = (
+        str(node.get("status") or "").upper() == "VALID"
+        or bool(node.get("eligible"))
+        or (not node.get("auto_select_ignored") and bool(node.get("auto_selectable")))
+    )
+    if child_has_valid and not self_valid:
+        node["status"] = "VALID"
+        node["eligible"] = True
+        node["ignored"] = False
+        node["skip_reason"] = ""
+        node["auto_select_ignored"] = False
+        node["auto_select_reason"] = ""
+        node["auto_selectable"] = True
+        return True
+    return self_valid or child_has_valid
+
+
+def _strip_external_helper_fields(node: Dict[str, Any]) -> None:
+    node.pop("_direct_indexers", None)
+    node.pop("_pack_via_children", None)
+    for child in node.get("children", []) or []:
+        if isinstance(child, dict):
+            _strip_external_helper_fields(child)
+
+
+def _log_pack_completion_state(item: Dict[str, Any]) -> None:
+    leaves: List[Dict[str, Any]] = []
+
+    def visit(node: Dict[str, Any]) -> None:
+        children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
+        if not children:
+            leaves.append(node)
+            return
+        for child in children:
+            visit(child)
+
+    visit(item)
+    valid_count = sum(1 for leaf in leaves if not leaf.get("auto_select_ignored"))
+    ignored_count = sum(1 for leaf in leaves if leaf.get("auto_select_ignored"))
+    if valid_count == 0 and ignored_count == 0:
+        return
+
+    status = "completed" if item.get("completed") else "pending"
+    logger.log(
+        "VERBOSE",
+        f"Pack completion status for '{item.get('name', 'item')}': {status} "
+        f"({valid_count} valid files, {ignored_count} ignored)",
+    )
+
+
+def _compact_external_tree_item(
+    item: Dict[str, Any],
+    metadata_by_path: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> str:
+    """Drop retained descendants while preserving a compact search document.
+
+    Full descendants are needed transiently while classification and completion
+    state are rolled up. The Queue page fetches them lazily, so retaining every
+    descendant dictionary after the scan duplicates filesystem state and costs
+    substantially more memory than the searchable names themselves.
+    """
+    searchable_names: list[str] = []
+    stack: list[Dict[str, Any]] = [item]
+    while stack:
+        node = stack.pop()
+        name = str(node.get("name") or "").strip()
+        if name:
+            searchable_names.append(name)
+        children = node.get("children")
+        if isinstance(children, list):
+            stack.extend(child for child in children if isinstance(child, dict))
+        if metadata_by_path is not None and node is not item:
+            path_identity = _selection_path_identity(str(node.get("path") or ""))
+            if path_identity:
+                metadata_by_path[path_identity] = {
+                    key: value
+                    for key, value in node.items()
+                    if key not in {"children", "files"}
+                }
+
+    if isinstance(item.get("children"), list) or isinstance(item.get("files"), list):
+        item["children"] = []
+        item["files"] = []
+    return "\n".join(searchable_names)
+
+
+def _compact_external_groups(groups: List[Dict[str, Any]]) -> tuple[Dict[str, str], bytes]:
+    """Compact external rows and return private search and metadata indexes."""
+    search_index: Dict[str, str] = {}
+    metadata_by_path: Dict[str, Dict[str, Any]] = {}
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        for item in group.get("items", []) or []:
+            if not isinstance(item, dict):
+                continue
+            search_text = _compact_external_tree_item(item, metadata_by_path)
+            item_key = str(item.get("key") or "")
+            if item_key and search_text:
+                search_index[item_key] = search_text
+    metadata_json = json.dumps(
+        metadata_by_path,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return search_index, zlib.compress(metadata_json, level=6)
+
+
+def _load_external_metadata(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    raw_metadata = data.get("_external_metadata_zlib")
+    if not isinstance(raw_metadata, bytes):
+        return {}
+    try:
+        decoded = json.loads(zlib.decompress(raw_metadata).decode("utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, zlib.error):
+        return {}
+    if not isinstance(decoded, dict):
+        return {}
+    return {
+        str(key): value
+        for key, value in decoded.items()
+        if isinstance(value, dict)
+    }
+
+
+def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Dict[str, Any]:
+    """Resolve backend-owned category/detection metadata for one visible item."""
+    forced_category = _classify_standalone_file_category(entry)
+    # Strict path isolation for loose files: never let parent folder hints drive detection.
+    hint = "" if entry.is_file() else category_hint
+    resolution = resolve_explicit_path(
+        entry,
+        category_hint=hint,
+        anime_lookup=_anime_cache_lookup,
+    )
+    ignored_reason = next(
+        (ignored.reason for ignored in getattr(resolution, "ignored_paths", ()) if ignored.path == entry),
+        "",
+    )
+    if ignored_reason:
+        detected_category = str(resolution.category or "").strip().lower()
+        detected_itype = str(resolution.itype or "").strip().lower()
+        if detected_category in {"music", "books", "ebooks", "audiobooks", "disc"} or detected_itype in {
+            "music",
+            "ebook",
+            "audiobook",
+            "disc",
+        }:
+            ignored_reason = ""
+    detected_category = forced_category or resolution.category
+    raw_text = f"{entry.name} {entry}".lower()
+    parent_folder_name = str(entry.parent.name if entry.parent else "")
+    anime_context_locked = False
+    if str(category_hint or "").strip().lower() == "anime":
+        anime_context_locked = True
+    elif _anime_cache_lookup(parent_folder_name) is True:
+        anime_context_locked = True
+    elif _anime_cache_lookup(str(entry.name or "")) is True:
+        anime_context_locked = True
+    # Keep historical behavior: anime bonus assets must short-circuit to ANIME+IGNORED
+    # so later video/source guards cannot rewrite them to TV/MOVIES.
+    if _ANIME_BONUS_PATTERN.search(raw_text):
+        return {
+            "detected_category": "anime",
+            "detection_method": "anime-bonus-pattern",
+            "detection_flags": ["anime_bonus"],
+            "detection_override": "Anime bonus asset",
+            "auto_selectable": False,
+            "auto_select_ignored": True,
+            "auto_select_reason": "Anime Non-Credit Feature / Bonus Asset",
+            "status": "IGNORED",
+            "eligible": False,
+            "ignored": True,
+            "skip_reason": "Anime Non-Credit Feature / Bonus Asset",
+            "category": "anime",
+        }
+    # Hard video-container guard: codec tokens (e.g. FLAC) must never demote
+    # .mkv/.mp4/.avi/.ts/.mov payloads into non-video categories.
+    if entry.is_file() and entry.suffix.lower() in _VIDEO_FILE_EXTENSIONS:
+        hint_cat = str(category_hint or "").strip().lower()
+        if _EPISODIC_TV_PATTERN.search(raw_text):
+            if hint_cat == "anime" or anime_context_locked:
+                detected_category = "anime"
+            else:
+                detected_category = "anime" if bool(re.search(r"\b(anime|ncop|nced|creditless)\b", raw_text, re.IGNORECASE)) else "tv"
+            ignored_reason = ignored_reason if detected_category == "anime" else ""
+        else:
+            video_class = classify_video_name(entry.name, category_hint, assume_movie_if_unknown=True).strip().lower()
+            if video_class in {"tv show", "tv"}:
+                detected_category = "tv"
+            elif video_class in {"anime"}:
+                detected_category = "anime"
+            else:
+                detected_category = "movies"
+            ignored_reason = ""
+    payload = {
+        "detected_category": detected_category,
+        "detection_method": resolution.detection_method,
+        "detection_flags": list(getattr(resolution, "content_flags", ()) or ()),
+        "detection_override": getattr(resolution, "override_note", ""),
+        "auto_selectable": bool(resolution.queue_paths),
+        "auto_select_ignored": bool(ignored_reason),
+        "auto_select_reason": ignored_reason,
+    }
+    payload["name"] = entry.name
+    payload["path"] = str(entry)
+    _force_video_processing_state(payload, category_hint)
+    payload.pop("name", None)
+    payload.pop("path", None)
+    _apply_source_matrix_guard(payload | {"name": entry.name})
+    return payload
+
+
+def _build_external_tree_item(
+    external_folder_name: str,
+    node: Path,
+    rel_path: str,
+    upload_map: Dict[str, Set[str]],
+    completed_lookup: Set[str],
+    active_ids: List[str],
+    *,
+    folder_category_hint: str = "",
+    top_level: bool = False,
+    include_children: bool = True,
+    _seen_dirs: Optional[Set[str]] = None,
+) -> tuple[Dict[str, Any], int]:
+    is_dir = node.is_dir()
+    children: List[Dict[str, Any]] = []
+    size = 0
+    fully_scanned = True
+    resolution = None
+    seen_dirs = _seen_dirs if _seen_dirs is not None else set()
+
+    if is_dir:
+        try:
+            resolved_key = str(node.resolve(strict=False))
+        except OSError:
+            resolved_key = str(node)
+        if resolved_key in seen_dirs:
+            fully_scanned = False
+            is_dir = True
+        else:
+            seen_dirs.add(resolved_key)
+
+    if is_dir and fully_scanned and include_children:
+        try:
+            for child in sorted(node.iterdir(), key=lambda path: path.name.lower()):
+                if child.name.startswith("."):
+                    continue
+                child_rel = f"{rel_path}/{child.name}" if rel_path else child.name
+                child_item, child_size = _build_external_tree_item(
+                    external_folder_name,
+                    child,
+                    child_rel,
+                    upload_map,
+                    completed_lookup,
+                    active_ids,
+                    folder_category_hint=folder_category_hint,
+                    top_level=False,
+                    include_children=True,
+                    _seen_dirs=seen_dirs,
+                )
+                children.append(child_item)
+                size += child_size
+        except OSError:
+            children = []
+            fully_scanned = False
+
+    if not is_dir:
+        try:
+            size = node.stat().st_size
+        except OSError:
+            size = 0
+    elif not fully_scanned or not include_children:
+        size = compute_size_uncached(node)
+
+    if top_level:
+        top_level_hint = ""
+        if node.is_dir():
+            top_level_hint = folder_category_hint
+        resolution = resolve_explicit_path(
+            node,
+            category_hint=top_level_hint,
+            anime_lookup=_anime_cache_lookup,
+        )
+
+    node_indexers = _lookup_upload_map_indexers(
+        upload_map,
+        node.name,
+        rel_path,
+        node,
+    )
+    direct_indexer_status: Dict[str, bool] = {idx_id: (idx_id in node_indexers) for idx_id in active_ids}
+    indexer_status: Dict[str, bool] = dict(direct_indexer_status)
+    if is_dir and children:
+        indexer_status = {idx_id: True for idx_id in active_ids}
+        for child in children:
+            for idx_id, done in child.get("indexers", {}).items():
+                if not done:
+                    indexer_status[idx_id] = False
+
+    item = {
+        "name": node.name,
+        "key": f"ext:{external_folder_name}:{rel_path}",
+        "path": str(node),
+        "size": size,
+        "is_dir": is_dir,
+        "is_directory": is_dir,
+        "itype": detect_content_itype(node.name, node, "" if (top_level and not is_dir) else folder_category_hint) if top_level else "External",
+        "indexers": indexer_status,
+        "_direct_indexers": direct_indexer_status,
+        "completed": bool(active_ids) and bool(indexer_status) and all(indexer_status.values()),
+        "children": children,
+        # Keep a second alias for clients that bind nested expansion off `files`.
+        "files": children,
+    }
+    if is_dir:
+        try:
+            item["child_count"] = sum(1 for child in node.iterdir() if not child.name.startswith("."))
+        except OSError:
+            item["child_count"] = 0
+    if not top_level and folder_category_hint:
+        # Preserve parent context for nested rows so child pills do not fall back to MOVIES.
+        item["detected_category"] = folder_category_hint
+        item["category"] = folder_category_hint
+    _force_video_processing_state(item, folder_category_hint)
+    if top_level:
+        item["itype"] = resolution.itype
+        forced_category = _classify_standalone_file_category(node)
+        if forced_category == "disc" and node.is_dir():
+            # Disc structure is a processing flag, not a replacement for the
+            # parent release's upload category/type.
+            forced_category = ""
+        resolved_category = forced_category or resolution.category
+        item["detected_category"] = (
+            ""
+            if resolved_category == "misc"
+            and resolution.itype == "Misc"
+            and resolution.detection_method == "Folder fallback"
+            else resolved_category
+        )
+        item["detection_method"] = resolution.detection_method
+        item["detection_flags"] = list(getattr(resolution, "content_flags", ()) or ())
+        if resolution.override_note:
+            item["detection_override"] = resolution.override_note
+        # Parent DISC inheritance shield: once resolved as DISC, force all descendants
+        # to DISC before validation so they never drift into video source checks.
+        if str(item.get("detected_category") or "").strip().lower() == "disc":
+            _force_tree_category(item, "disc")
+        # Normalize child rows first so parent promotion sees final child categories
+        # (especially NCOP/NCED => ANIME bonus rows).
+        _validate_child_video_items(item)
+        _inherit_category_from_children(item)
+        _inherit_anime_context_to_children(item)
+        # Re-run promotion after anime-context inheritance for stable parent lock.
+        _inherit_category_from_children(item)
+        if str(item.get("detected_category") or item.get("category") or "").strip().lower() != "anime":
+            _force_video_processing_state(item, folder_category_hint)
+        _apply_source_matrix_guard(item)
+        _stamp_tree_selection_state(item, resolution)
+        _clear_non_target_ignored_flags(item)
+        _inherit_parent_valid_state(item)
+        _mark_ignored_tree_nodes_completed(item, active_ids)
+        _rollup_external_completion(item, active_ids)
+        _strip_external_helper_fields(item)
+        if is_dir:
+            _log_pack_completion_state(item)
+    return item, size
+
+
+def _iter_pending_summary_rows(items: Dict[str, Any]) -> List[tuple[str, Dict[str, Any]]]:
+    rows: List[tuple[str, Dict[str, Any]]] = []
+    for category_key, category_items in items.items():
+        if category_key in ("tv", "external") or not isinstance(category_items, list):
+            continue
+        for item in category_items:
+            if isinstance(item, dict):
+                rows.append((category_key, item))
+    for group in items.get("external", []) if isinstance(items.get("external"), list) else []:
+        if not isinstance(group, dict):
+            continue
+        for item in group.get("items", []) or []:
+            if isinstance(item, dict):
+                rows.append(("external", item))
+    return rows
+
+
+def empty_pending_summary() -> Dict[str, int]:
+    """Return the stable pending-summary response shape with zero counts."""
+    return {
+        "tv_shows": 0,
+        "tv_episodes": 0,
+        "movies": 0,
+        "misc": 0,
+        "external": 0,
+        "item_total": 0,
+        "task_total": 0,
+        "red_indexers": 0,
+        "total": 0,
+    }
+
+
+def build_pending_summary(items: Dict[str, Any], indexers: Optional[List[Dict[str, Any]]] = None) -> Dict[str, int]:
+    """Build flat pending counters for external and dynamic categories."""
+    movies_items = items.get("movies", []) if isinstance(items.get("movies"), list) else []
+    misc_items = items.get("misc", []) if isinstance(items.get("misc"), list) else []
+    external_groups = items.get("external", []) if isinstance(items.get("external"), list) else []
+
+    movies_pending = len(movies_items)
+    misc_pending = len(misc_items)
+    external_pending = sum(len(group.get("items", [])) for group in external_groups if isinstance(group, dict))
+
+    flat_total = 0
+    flat_summary: Dict[str, int] = {}
+    for category_key, category_items in items.items():
+        if category_key in ("tv", "external"):
+            continue
+        if isinstance(category_items, list):
+            count = len(category_items)
+            flat_summary[category_key] = count
+            flat_total += count
+
+    item_total = flat_total + external_pending
+    required_ids = required_pending_indexer_ids(indexers or [])
+    task_total = 0
+    red_indexer_ids: Set[str] = set()
+    for _category_key, row in _iter_pending_summary_rows(items):
+        row_status = row.get("indexers") if isinstance(row, dict) else None
+        task_total += count_pending_indexer_slots(row_status, required_ids)
+        red_indexer_ids.update(incomplete_pending_indexer_ids(row_status, required_ids))
+
+    log_queue_update(red_indexers=len(red_indexer_ids), total_tasks=task_total)
+    return {
+        **empty_pending_summary(),
+        "movies": movies_pending,
+        "misc": misc_pending,
+        "external": external_pending,
+        "item_total": item_total,
+        "task_total": task_total,
+        "red_indexers": len(red_indexer_ids),
+        "total": task_total,
+        **{key: value for key, value in flat_summary.items() if key not in ("movies", "misc")},
+    }
+
+
+def scan_pending_snapshot() -> Dict[str, Any]:
+    """Run a full filesystem scan and build the pending snapshot payload."""
+    # Enable per-scan filesystem walk caching so resolve_explicit_path /
+    # detect_content_itype / _build_external_tree_item don't each re-walk
+    # the same TV pack folder.
+    _scan_cache_token = begin_scan_cache()
+    try:
+        return _scan_pending_snapshot_inner()
+    finally:
+        end_scan_cache(_scan_cache_token)
+
+
+def _scan_pending_snapshot_inner() -> Dict[str, Any]:
+    """Inner snapshot builder, wrapped by ``scan_pending_snapshot`` for caching."""
+    started = time.perf_counter()
+    from core.registry import (
+        get_available_categories,
+        get_registry,
+        resolve_indexer_backfill,
+    )
+
+    conf = get_config()
+    registry = get_registry()
+    active_indexers = [
+        {
+            "id": indexer.id,
+            "name": indexer.name,
+            "color": indexer.color,
+            "icon": indexer.icon,
+            "favicon_url": indexer.favicon_url,
+            "backfill": bool(resolve_indexer_backfill(indexer, conf)),
+        }
+        for indexer in registry.enabled(conf)
+    ]
+    active_ids = [indexer["id"] for indexer in active_indexers]
+    indexer_status_available = True
+
+    db_error: Optional[str] = None
+    failed_map: Dict[str, Dict[str, str]] = {}
+    try:
+        _fully_done, upload_map, failed_map = database.get_dashboard_data(active_ids)
+        completed_lookup = _normalize_dashboard_lookup_values(_fully_done)
+    except database.DatabaseOperationalError as exc:
+        db_error = str(exc)
+        indexer_status_available = False
+        logger.warning(f"Pending scan continuing without indexer completion state due to DB error: {exc}")
+        upload_map = {}
+        completed_lookup = set()
+
+    result: Dict[str, Any] = {"tv": [], "movies": [], "misc": [], "external": []}
+    categories_cfg = get_configured_category_folders(conf, include_external=True, must_exist=True)
+    bulk_selection_by_folder: Dict[str, bool] = {}
+    get_folder_path_entries = getattr(conf, "get_folder_path_entries", None)
+    folder_entries = (
+        get_folder_path_entries() if callable(get_folder_path_entries) else getattr(conf, "folder_paths", [])
+    )
+    for folder_entry in folder_entries or []:
+        if not isinstance(folder_entry, dict):
+            continue
+        folder_path = str(folder_entry.get("path") or "").strip()
+        if not folder_path:
+            continue
+        bulk_selection_by_folder[_selection_path_identity(folder_path)] = bool(
+            folder_entry.get("allow_bulk_selection", True)
+        )
+    for category, _folder in categories_cfg:
+        result.setdefault(category, [])
+
+    external_groups: List[Dict[str, Any]] = []
+    for category, folder in categories_cfg:
+        if category in ("tv", "external"):
+            # Do not hard-bind by watch-folder path; classify from item naming/signatures.
+            folder_category_hint = ""
+            folder_items: List[Dict[str, Any]] = []
+            try:
+                entries = sorted(folder.iterdir(), key=lambda entry: entry.name.lower())
+            except OSError:
+                entries = []
+            immediate_dirs: List[Path] = []
+            loose_files: List[Path] = []
+            for entry in entries:
+                if entry.name.startswith("."):
+                    continue
+                if entry.is_dir():
+                    immediate_dirs.append(entry)
+                else:
+                    loose_files.append(entry)
+
+            # Treat immediate sub-directories as absolute top-level queue parents.
+            for entry in immediate_dirs:
+                item, _size = _build_external_tree_item(
+                    folder.name,
+                    entry,
+                    entry.name,
+                    upload_map,
+                    completed_lookup,
+                    active_ids if indexer_status_available else [],
+                    folder_category_hint=folder_category_hint,
+                    top_level=True,
+                )
+                folder_items.append(item)
+
+            # Keep loose files as independent top-level rows.
+            if loose_files:
+                for file_entry in loose_files:
+                    file_item, _file_size = _build_external_tree_item(
+                        folder.name,
+                        file_entry,
+                        file_entry.name,
+                        upload_map,
+                        completed_lookup,
+                        active_ids if indexer_status_available else [],
+                        folder_category_hint=folder_category_hint,
+                        top_level=True,
+                    )
+                    folder_items.append(file_item)
+            if folder_items:
+                external_groups.append(
+                    {
+                        "source_category": category,
+                        "key": str(folder),
+                        "folder_name": folder.name,
+                        "folder_path": str(folder),
+                        "allow_bulk_selection": bulk_selection_by_folder.get(
+                            _selection_path_identity(folder), True
+                        ),
+                        "items": folder_items,
+                    }
+                )
+            continue
+
+        try:
+            entries = sorted(folder.iterdir(), key=lambda entry: entry.name.lower())
+        except OSError:
+            entries = []
+
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            item_key = relative_key(entry, folder)
+            item_indexers = _lookup_upload_map_indexers(
+                upload_map,
+                item_key,
+                entry.name,
+                entry,
+            )
+            item_status: Dict[str, bool] = (
+                {idx_id: (idx_id in item_indexers) for idx_id in active_ids} if indexer_status_available else {}
+            )
+            if entry.is_dir():
+                size = compute_size_uncached(entry)
+            else:
+                try:
+                    size = entry.stat().st_size
+                except OSError:
+                    size = 0
+            detected_meta = _build_detected_item_metadata(entry, category_hint=category)
+            detected_category = str(detected_meta.get("detected_category") or category or "misc")
+            result[category].append(
+                {
+                    "name": entry.name,
+                    "key": item_key,
+                    "path": str(entry),
+                    "size": size,
+                    "itype": detect_content_itype(entry.name, entry, detected_category),
+                    "detected_category": detected_meta.get("detected_category", ""),
+                    "detection_method": detected_meta.get("detection_method", ""),
+                    "detection_flags": detected_meta.get("detection_flags", []),
+                    "detection_override": detected_meta.get("detection_override", ""),
+                    "auto_selectable": detected_meta.get("auto_selectable", True),
+                    "auto_select_ignored": detected_meta.get("auto_select_ignored", False),
+                    "auto_select_reason": detected_meta.get("auto_select_reason", ""),
+                    "indexers": item_status,
+                    "completed": bool(active_ids) and bool(item_status) and all(item_status.values()),
+                }
+            )
+
+    result["external"] = _sort_external_groups(external_groups)
+    skip_config = getattr(conf, "skip_files", None)
+    if isinstance(skip_config, dict) and skip_config.get("enabled"):
+        stamp_skip_flags(result, skip_config)
+    stamp_exclusion_flags(result)
+    if indexer_status_available and failed_map:
+        _stamp_failed_indexer_flags(result, failed_map, active_ids)
+    external_search_index, external_metadata_zlib = _compact_external_groups(result["external"])
+
+    payload = {
+        "items": result,
+        "indexers": active_indexers,
+        "indexer_status_available": indexer_status_available,
+        "skip_files": {
+            "enabled": skip_config.get("enabled", False) if isinstance(skip_config, dict) else False,
+            "display_mode": (
+                skip_config.get("display_mode", "disabled") if isinstance(skip_config, dict) else "disabled"
+            ),
+        },
+        "categories": get_available_categories(),
+        "summary": build_pending_summary(result, active_indexers if indexer_status_available else []),
+        "db_error": db_error,
+        "cached_at": time.time(),
+        # Private server-side data. API response shaping removes underscore
+        # fields before serializing the snapshot.
+        "_external_search_index": external_search_index,
+        "_external_metadata_zlib": external_metadata_zlib,
+    }
+    summary = payload.get("summary", {})
+    log_backend_timing(
+        "scan_pending_all",
+        started,
+        context=(
+            f"tv={summary.get('tv_shows', 0)} movies={summary.get('movies', 0)} "
+            f"misc={summary.get('misc', 0)} external={summary.get('external', 0)} "
+            f"tasks={summary.get('total', 0)}"
+        ),
+        warn_threshold_s=1.0,
+    )
+    return payload
+
+
+def filter_pending_snapshot(
+    data: Dict[str, Any], search: Optional[str], category: str, literal: bool = False
+) -> Dict[str, Any]:
+    """Apply search and category filters to a cached pending snapshot."""
+    if not data:
+        return {
+            "items": {"tv": [], "movies": [], "misc": [], "external": []},
+            "indexers": [],
+            "summary": empty_pending_summary(),
+            "categories": data.get("categories", []) if data else [],
+            "indexer_status_available": data.get("indexer_status_available", True) if data else True,
+            "db_error": data.get("db_error") if data else None,
+        }
+
+    source = data["items"]
+    all_categories = list(source.keys())
+    if category == "all":
+        categories = all_categories
+    elif category == "tv":
+        categories = [c for c in ["tv", "external"] if c in source]
+    elif category in source:
+        categories = [category]
+    else:
+        categories = []
+    filtered: Dict[str, List[Any]] = {category_key: [] for category_key in all_categories}
+    query = search.strip() if search else None
+    indexer_ids: List[str] = [
+        str(indexer.get("id"))
+        for indexer in (data.get("indexers") or [])
+        if isinstance(indexer, dict) and indexer.get("id")
+    ]
+    external_search_index = data.get("_external_search_index")
+    if not isinstance(external_search_index, dict):
+        external_search_index = {}
+
+    def is_match(raw_query: str, target: str) -> bool:
+        if not raw_query:
+            return True
+        if literal:
+            return raw_query.lower() in target.lower()
+        target_clean = target.lower()
+        query_clean = raw_query.lower()
+        for token in "._-[]()":
+            target_clean = target_clean.replace(token, " ")
+            query_clean = query_clean.replace(token, " ")
+        words = [word for word in query_clean.split() if word]
+        return not words or all(word in target_clean for word in words)
+
+    for category_key in categories:
+        if category_key not in source:
+            continue
+        if category_key == "tv":
+            for show in source[category_key]:
+                if not query or is_match(query, show.get("name", "")):
+                    filtered["tv"].append(show)
+                    continue
+
+                keep_seasons = []
+                show_size = 0
+                show_episodes = 0
+                show_status: Dict[str, bool] = {idx_id: True for idx_id in indexer_ids}
+                for season in show.get("seasons") or []:
+                    season_items = season.get("items") or []
+                    keep_items = [item for item in season_items if is_match(query, item.get("name", ""))]
+                    if not keep_items:
+                        continue
+
+                    season_status: Dict[str, bool] = {idx_id: True for idx_id in indexer_ids}
+                    for item in keep_items:
+                        item_status = item.get("indexers") or {}
+                        for idx_id in indexer_ids:
+                            if not item_status.get(idx_id, False):
+                                season_status[idx_id] = False
+                                show_status[idx_id] = False
+
+                    season_size = sum(int(item.get("size") or 0) for item in keep_items)
+                    season_episodes = sum(1 for item in keep_items if item.get("itype") == "TV Episode")
+                    keep_seasons.append(
+                        {
+                            **season,
+                            "items": keep_items,
+                            "indexers": season_status,
+                            "size": season_size,
+                            "episode_count": season_episodes,
+                            "expanded": False,
+                        }
+                    )
+                    show_size += season_size
+                    show_episodes += season_episodes
+
+                if keep_seasons:
+                    filtered["tv"].append(
+                        {
+                            **show,
+                            "seasons": keep_seasons,
+                            "indexers": show_status,
+                            "size": show_size,
+                            "episode_count": show_episodes,
+                        }
+                    )
+        elif category_key == "external":
+            detected_filter = category if category not in ("all", "external") else None
+            for group in source.get(category_key, []):
+                items_pool = group.get("items", [])
+                if detected_filter:
+                    if group.get("source_category") == detected_filter:
+                        items_pool = list(items_pool)
+                    else:
+                        items_pool = [i for i in items_pool if i.get("detected_category") == detected_filter]
+                if not items_pool:
+                    continue
+                if not query:
+                    filtered["external"].append({**group, "items": items_pool})
+                    continue
+                keep_items = [
+                    item
+                    for item in items_pool
+                    if is_match(
+                        query,
+                        str(external_search_index.get(str(item.get("key") or "")) or item.get("name", "")),
+                    )
+                ]
+                if keep_items:
+                    filtered["external"].append({**group, "items": keep_items})
+        else:
+            for item in source[category_key]:
+                if not query or is_match(query, item["name"]):
+                    filtered[category_key].append(item)
+
+    return {
+        "items": filtered,
+        "indexers": data["indexers"],
+        "summary": build_pending_summary(
+            filtered,
+            (data.get("indexers") or []) if data.get("indexer_status_available", True) else [],
+        ),
+        "cached_at": data.get("cached_at"),
+        "skip_files": data.get("skip_files", {"enabled": False, "display_mode": "disabled"}),
+        "categories": data.get("categories", []),
+        "indexer_status_available": data.get("indexer_status_available", True),
+        "db_error": data.get("db_error"),
+    }
+
+
+def _get_pending_indexer_context() -> tuple[List[Dict[str, Any]], List[str], bool, Dict[str, Set[str]], Set[str], Optional[str], Dict[str, Dict[str, str]]]:
+    from core.registry import get_registry, resolve_indexer_backfill
+
+    conf = get_config()
+    registry = get_registry()
+    active_indexers = [
+        {
+            "id": indexer.id,
+            "name": indexer.name,
+            "color": indexer.color,
+            "icon": indexer.icon,
+            "favicon_url": indexer.favicon_url,
+            "backfill": bool(resolve_indexer_backfill(indexer, conf)),
+        }
+        for indexer in registry.enabled(conf)
+    ]
+    active_ids = [indexer["id"] for indexer in active_indexers]
+    indexer_status_available = True
+    db_error: Optional[str] = None
+    failed_map: Dict[str, Dict[str, str]] = {}
+    try:
+        _fully_done, upload_map, failed_map = database.get_dashboard_data(active_ids)
+        completed_lookup = _normalize_dashboard_lookup_values(_fully_done)
+    except database.DatabaseOperationalError as exc:
+        db_error = str(exc)
+        indexer_status_available = False
+        logger.warning(f"Pending scan continuing without indexer completion state due to DB error: {exc}")
+        upload_map = {}
+        completed_lookup = set()
+    return active_indexers, active_ids, indexer_status_available, upload_map, completed_lookup, db_error, failed_map
+
+
+def build_external_children_snapshot(
+    external_folder_name: str,
+    parent_path: Path,
+    parent_rel_path: str,
+    *,
+    folder_category_hint: str = "",
+) -> Dict[str, Any]:
+    started = time.perf_counter()
+    (
+        _active_indexers,
+        active_ids,
+        indexer_status_available,
+        upload_map,
+        completed_lookup,
+        _db_error,
+        _failed_map,
+    ) = _get_pending_indexer_context()
+
+    children: List[Dict[str, Any]] = []
+    try:
+        entries = sorted(parent_path.iterdir(), key=lambda path: path.name.lower())
+    except OSError:
+        entries = []
+
+    for child in entries:
+        if child.name.startswith("."):
+            continue
+        child_rel = f"{parent_rel_path}/{child.name}" if parent_rel_path else child.name
+        child_item, _child_size = _build_external_tree_item(
+            external_folder_name,
+            child,
+            child_rel,
+            upload_map,
+            completed_lookup,
+            active_ids if indexer_status_available else [],
+            folder_category_hint=folder_category_hint,
+            top_level=True,
+            include_children=True,
+        )
+        _compact_external_tree_item(child_item)
+        children.append(child_item)
+
+    log_backend_timing(
+        "scan_pending_children",
+        started,
+        context=f"path={parent_path} children={len(children)}",
+        warn_threshold_s=0.5,
+    )
+    return {"children": children, "child_count": len(children)}
+
+
+def _resolve_external_child_request(
+    data: Dict[str, Any],
+    key: str,
+    path: str,
+) -> Optional[tuple[str, Path, str, str]]:
+    """Validate a lazy-child request against the configured snapshot roots."""
+    target_key = str(key or "").strip()
+    target_path_text = str(path or "").strip()
+    if not target_key.startswith("ext:") or not target_path_text:
+        return None
+
+    key_parts = target_key.split(":", 2)
+    if len(key_parts) != 3:
+        return None
+    _prefix, external_folder_name, parent_rel_path = key_parts
+
+    items = data.get("items")
+    groups = items.get("external") if isinstance(items, dict) else None
+    if not isinstance(groups, list):
+        return None
+
+    target_path = Path(target_path_text)
+    try:
+        resolved_target = target_path.resolve(strict=True)
+    except OSError:
+        return None
+    if not resolved_target.is_dir():
+        return None
+
+    for group in groups:
+        if not isinstance(group, dict) or str(group.get("folder_name") or "") != external_folder_name:
+            continue
+        root_text = str(group.get("folder_path") or "").strip()
+        if not root_text:
+            continue
+        try:
+            root_path = Path(root_text).resolve(strict=True)
+            actual_rel_path = resolved_target.relative_to(root_path).as_posix()
+        except (OSError, ValueError):
+            continue
+        if actual_rel_path != parent_rel_path.replace("\\", "/").strip("/"):
+            continue
+
+        folder_category_hint = ""
+        for top_item in group.get("items", []) or []:
+            if not isinstance(top_item, dict):
+                continue
+            top_path_text = str(top_item.get("path") or "").strip()
+            if not top_path_text:
+                continue
+            try:
+                resolved_target.relative_to(Path(top_path_text).resolve(strict=False))
+            except (OSError, ValueError):
+                continue
+            folder_category_hint = str(
+                top_item.get("detected_category") or top_item.get("category") or ""
+            ).strip().lower()
+            break
+
+        return external_folder_name, resolved_target, actual_rel_path, folder_category_hint
+    return None
+
+
+def build_external_children_for_request(data: Dict[str, Any], key: str, path: str) -> Dict[str, Any]:
+    """Resolve, authorize, and build one lazy external-directory response."""
+    resolved = _resolve_external_child_request(data, key, path)
+    if resolved is None:
+        return {"children": [], "child_count": 0}
+    external_folder_name, parent_path, parent_rel_path, folder_category_hint = resolved
+    compact_metadata = _load_external_metadata(data)
+    if compact_metadata:
+        children: List[Dict[str, Any]] = []
+        try:
+            entries = sorted(parent_path.iterdir(), key=lambda entry: entry.name.lower())
+        except OSError:
+            entries = []
+        missing_metadata = False
+        for entry in entries:
+            if entry.name.startswith("."):
+                continue
+            cached = compact_metadata.get(_selection_path_identity(entry))
+            if cached is None:
+                missing_metadata = True
+                break
+            child = dict(cached)
+            child["children"] = []
+            child["files"] = []
+            children.append(child)
+        if not missing_metadata:
+            return {"children": children, "child_count": len(children)}
+
+    return build_external_children_snapshot(
+        external_folder_name,
+        parent_path,
+        parent_rel_path,
+        folder_category_hint=folder_category_hint,
+    )

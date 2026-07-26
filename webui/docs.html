@@ -1,0 +1,2124 @@
+{% extends "base.html" %} {% block title %}Documentation{% endblock %} {% block page_title %}Documentation{% endblock %} {% block header_title %}Documentation{% endblock %} {% block header_subtitle %}User guide, REST API reference &amp; indexer upload guides{% endblock %} {% block header_actions %}
+<div class="relative group hidden sm:block">
+    <lucide-icon name="search" icon-class="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary transition-colors group-focus-within:text-notion-accent"></lucide-icon>
+    <input
+        type="text"
+        v-model="searchQuery"
+        @focus="searchFocused=true"
+        @blur="setTimeout(()=>searchFocused=false,200)"
+        placeholder="Search docs…"
+        class="bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-8 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent w-36 md:w-52 transition-all" />
+    <!-- search results dropdown -->
+    <div v-if="searchFocused && searchQuery.length >= 2 && searchResults.length" class="absolute top-full mt-1 left-0 right-0 bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+        <button v-for="r in searchResults" :key="r.id" @mousedown.prevent="goToSection(r.tab, r.id)" class="w-full text-left px-3 py-2 text-xs hover:bg-notion-bg-hover transition-colors border-b border-notion-border/50 last:border-0">
+            <span class="text-notion-text-primary font-medium" v-text="r.title"></span>
+            <span class="text-notion-text-tertiary ml-2" v-text="'— ' + r.tabLabel"></span>
+        </button>
+    </div>
+</div>
+<a href="/openapi.json" target="_blank" class="px-4 h-8 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded-md text-xs hover:bg-notion-bg-active transition-colors flex items-center justify-center gap-2">
+    <lucide-icon name="braces" icon-class="size-3.5"></lucide-icon>
+    OpenAPI
+</a>
+<button @click="downloadMarkdown" class="px-4 h-8 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded-md text-xs hover:bg-notion-bg-active transition-colors flex items-center justify-center gap-2">
+    <lucide-icon name="download" icon-class="size-3.5"></lucide-icon>
+    .md
+</button>
+{% endblock %} {% block extra_head %}
+<style>
+    /* ── Docs page-scoped styles ── */
+    .doc-sidebar a {
+        font-size: 0.75rem;
+        color: var(--notion-text-secondary);
+        transition: all 0.15s;
+        padding: 5px 10px;
+        display: block;
+        border-radius: 4px;
+    }
+    .doc-sidebar a:hover {
+        color: var(--notion-text-primary);
+        background: var(--notion-bg-hover);
+    }
+    .doc-sidebar a.active {
+        color: var(--notion-accent);
+        background: color-mix(in srgb, var(--notion-accent) 8%, transparent);
+        font-weight: 500;
+    }
+    .doc-sidebar .sidebar-group {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        color: var(--notion-text-tertiary);
+        padding: 8px 10px 4px;
+        margin-top: 8px;
+    }
+    .doc-sidebar .sidebar-group:first-child {
+        margin-top: 0;
+    }
+
+    .doc-section {
+        scroll-margin-top: 80px;
+    }
+
+    .doc-code {
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 12px;
+        background: var(--notion-bg);
+        border: 1px solid var(--notion-border);
+        border-radius: 4px;
+        padding: 1px 6px;
+        color: #fbbf24;
+    }
+    .doc-pre {
+        background: var(--notion-bg);
+        border: 1px solid var(--notion-border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        font-size: 12px;
+        line-height: 1.6;
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        color: var(--notion-text-secondary);
+        margin: 10px 0;
+    }
+    .doc-table {
+        width: 100%;
+        font-size: 0.75rem;
+        border-collapse: collapse;
+    }
+    .doc-table th {
+        text-align: left;
+        padding: 8px 12px;
+        background: var(--notion-bg-hover);
+        border: 1px solid var(--notion-border);
+        color: var(--notion-accent);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 10px;
+    }
+    .doc-table td {
+        padding: 8px 12px;
+        border: 1px solid var(--notion-border);
+        color: var(--notion-text-secondary);
+    }
+    .doc-table tr:hover td {
+        background: color-mix(in srgb, var(--notion-bg-hover) 50%, transparent);
+    }
+
+    .doc-badge {
+        display: inline-block;
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+    .badge-get {
+        background: rgba(34, 197, 94, 0.15);
+        color: #4ade80;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .badge-post {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .badge-put {
+        background: rgba(59, 130, 246, 0.15);
+        color: #60a5fa;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .badge-delete {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .doc-callout {
+        border: 1px solid;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 10px 0;
+        font-size: 0.75rem;
+        line-height: 1.6;
+    }
+    .doc-callout-warn {
+        background: rgba(245, 158, 11, 0.05);
+        border-color: rgba(245, 158, 11, 0.2);
+        color: #fde68a;
+    }
+    .doc-callout-ok {
+        background: rgba(34, 197, 94, 0.05);
+        border-color: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+    }
+    .doc-callout-err {
+        background: rgba(239, 68, 68, 0.05);
+        border-color: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+    }
+    .doc-callout strong {
+        color: var(--notion-text-primary);
+    }
+
+    .doc-h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--notion-text-primary);
+        margin: 1.5rem 0 0.75rem;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--notion-divider);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .doc-h2:first-child {
+        margin-top: 0;
+    }
+    .doc-h3 {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--notion-text-primary);
+        margin: 1rem 0 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .endpoint-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        transition: background 0.15s;
+        font-size: 0.75rem;
+        border-bottom: 1px solid color-mix(in srgb, var(--notion-border) 50%, transparent);
+    }
+    .endpoint-row:last-child {
+        border-bottom: none;
+    }
+    .endpoint-row:hover {
+        background: color-mix(in srgb, var(--notion-bg-hover) 50%, transparent);
+    }
+
+    /* Tab bar */
+    .doc-tab {
+        padding: 8px 16px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--notion-text-secondary);
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .doc-tab:hover {
+        color: var(--notion-text-primary);
+    }
+    .doc-tab.active {
+        color: var(--notion-accent);
+        border-bottom-color: var(--notion-accent);
+    }
+
+    /* Prev/next footer */
+    .doc-nav-btn {
+        display: flex;
+        flex-direction: column;
+        padding: 12px 16px;
+        border: 1px solid var(--notion-border);
+        border-radius: 8px;
+        transition: all 0.15s;
+        min-width: 0;
+        flex: 1;
+    }
+    .doc-nav-btn:hover {
+        background: var(--notion-bg-hover);
+        border-color: var(--notion-accent);
+    }
+    .doc-nav-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--notion-text-tertiary);
+        margin-bottom: 2px;
+    }
+    .doc-nav-title {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--notion-text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Step badge */
+    .step-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+</style>
+{% endblock %} {% block content %}
+
+<!-- Mobile search (sm:hidden) -->
+<div class="relative group sm:hidden mb-4">
+    <lucide-icon name="search" icon-class="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+    <input
+        type="text"
+        v-model="searchQuery"
+        @focus="searchFocused=true"
+        @blur="setTimeout(()=>searchFocused=false,200)"
+        placeholder="Search docs…"
+        class="bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-9 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent w-full" />
+    <div v-if="searchFocused && searchQuery.length >= 2 && searchResults.length" class="absolute top-full mt-1 left-0 right-0 bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+        <button v-for="r in searchResults" :key="r.id" @mousedown.prevent="goToSection(r.tab, r.id)" class="w-full text-left px-3 py-2 text-xs hover:bg-notion-bg-hover border-b border-notion-border/50 last:border-0">
+            <span class="text-notion-text-primary font-medium" v-text="r.title"></span>
+            <span class="text-notion-text-tertiary ml-1.5 text-[10px]" v-text="r.tabLabel"></span>
+        </button>
+    </div>
+</div>
+
+<!-- ── Tab Bar ── -->
+<div class="flex items-center gap-0 border-b border-notion-divider mb-6 -mt-2 overflow-x-auto">
+    <button v-for="t in tabs" :key="t.id" @click="activeTab = t.id; activeSection = t.sections[0].id" :class="{'active': activeTab === t.id}" class="doc-tab flex items-center gap-2">
+        <lucide-icon :name="t.icon" icon-class="size-4"></lucide-icon>
+        <span v-text="t.label"></span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono" :class="activeTab === t.id ? 'bg-notion-accent/10 border-notion-accent/20 text-notion-accent' : 'bg-notion-bg-hover border-notion-border text-notion-text-tertiary'" v-text="t.sections.length"></span>
+    </button>
+    <a href="/indexer-guides" class="doc-tab flex items-center gap-2">
+        <lucide-icon name="globe" icon-class="size-4"></lucide-icon>
+        <span>Indexer Guides</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono bg-notion-bg-hover border-notion-border text-notion-text-tertiary">8</span>
+    </a>
+</div>
+
+<div class="flex gap-6">
+    <!-- ── Sidebar (desktop) ── -->
+    <aside class="hidden lg:block w-52 shrink-0">
+        <nav class="sticky top-16 doc-sidebar max-h-[calc(100vh-5rem)] overflow-y-auto pb-8">
+            <template v-for="g in currentTabGroups" :key="g.label">
+                <div class="sidebar-group" v-text="g.label"></div>
+                <a v-for="s in g.items" :key="s.id" :href="'#' + s.id" @click="activeSection = s.id" :class="{active: activeSection === s.id}">
+                    <span v-text="s.title"></span>
+                </a>
+            </template>
+        </nav>
+    </aside>
+
+    <!-- ── Main Content Area ── -->
+    <div class="flex-1 min-w-0">
+        <!-- Mobile section selector -->
+        <div class="lg:hidden mb-4">
+            <select v-model="activeSection" class="w-full bg-notion-bg-secondary text-notion-text-primary text-xs border border-notion-border rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-notion-accent">
+                <template v-for="g in currentTabGroups" :key="g.label">
+                    <optgroup :label="g.label">
+                        <option v-for="s in g.items" :key="s.id" :value="s.id" v-text="s.title"></option>
+                    </optgroup>
+                </template>
+            </select>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!--  TAB: USER GUIDE                                          -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <!-- Overview -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-overview'" id="guide-overview" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="info" icon-class="w-4.5 h-4.5 text-notion-accent"></lucide-icon>
+                What is NZBPostarr?
+            </div>
+            <p>
+                <strong class="text-notion-text-primary">NZBPostarr</strong>
+                is a self-hosted, automated Usenet upload manager. It takes media files from your filesystem, packages them with RAR + PAR2 parity, posts them to Usenet via NNTP, generates NZB files, and submits those NZBs to one or more indexer sites — all from a single command or a clean web
+                dashboard.
+            </p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-notion-text-primary mb-2 flex items-center gap-1.5">
+                        <lucide-icon name="zap" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                        Core Features
+                    </h4>
+                    <ul class="space-y-1 text-[11px]">
+                        <li>• Multi-indexer uploads (NZBGeek, NZB.su, OMG, NZBPlanet, NZBs.in, NZBSlug)</li>
+                        <li>• Automatic RAR splitting + PAR2 parity generation</li>
+                        <li>
+                            • NNTP posting via
+                            <strong>Nyuu</strong>
+                            with multi-connection support
+                        </li>
+                        <li>• Intelligent duplicate detection &amp; backfill</li>
+                        <li>• Season pack awareness with episode-first ordering</li>
+                        <li>• Dynamic category detection from folder paths</li>
+                        <li>• MediaInfo generation and NFO attachment</li>
+                    </ul>
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-notion-text-primary mb-2 flex items-center gap-1.5">
+                        <lucide-icon name="layout-dashboard" icon-class="size-3.5 text-violet-400"></lucide-icon>
+                        Platform Features
+                    </h4>
+                    <ul class="space-y-1 text-[11px]">
+                        <li>• Real-time Web UI with job progress, console, and stats</li>
+                        <li>• Headless CLI mode (no UI required)</li>
+                        <li>• Folder monitoring with auto-trigger on new content</li>
+                        <li>• SQLite database for upload history &amp; deduplication</li>
+                        <li>• Background scheduler (APScheduler) for periodic tasks</li>
+                        <li>• Process reaper for orphaned tool cleanup</li>
+                        <li>• First-run setup wizard for fresh deployments</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="doc-callout doc-callout-ok">
+                <strong>Tech Stack:</strong>
+                Python 3.12+, FastAPI, SQLAlchemy, Pydantic v2, Vue.js 3, Tailwind CSS. External tools:
+                <code class="doc-code">nyuu</code>
+                ,
+                <code class="doc-code">parpar</code>
+                ,
+                <code class="doc-code">rar</code>
+                .
+            </div>
+        </div>
+
+        <!-- Requirements -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-requirements'" id="guide-requirements" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="clipboard-check" icon-class="w-4.5 h-4.5 text-green-400"></lucide-icon>
+                System Requirements
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Component</th>
+                    <th>Requirement</th>
+                    <th>Notes</th>
+                </tr>
+                <tr>
+                    <td><strong>Python</strong></td>
+                    <td>3.12 or 3.14+</td>
+                    <td>Required. Core application runtime.</td>
+                </tr>
+                <tr>
+                    <td><strong>Node.js</strong></td>
+                    <td>18+</td>
+                    <td>Required for installing Nyuu and ParPar via npm.</td>
+                </tr>
+                <tr>
+                    <td><strong>Nyuu</strong></td>
+                    <td>Latest</td>
+                    <td>
+                        NNTP posting tool.
+                        <code class="doc-code">npm install -g nyuu</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>ParPar</strong></td>
+                    <td>Latest</td>
+                    <td>
+                        PAR2 parity generator.
+                        <code class="doc-code">npm install -g parpar</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>RAR</strong></td>
+                    <td>5.x+</td>
+                    <td>Archive creation. Must be in PATH.</td>
+                </tr>
+                <tr>
+                    <td><strong>MediaInfo</strong></td>
+                    <td>CLI</td>
+                    <td>Optional but recommended for NFO generation.</td>
+                </tr>
+                <tr>
+                    <td><strong>OS</strong></td>
+                    <td>Linux (rec.), macOS, Windows (WSL)</td>
+                    <td>Linux is the primary deployment target.</td>
+                </tr>
+            </table>
+            <div class="doc-h3">
+                <lucide-icon name="package" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Python Dependencies
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px]">
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>FastAPI</strong>
+                    — Web framework
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>Uvicorn</strong>
+                    — ASGI server
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>Pydantic v2</strong>
+                    — Config &amp; validation
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>SQLAlchemy</strong>
+                    — Database ORM
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>Loguru</strong>
+                    — Structured logging
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>Watchdog</strong>
+                    — Filesystem events
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>APScheduler</strong>
+                    — Background tasks
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>psutil</strong>
+                    — System stats
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>GuessIt</strong>
+                    — Title parsing
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>MediaInfo CLI</strong>
+                    — Media analysis
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>Rich</strong>
+                    — Terminal formatting
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
+                    <strong>PyYAML</strong>
+                    — Config files
+                </div>
+            </div>
+        </div>
+
+        <!-- Installation -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-installation'" id="guide-installation" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="zap" icon-class="w-4.5 h-4.5 text-amber-400"></lucide-icon>
+                Quick Start (Interactive Setup)
+            </div>
+            <p>The recommended way to install NZBPostarr is to use the built-in interactive setup wizard. It automates almost everything — environment creation, dependency installation, and configuration.</p>
+
+            <div class="doc-h3">
+                <lucide-icon name="command" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                One-Command Installation
+            </div>
+            <pre class="doc-pre">python main.py --setup</pre>
+
+            <div class="doc-callout doc-callout-ok">
+                <strong>What this command does:</strong>
+                <ul class="mt-2 space-y-1 pl-4 list-disc">
+                    <li>
+                        Creates a virtual environment (
+                        <code class="doc-code">.venv</code>
+                        )
+                    </li>
+                    <li>
+                        Installs all Python requirements (
+                        <code class="doc-code">pip install</code>
+                        )
+                    </li>
+                    <li>
+                        Attempts to auto-install
+                        <code class="doc-code">nyuu</code>
+                        ,
+                        <code class="doc-code">parpar</code>
+                        , and
+                        <code class="doc-code">rar</code>
+                    </li>
+                    <li>
+                        Guides you through creating your
+                        <code class="doc-code">config.yaml</code>
+                    </li>
+                    <li>Performs a smoke test to ensure things work</li>
+                </ul>
+            </div>
+
+            <div class="doc-h2">
+                <lucide-icon name="info" icon-class="w-4.5 h-4.5 text-blue-400"></lucide-icon>
+                Platform Specific Notes
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-green-400 mb-2 flex items-center gap-1.5">
+                        <lucide-icon name="terminal" icon-class="size-3.5"></lucide-icon>
+                        Linux &amp; WSL (Recommended)
+                    </h4>
+                    <p class="text-[11px] mb-2">
+                        The wizard is
+                        <strong>fully automated</strong>
+                        on Linux/WSL. It will attempt to install system dependencies via
+                        <code class="doc-code">apt-get</code>
+                        and binary downloads.
+                    </p>
+                    <p class="text-[11px] text-notion-text-tertiary italic">Note: You may be prompted for your sudo password to install system tools.</p>
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-blue-400 mb-2 flex items-center gap-1.5">
+                        <lucide-icon name="app-window" icon-class="size-3.5"></lucide-icon>
+                        Windows (Native)
+                    </h4>
+                    <p class="text-[11px] mb-2">
+                        The wizard handles the venv and config, but you must
+                        <strong>manually install</strong>
+                        external tools or use
+                        <code class="doc-code">npm</code>
+                        :
+                    </p>
+                    <pre class="bg-black/20 p-1.5 rounded text-[10px] border border-white/5">npm install -g nyuu parpar</pre>
+                    <p class="text-[11px] mt-2">
+                        Ensure
+                        <code class="doc-code">nyuu</code>
+                        ,
+                        <code class="doc-code">parpar</code>
+                        , and
+                        <code class="doc-code">rar</code>
+                        are in your System PATH.
+                    </p>
+                </div>
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="list-checks" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Prerequisites (Manual)
+            </div>
+            <p>Before running the setup command, ensure you have these basics:</p>
+            <ul class="space-y-1 text-[11px] pl-4 list-disc">
+                <li>
+                    <strong>Python 3.12+</strong>
+                    installed and added to PATH
+                </li>
+                <li>
+                    <strong>Node.js 18+</strong>
+                    (only if you want to use
+                    <code class="doc-code">npm</code>
+                    for tools)
+                </li>
+                <li>
+                    <strong>Git</strong>
+                    (or just download the project source)
+                </li>
+            </ul>
+        </div>
+
+        <!-- Configuration -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-configuration'" id="guide-configuration" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="settings" icon-class="w-4.5 h-4.5 text-amber-400"></lucide-icon>
+                Configuration (config.yaml)
+            </div>
+            <p>
+                The main config lives at the project root as
+                <code class="doc-code">config.yaml</code>
+                . Copy
+                <code class="doc-code">config.defaults.yaml</code>
+                as your starting template. All settings are validated by Pydantic at startup.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="folder-tree" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Folder Paths
+            </div>
+            <pre class="doc-pre">
+base_folder: '/path/to/usenet'
+
+folder_paths:
+  - path: '${base_folder}/Movies'
+    category: movies
+  - path: '${base_folder}/TV'
+    category: tv
+  - path: '${base_folder}/Misc'
+    category: misc
+  - path: '/srv/downloads/qbittorrent'
+    category: external       # requires manual category selection in UI</pre
+            >
+            <div class="doc-callout doc-callout-ok">
+                <strong>Supported categories:</strong>
+                <code class="doc-code">movies</code>
+                ,
+                <code class="doc-code">tv</code>
+                ,
+                <code class="doc-code">misc</code>
+                ,
+                <code class="doc-code">anime</code>
+                ,
+                <code class="doc-code">audiobooks</code>
+                ,
+                <code class="doc-code">ebooks</code>
+                ,
+                <code class="doc-code">music</code>
+                ,
+                <code class="doc-code">games</code>
+                ,
+                <code class="doc-code">external</code>
+                .
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="user" icon-class="size-3.5 text-pink-400"></lucide-icon>
+                Upload Identity
+            </div>
+            <pre class="doc-pre">
+poster_name: 'Anonymous'
+poster_email: 'anonymous@example.com'
+include_readme: true              # Attach readme.txt to every upload
+alt_bins:
+  - 'alt.binaries.misc'           # Newsgroup pool (randomized)</pre
+            >
+
+            <div class="doc-h3">
+                <lucide-icon name="sliders-horizontal" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Processing Controls
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Setting</th>
+                    <th>Type</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">process_tv_episodes</code></td>
+                    <td>bool</td>
+                    <td>true</td>
+                    <td>Upload individual episodes (not just packs)</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">dynamic_packs</code></td>
+                    <td>bool</td>
+                    <td>true</td>
+                    <td>Automatically detect and handle season packs</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">test_run</code></td>
+                    <td>bool</td>
+                    <td>false</td>
+                    <td>Global dry-run mode (no actual uploads)</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">enable_duplicate_checking</code></td>
+                    <td>bool</td>
+                    <td>true</td>
+                    <td>Skip items already in the database</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">enable_backfill</code></td>
+                    <td>bool</td>
+                    <td>true</td>
+                    <td>Upload to indexers missing this item</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">enable_duplicate_bypass</code></td>
+                    <td>bool</td>
+                    <td>true</td>
+                    <td>Mark duplicates as success (don't retry)</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">verbose</code></td>
+                    <td>bool</td>
+                    <td>false</td>
+                    <td>Extra logging output</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">quiet</code></td>
+                    <td>bool</td>
+                    <td>false</td>
+                    <td>Suppress non-essential output</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="shield" icon-class="size-3.5 text-red-400"></lucide-icon>
+                Size Limits &amp; Safety
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Setting</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">folder_size_limit_gb</code></td>
+                    <td>99</td>
+                    <td>Max size (GB) for folder/pack uploads</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">file_size_limit_gb</code></td>
+                    <td>0</td>
+                    <td>Max single file size (0 = unlimited)</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">item_limit_per_category</code></td>
+                    <td>0</td>
+                    <td>Max items per run (0 = unlimited)</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">upload_max_retries</code></td>
+                    <td>3</td>
+                    <td>Retry count for failed NNTP uploads</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">upload_retry_delay_seconds</code></td>
+                    <td>5</td>
+                    <td>Delay between retries</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="archive" icon-class="size-3.5 text-orange-400"></lucide-icon>
+                Tool Paths &amp; Encoding
+            </div>
+            <pre class="doc-pre">
+rar_size: '100m'           # RAR split volume size
+article_size: '1M'         # Nyuu article size (NNTP segment size)
+nyuu_path: 'nyuu'          # Path to nyuu binary
+parpar_path: 'parpar'      # Path to parpar binary</pre
+            >
+
+            <div class="doc-h3">
+                <lucide-icon name="eye-off" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                Skip Files (Pattern Filtering)
+            </div>
+            <pre class="doc-pre">
+skip_files:
+  enabled: false
+  display_mode: 'disabled'       # 'hidden' or 'disabled'
+  patterns:
+    - pattern: '*.nfo'
+      categories: []             # empty = all categories
+    - pattern: 'Sample*'
+      categories: ['movies']</pre
+            >
+        </div>
+
+        <!-- NNTP Servers -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-nntp'" id="guide-nntp" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="server" icon-class="w-4.5 h-4.5 text-blue-400"></lucide-icon>
+                NNTP Server Configuration
+            </div>
+            <p>
+                NNTP servers are defined in the
+                <code class="doc-code">nntp_servers</code>
+                array. The
+                <strong>first server</strong>
+                is the primary upload target.
+            </p>
+            <pre class="doc-pre">
+nntp_servers:
+  - name: 'Primary'
+    host: 'news.example.com'
+    user: 'YOUR_USERNAME'
+    pass: 'YOUR_PASSWORD'
+    port: 563
+    ssl: true
+    enabled: true
+    max_connections: 20
+    backbone: ['Hosted']</pre
+            >
+            <table class="doc-table">
+                <tr>
+                    <th>Field</th>
+                    <th>Type</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">name</code></td>
+                    <td>string</td>
+                    <td>Display name for this server</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">host</code></td>
+                    <td>string</td>
+                    <td>NNTP server hostname</td>
+                </tr>
+                <tr>
+                    <td>
+                        <code class="doc-code">user</code>
+                        /
+                        <code class="doc-code">pass</code>
+                    </td>
+                    <td>string</td>
+                    <td>Authentication credentials</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">port</code></td>
+                    <td>int</td>
+                    <td>563 (SSL) or 119 (plain)</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">ssl</code></td>
+                    <td>bool</td>
+                    <td>Use SSL/TLS encryption</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">max_connections</code></td>
+                    <td>int</td>
+                    <td>Simultaneous connections (start with 20)</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">backbone</code></td>
+                    <td>list</td>
+                    <td>Backbone provider info (display only)</td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-warn">
+                <strong>Tip:</strong>
+                Most providers allow 20–50 connections. Higher counts improve speed but may cause throttling.
+            </div>
+        </div>
+
+        <!-- Indexer System -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-indexer-system'" id="guide-indexer-system" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="puzzle" icon-class="w-4.5 h-4.5 text-violet-400"></lucide-icon>
+                Indexer Plugin System
+            </div>
+            <p>
+                Indexers are
+                <strong>YAML plugin files</strong>
+                in
+                <code class="doc-code">indexers/</code>
+                . Each file describes one indexer's API, auth, categories, and upload fields. Adding a new indexer = creating a new YAML file.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="globe" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                Built-in Indexers
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                <div class="bg-notion-bg rounded border border-notion-border px-3 py-2 flex items-center gap-2">
+                    <div class="size-4 rounded bg-indigo-500/15 flex items-center justify-center"><span class="text-[9px] font-bold text-indigo-400">G</span></div>
+                    <div>
+                        <span class="text-notion-text-primary font-medium">NZBGeek</span>
+                        <br />
+                        <span class="text-[10px] text-notion-text-tertiary">geek.yaml</span>
+                    </div>
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-3 py-2 flex items-center gap-2">
+                    <div class="size-4 rounded bg-amber-500/15 flex items-center justify-center"><span class="text-[9px] font-bold text-amber-400">S</span></div>
+                    <div>
+                        <span class="text-notion-text-primary font-medium">NZB.su</span>
+                        <br />
+                        <span class="text-[10px] text-notion-text-tertiary">su.yaml</span>
+                    </div>
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-3 py-2 flex items-center gap-2">
+                    <div class="size-4 rounded bg-red-500/15 flex items-center justify-center"><span class="text-[9px] font-bold text-red-400">O</span></div>
+                    <div>
+                        <span class="text-notion-text-primary font-medium">OMGWTFNZBs</span>
+                        <br />
+                        <span class="text-[10px] text-notion-text-tertiary">omg.yaml</span>
+                    </div>
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-3 py-2 flex items-center gap-2">
+                    <div class="size-4 rounded bg-green-500/15 flex items-center justify-center"><span class="text-[9px] font-bold text-green-400">P</span></div>
+                    <div>
+                        <span class="text-notion-text-primary font-medium">NZBPlanet</span>
+                        <br />
+                        <span class="text-[10px] text-notion-text-tertiary">planet.yaml</span>
+                    </div>
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-3 py-2 flex items-center gap-2">
+                    <div class="size-4 rounded bg-cyan-500/15 flex items-center justify-center"><span class="text-[9px] font-bold text-cyan-400">I</span></div>
+                    <div>
+                        <span class="text-notion-text-primary font-medium">NZBs.in</span>
+                        <br />
+                        <span class="text-[10px] text-notion-text-tertiary">in.yaml</span>
+                    </div>
+                </div>
+                <div class="bg-notion-bg rounded border border-notion-border px-3 py-2 flex items-center gap-2">
+                    <div class="size-4 rounded bg-purple-500/15 flex items-center justify-center"><span class="text-[9px] font-bold text-purple-400">L</span></div>
+                    <div>
+                        <span class="text-notion-text-primary font-medium">NZBSlug</span>
+                        <br />
+                        <span class="text-[10px] text-notion-text-tertiary">slug.yaml</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Credentials &amp; Per-Indexer Controls
+            </div>
+            <pre class="doc-pre">
+api_keys:
+  geek: 'YOUR_NZBGEEK_API_KEY'
+  su: 'YOUR_NZBSU_API_KEY'
+  omg: 'YOUR_OMGWTN_API_KEY'
+
+usernames:
+  omg: 'YOUR_OMGWTN_USERNAME'
+
+# Per-indexer toggle &amp; priority
+enable_geek: true
+priority_geek: false
+backfill_geek: true</pre
+            >
+            <div class="doc-callout doc-callout-ok">
+                <strong>Env vars also work:</strong>
+                <code class="doc-code">NZBP_API_KEYS__GEEK=abc123</code>
+                (double underscore for nesting).
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="file-plus" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Creating a Custom Indexer
+            </div>
+            <p>
+                Copy
+                <code class="doc-code">_template.yaml</code>
+                →
+                <code class="doc-code">my_indexer.yaml</code>
+                :
+            </p>
+            <pre class="doc-pre">
+id: my_indexer
+name: My Indexer
+submit_url: https://api.example.com/submit
+method: POST
+auth:
+  method: query_param
+  api_key_param: apikey
+categories:
+  tv: '5040'
+  movie: '2040'
+  default: '5000'
+files:
+  nzb: nzb
+  nfo: nfo
+success:
+  text_patterns: ['OK', 'SUCCESS']
+  duplicate_patterns: ['duplicate']</pre
+            >
+        </div>
+
+        <!-- Running -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-running'" id="guide-running" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="play" icon-class="w-4.5 h-4.5 text-green-400"></lucide-icon>
+                Running NZBPostarr
+            </div>
+            <div class="doc-h3">
+                <lucide-icon name="terminal" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Direct Mode (Foreground)
+            </div>
+            <pre class="doc-pre">
+python main.py --direct
+python main.py --direct --host 0.0.0.0 --port 9000</pre
+            >
+            <div class="doc-h3">
+                <lucide-icon name="layers" icon-class="size-3.5 text-blue-400"></lucide-icon>
+                tmux Mode (Background)
+            </div>
+            <pre class="doc-pre">
+# Launch — auto-creates/reattaches tmux session 'nzbpostarr'
+python main.py
+
+# Interactive menu: [A]ttach, [X]terminate, [K]ill+restart, [D]irect, [Q]uit</pre
+            >
+            <div class="doc-callout doc-callout-ok">
+                <strong>Detach:</strong>
+                <code class="doc-code">Ctrl+B</code>
+                then
+                <code class="doc-code">D</code>
+                . The app continues running.
+            </div>
+            <div class="doc-h3">
+                <lucide-icon name="cog" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                systemd (Production)
+            </div>
+            <pre class="doc-pre">
+[Unit]
+Description=NZBPostarr Upload Manager
+After=network.target
+
+[Service]
+Type=simple
+User=nzbpostarr
+WorkingDirectory=/opt/nzbpostarr
+ExecStart=/opt/nzbpostarr/.venv/bin/python /opt/nzbpostarr/main.py --direct
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target</pre
+            >
+        </div>
+
+        <!-- Web Interface -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-webui'" id="guide-webui" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="layout-dashboard" icon-class="w-4.5 h-4.5 text-violet-400"></lucide-icon>
+                Web Interface Guide
+            </div>
+            <p>
+                Built with FastAPI + Jinja2 + Vue.js 3 + Tailwind CSS. Default URL:
+                <code class="doc-code">http://&lt;ip&gt;:8000</code>
+            </p>
+            <table class="doc-table">
+                <tr>
+                    <th>Page</th>
+                    <th>URL</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><strong>Dashboard</strong></td>
+                    <td><code class="doc-code">/</code></td>
+                    <td>System stats, quick upload, recent activity</td>
+                </tr>
+                <tr>
+                    <td><strong>Jobs</strong></td>
+                    <td><code class="doc-code">/jobs</code></td>
+                    <td>Active &amp; queued uploads with live progress</td>
+                </tr>
+                <tr>
+                    <td><strong>History</strong></td>
+                    <td><code class="doc-code">/history</code></td>
+                    <td>Full history with search &amp; per-indexer status</td>
+                </tr>
+                <tr>
+                    <td><strong>Pending</strong></td>
+                    <td><code class="doc-code">/pending</code></td>
+                    <td>Preview next upload queue per category</td>
+                </tr>
+                <tr>
+                    <td><strong>Stats</strong></td>
+                    <td><code class="doc-code">/stats</code></td>
+                    <td>CPU, memory, disk, network sparklines</td>
+                </tr>
+                <tr>
+                    <td><strong>Settings</strong></td>
+                    <td><code class="doc-code">/settings</code></td>
+                    <td>Live config editor + raw YAML mode</td>
+                </tr>
+                <tr>
+                    <td><strong>Docs</strong></td>
+                    <td><code class="doc-code">/docs</code></td>
+                    <td>This page</td>
+                </tr>
+                <tr>
+                    <td><strong>Swagger</strong></td>
+                    <td><code class="doc-code">/swagger</code></td>
+                    <td>Interactive OpenAPI playground</td>
+                </tr>
+            </table>
+            <table class="doc-table">
+                <tr>
+                    <th>Setting</th>
+                    <th>Default</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">host</code></td>
+                    <td>0.0.0.0</td>
+                    <td>Bind address</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">port</code></td>
+                    <td>8000</td>
+                    <td>Port number</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">debug</code></td>
+                    <td>false</td>
+                    <td>FastAPI debug mode</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">ui_refresh_seconds</code></td>
+                    <td>2</td>
+                    <td>Dashboard polling interval</td>
+                </tr>
+            </table>
+            <p>
+                Dark/light theme is toggled from the header and persisted in
+                <code class="doc-code">localStorage</code>
+                .
+            </p>
+        </div>
+
+        <!-- Headless CLI -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-headless'" id="guide-headless" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="terminal-square" icon-class="w-4.5 h-4.5 text-green-400"></lucide-icon>
+                Headless CLI Mode
+            </div>
+            <p>
+                Run entirely without the WebUI via
+                <code class="doc-code">--headless</code>
+                . The
+                <code class="doc-code">webui/</code>
+                folder can be deleted.
+            </p>
+            <div class="doc-h3">
+                <lucide-icon name="upload" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Upload Commands
+            </div>
+            <pre class="doc-pre">
+python main.py --headless upload tv
+python main.py --headless upload movies --limit 5
+python main.py --headless upload all --test
+python main.py --headless upload tv --indexer geek
+python main.py --headless upload movies --force
+python main.py --headless upload tv --skip-packs
+python main.py --headless upload tv --path /path/to/show
+python main.py --headless stream /path/to/file.nzb
+python main.py --headless stream /path/to/folder --posting-server Primary --indexer geek
+python main.py --headless stream /path/to/watch-folder --monitor</pre
+            >
+            <div class="doc-h3">
+                <lucide-icon name="list" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Info Commands
+            </div>
+            <pre class="doc-pre">
+python main.py --headless status
+python main.py --headless pending
+python main.py --headless history
+python main.py --headless indexers
+python main.py --headless stream-monitors list
+python main.py --headless stream-monitors remove abc123
+python main.py --headless stats
+python main.py --headless stats --watch</pre
+            >
+            <div class="doc-callout doc-callout-ok">
+                <strong>Graceful Stop:</strong>
+                <code class="doc-code">Ctrl+C</code>
+                once finishes current item. Twice force-quits.
+            </div>
+            <div class="doc-callout doc-callout-warn">
+                <strong>Stream monitors:</strong>
+                Saving a monitor definition from the CLI updates the persisted monitor list, but active watching only runs inside the long-lived app/WebUI process.
+            </div>
+        </div>
+
+        <!-- Upload Pipeline -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-pipeline'" id="guide-pipeline" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="workflow" icon-class="w-4.5 h-4.5 text-pink-400"></lucide-icon>
+                Upload Pipeline
+            </div>
+            <p>Each item goes through this multi-stage pipeline:</p>
+            <div class="space-y-2">
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="step-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">1</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Discovery &amp; Sorting</strong>
+                        <p class="mt-0.5">Items found from configured folder. TV sorted by show name, episodes before packs. Size limits and skip patterns evaluated.</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="step-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">2</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Duplicate Check</strong>
+                        <p class="mt-0.5">Checked against SQLite for all enabled indexers. Backfill mode fills indexers that don't have the item yet.</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="step-badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3)">3</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Pre-Processing (RAR + PAR2)</strong>
+                        <p class="mt-0.5">Copied to temp, split into RAR volumes, PAR2 generated via ParPar. MediaInfo NFO produced for video.</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="step-badge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3)">4</span>
+                    <div>
+                        <strong class="text-notion-text-primary">NNTP Upload (Nyuu)</strong>
+                        <p class="mt-0.5">Nyuu posts RAR+PAR2 to Usenet. Live progress blended from read/post counters. NZB generated on completion.</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="step-badge" style="background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3)">5</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Indexer Submission</strong>
+                        <p class="mt-0.5">NZB submitted to each enabled indexer via their plugin API. Success/duplicate responses auto-detected.</p>
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="step-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">6</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Cleanup</strong>
+                        <p class="mt-0.5">
+                            Temp files removed, NZB archived to
+                            <code class="doc-code">internal/nzbs/</code>
+                            . Stats recorded.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Folder Monitor -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-foldermonitor'" id="guide-foldermonitor" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="eye" icon-class="w-4.5 h-4.5 text-cyan-400"></lucide-icon>
+                Folder Monitor (Auto-Upload)
+            </div>
+            <p>
+                Event-driven daemon via
+                <strong>Watchdog</strong>
+                . Watches folders for new content, auto-triggers uploads after files settle.
+            </p>
+            <pre class="doc-pre">
+folder_paths:
+  - path: '/path/to/TV'
+    category: tv
+    monitor: true        # enables auto-upload</pre
+            >
+            <table class="doc-table">
+                <tr>
+                    <th>Behaviour</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><strong>Settle Time</strong></td>
+                    <td>30 seconds after last filesystem event before triggering</td>
+                </tr>
+                <tr>
+                    <td><strong>Baseline</strong></td>
+                    <td>Existing items at startup are ignored</td>
+                </tr>
+                <tr>
+                    <td><strong>Top-Level Only</strong></td>
+                    <td>Only new top-level items trigger; nested changes update settle timer</td>
+                </tr>
+                <tr>
+                    <td><strong>Category</strong></td>
+                    <td>
+                        Uses the folder_paths category;
+                        <code class="doc-code">external</code>
+                        is never monitored
+                    </td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-warn">
+                <strong>Note:</strong>
+                Folder monitor only works in WebUI mode (not headless). Uses native OS filesystem events.
+            </div>
+        </div>
+
+        <!-- Architecture -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-architecture'" id="guide-architecture" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="boxes" icon-class="w-4.5 h-4.5 text-orange-400"></lucide-icon>
+                Project Architecture
+            </div>
+            <pre class="doc-pre">
+nzbpostarr/
+├── app.py                 # FastAPI application and API routes
+├── main.py                # Entry point (venv, tmux, direct)
+├── setup.py               # First-run wizard
+├── version.py             # Application version
+├── core/
+│   ├── config.py          # Pydantic settings
+│   ├── database.py        # SQLAlchemy ORM (SQLite)
+│   ├── registry.py        # YAML indexer plugin loader
+│   ├── redaction.py       # Credential-safe diagnostics
+│   └── utils.py           # Shared helpers
+├── indexers/
+│   ├── _template.yaml     # Blank template
+│   └── *.yaml             # One per indexer
+├── logic/
+│   ├── services.py        # UploadService, ConsoleBuffer
+│   ├── processing.py      # Queue orchestration, RAR + PAR2
+│   ├── uploaders.py       # Nyuu + indexer API
+│   ├── usenet_stream.py   # Usenet-to-Usenet streaming
+│   ├── pending_scan.py    # Source discovery and classification
+│   ├── queueing.py        # Durable queue models and state
+│   ├── folder_monitor.py  # Watchdog daemon
+│   ├── stats_engine.py    # System metrics
+│   ├── process_reaper.py  # Orphan cleanup
+│   └── headless.py        # CLI interface
+├── webui/
+│   ├── assets/            # CSS, JavaScript, and images
+│   └── *.html             # Jinja2 templates
+├── tests/                 # Automated regression suite
+└── data/                  # Runtime data (not versioned)
+    ├── history/            # SQLite DB
+    ├── nzbs/               # Generated NZBs
+    ├── tmp/                # Work directory
+    └── mediainfo/          # Cached NFOs</pre
+            >
+            <table class="doc-table">
+                <tr>
+                    <th>Module</th>
+                    <th>Role</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">core/config.py</code></td>
+                    <td>Pydantic BaseSettings, YAML + env var loading, migration validators</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">core/database.py</code></td>
+                    <td>SQLAlchemy ORM, upload records, stats, duplicate checks</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">indexers/registry.py</code></td>
+                    <td>YAML plugin loader, credential resolver, API submission</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">logic/services.py</code></td>
+                    <td>UploadService singleton, job lifecycle, ConsoleBuffer</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">logic/processing.py</code></td>
+                    <td>Orchestrator: discovery, sorting, per-item upload loop</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">logic/uploaders.py</code></td>
+                    <td>Nyuu subprocess with live progress + indexer API submission</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">logic/stats_engine.py</code></td>
+                    <td>Async poller, sparkline buffers, DB history</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">logic/process_reaper.py</code></td>
+                    <td>Kills orphaned nyuu/rar/parpar (6h timeout, 10min scan)</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Environment Variables -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-env'" id="guide-env" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="key-round" icon-class="w-4.5 h-4.5 text-amber-400"></lucide-icon>
+                Environment Variables
+            </div>
+            <p>
+                All settings can be overridden via env vars with the
+                <code class="doc-code">NZBP_</code>
+                prefix. Nested keys use double underscores.
+            </p>
+            <table class="doc-table">
+                <tr>
+                    <th>Environment Variable</th>
+                    <th>Equivalent config.yaml</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">NZBP_LOG_LEVEL=DEBUG</code></td>
+                    <td><code class="doc-code">log_level: DEBUG</code></td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">NZBP_PORT=9000</code></td>
+                    <td><code class="doc-code">port: 9000</code></td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">NZBP_API_KEYS__GEEK=abc</code></td>
+                    <td><code class="doc-code">api_keys: { geek: abc }</code></td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">NZBP_USERNAMES__OMG=user</code></td>
+                    <td><code class="doc-code">usernames: { omg: user }</code></td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">NZBP_ENABLE_GEEK=true</code></td>
+                    <td><code class="doc-code">enable_geek: true</code></td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">NZBP_TEST_RUN=true</code></td>
+                    <td><code class="doc-code">test_run: true</code></td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-ok">
+                <strong>.env file:</strong>
+                A
+                <code class="doc-code">.env</code>
+                file in the project root is auto-loaded. Recommended for server credentials.
+            </div>
+        </div>
+
+        <!-- Troubleshooting -->
+        <div v-if="activeTab==='guide' && activeSection==='guide-troubleshooting'" id="guide-troubleshooting" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="life-buoy" icon-class="w-4.5 h-4.5 text-red-400"></lucide-icon>
+                Troubleshooting &amp; FAQ
+            </div>
+            <div class="space-y-3">
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-red-400 mb-1">"Unable to open database file"</h4>
+                    <p>Give the service account ownership of the application data directory:</p>
+                    <pre class="doc-pre my-2">sudo chown -R nzbpostarr:nzbpostarr /opt/nzbpostarr/data
+sudo chmod -R u+rwX,go-rwx /opt/nzbpostarr/data</pre>
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-red-400 mb-1">"Missing required tools: nyuu, parpar, rar"</h4>
+                    <pre class="doc-pre my-2">
+npm install -g nyuu parpar
+apt install rar   # or your OS equivalent</pre
+                    >
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-red-400 mb-1">"Database is locked"</h4>
+                    <p>Auto-retry logic (3 attempts, exponential backoff) handles most cases. If persistent: ensure only one instance is running and avoid NFS mounts for SQLite.</p>
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-red-400 mb-1">Uploads stuck at 90-99%</h4>
+                    <p>Normal — Nyuu blends read (70%) + posted (30%) progress. The last percent is server acknowledgment. Caps at 99% until fully complete.</p>
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-red-400 mb-1">Orphaned nyuu/rar processes</h4>
+                    <p>The Process Reaper runs every 10 minutes (+ on boot). Kills tool processes >6h old that don't belong to active jobs.</p>
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-amber-400 mb-1">How do I add a new indexer?</h4>
+                    <p>
+                        Copy
+                        <code class="doc-code">indexers/_template.yaml</code>
+                        , fill in API details, add credentials to
+                        <code class="doc-code">config.yaml</code>
+                        , restart. Auto-loaded on boot.
+                    </p>
+                </div>
+                <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <h4 class="text-xs font-semibold text-amber-400 mb-1">Can I run without the WebUI?</h4>
+                    <p>
+                        Yes —
+                        <code class="doc-code">--headless</code>
+                        mode. Delete
+                        <code class="doc-code">webui/</code>
+                        entirely. All features work from CLI.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ═══════════════════════════════════════════════════════════ -->
+        <!--  TAB: API REFERENCE                                       -->
+        <!-- ═══════════════════════════════════════════════════════════ -->
+
+        <!-- API Overview -->
+        <div v-if="activeTab==='api' && activeSection==='api-overview'" id="api-overview" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="server" icon-class="w-4.5 h-4.5 text-notion-accent"></lucide-icon>
+                NZBPostarr REST API
+                <span class="text-[10px] px-1.5 py-0.5 bg-notion-bg-hover border border-notion-border rounded text-notion-text-tertiary font-bold ml-2">OAS 3.1</span>
+            </div>
+            <p>
+                All endpoints return JSON at
+                <code class="doc-code">/api/*</code>
+                . No authentication required for local access. Raw schema:
+                <a href="/openapi.json" target="_blank" class="text-notion-accent hover:underline">/openapi.json</a>
+            </p>
+            <div class="flex flex-wrap gap-3 text-[10px]">
+                <span class="doc-badge badge-get">GET</span>
+                <span class="text-notion-text-tertiary">Read data</span>
+                <span class="doc-badge badge-post">POST</span>
+                <span class="text-notion-text-tertiary">Create / action</span>
+                <span class="doc-badge badge-put">PUT</span>
+                <span class="text-notion-text-tertiary">Update</span>
+                <span class="doc-badge badge-delete">DELETE</span>
+                <span class="text-notion-text-tertiary">Remove</span>
+            </div>
+        </div>
+
+        <!-- Uploads API -->
+        <div v-if="activeTab==='api' && activeSection==='api-uploads'" id="api-uploads" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="upload" icon-class="w-4.5 h-4.5 text-cyan-400"></lucide-icon>
+                Uploads
+                <span class="text-[10px] px-1.5 py-0.5 bg-cyan-500/10 border border-cyan-500/20 rounded text-cyan-400 font-mono ml-2">13 endpoints</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/uploads/jobs</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Get all active upload jobs</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/uploads/start</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Start a new upload job</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/uploads/jobs/{job_id}/stop</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Stop a running job</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-delete w-12 text-center shrink-0">DEL</span>
+                    <code class="doc-code flex-1">/api/uploads/jobs/{job_id}</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Delete job from memory</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-delete w-12 text-center shrink-0">DEL</span>
+                    <code class="doc-code flex-1">/api/uploads/jobs/completed</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Clear completed jobs</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/uploads/recent</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Paginated upload history</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/uploads/grouped</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">History grouped by show</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/uploads/history</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Completed job listing</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-delete w-12 text-center shrink-0">DEL</span>
+                    <code class="doc-code flex-1">/api/uploads/history</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Delete history records</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/uploads/history/{job_id}/uploads</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Items for a specific job</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/uploads/hourly-stats</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Hourly performance metrics</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-delete w-12 text-center shrink-0">DEL</span>
+                    <code class="doc-code flex-1">/api/uploads/item/{item_name}</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Delete single history item</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/uploads/item/bulk-delete</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Bulk delete items</span>
+                </div>
+            </div>
+            <div class="mt-4 p-3 bg-notion-bg rounded-lg border border-notion-border">
+                <div class="doc-h3 mt-0">
+                    <lucide-icon name="play" icon-class="size-3.5 text-green-400"></lucide-icon>
+                    POST /api/uploads/start — Request Body
+                </div>
+                <table class="doc-table">
+                    <tr>
+                        <th>Field</th>
+                        <th>Type</th>
+                        <th>Default</th>
+                        <th>Description</th>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">category</code></td>
+                        <td>string</td>
+                        <td><span class="doc-badge" style="background: rgba(239, 68, 68, 0.15); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.3)">required</span></td>
+                        <td>Upload category (tv, movies, etc.)</td>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">test_mode</code></td>
+                        <td>bool</td>
+                        <td>false</td>
+                        <td>Dry-run without actual uploads</td>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">limit</code></td>
+                        <td>int?</td>
+                        <td>null</td>
+                        <td>Max items to process</td>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">file_path</code></td>
+                        <td>string?</td>
+                        <td>null</td>
+                        <td>Specific file to upload</td>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">indexer_id</code></td>
+                        <td>string?</td>
+                        <td>null</td>
+                        <td>Target specific indexer</td>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">skip_packs</code></td>
+                        <td>bool</td>
+                        <td>false</td>
+                        <td>Skip season packs</td>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">skip_episodes</code></td>
+                        <td>bool</td>
+                        <td>false</td>
+                        <td>Skip individual episodes</td>
+                    </tr>
+                    <tr>
+                        <td><code class="doc-code">source</code></td>
+                        <td>string?</td>
+                        <td>null</td>
+                        <td>Optional origin tag used for runtime trace logging</td>
+                    </tr>
+                </table>
+                <div class="doc-callout doc-callout-warn" style="margin-top: 10px">
+                    <strong>Note:</strong>
+                    <code class="doc-code">category</code>
+                    is also used to determine the indexer submission category code (e.g. Newznab
+                    <code class="doc-code">cat</code>
+                    ). Item display types like
+                    <code class="doc-code">TV Episode</code>
+                    are for history/UI and do not drive indexer categorization.
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard API -->
+        <div v-if="activeTab==='api' && activeSection==='api-dashboard'" id="api-dashboard" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="layout-dashboard" icon-class="w-4.5 h-4.5 text-violet-400"></lucide-icon>
+                Dashboard
+                <span class="text-[10px] px-1.5 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded text-violet-400 font-mono ml-2">4 endpoints</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/dashboard/summary</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Current stats &amp; queue sizes</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/dashboard/system-stats</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">CPU, memory, disk</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/dashboard/health</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Health check</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/dashboard/database-health</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Database connection health</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings API -->
+        <div v-if="activeTab==='api' && activeSection==='api-settings'" id="api-settings" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="settings" icon-class="w-4.5 h-4.5 text-amber-400"></lucide-icon>
+                Settings
+                <span class="text-[10px] px-1.5 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded text-amber-400 font-mono ml-2">8 endpoints</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/settings/</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Get current settings</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/settings/reset</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Reset to defaults</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/settings/config</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Current config object</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/settings/browse</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Browse server folders</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-put w-12 text-center shrink-0">PUT</span>
+                    <code class="doc-code flex-1">/api/settings/{section}</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Update a section</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/settings/raw</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Raw YAML config</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/settings/raw</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Save raw YAML</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/settings/preview</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Preview changes</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Console API -->
+        <div v-if="activeTab==='api' && activeSection==='api-console'" id="api-console" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="terminal" icon-class="w-4.5 h-4.5 text-green-400"></lucide-icon>
+                Console
+                <span class="text-[10px] px-1.5 py-0.5 bg-green-500/10 border border-green-500/20 rounded text-green-400 font-mono ml-2">1 endpoint</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/console/logs</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Retrieve application log buffer</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats API -->
+        <div v-if="activeTab==='api' && activeSection==='api-stats'" id="api-stats" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="activity" icon-class="w-4.5 h-4.5 text-pink-400"></lucide-icon>
+                Stats
+                <span class="text-[10px] px-1.5 py-0.5 bg-pink-500/10 border border-pink-500/20 rounded text-pink-400 font-mono ml-2">6 endpoints</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/stats/summary</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Stats overview</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/stats/full</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Full payload</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/stats/mini</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Lightweight mini</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/stats/top-directories</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Most active dirs</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/stats/history</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Historical data</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/stats/history/record</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Record snapshot</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Indexers API -->
+        <div v-if="activeTab==='api' && activeSection==='api-indexers'" id="api-indexers" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="database" icon-class="w-4.5 h-4.5 text-orange-400"></lucide-icon>
+                Indexers
+                <span class="text-[10px] px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-orange-400 font-mono ml-2">3 endpoints</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/indexers/</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">List all indexers &amp; status</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/indexers/{id}</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Get indexer details</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/indexers/{id}/test</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Test indexer connection</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Pending API -->
+        <div v-if="activeTab==='api' && activeSection==='api-pending'" id="api-pending" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="clock" icon-class="w-4.5 h-4.5 text-blue-400"></lucide-icon>
+                Pending
+                <span class="text-[10px] px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded text-blue-400 font-mono ml-2">2 endpoints</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/pending/</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Pending items per category</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
+                    <code class="doc-code flex-1">/api/pending/{category}</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Pending for specific category</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tests API -->
+        <div v-if="activeTab==='api' && activeSection==='api-tests'" id="api-tests" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="flask-conical" icon-class="w-4.5 h-4.5 text-violet-400"></lucide-icon>
+                Tests
+                <span class="text-[10px] px-1.5 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded text-violet-400 font-mono ml-2">2 endpoints</span>
+            </div>
+            <div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/tests/nntp</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Test NNTP server connection</span>
+                </div>
+                <div class="endpoint-row">
+                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
+                    <code class="doc-code flex-1">/api/tests/indexer/{id}</code>
+                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Test indexer API key</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Prev / Next Navigation ── -->
+        <div class="flex gap-3 mt-8 pt-6 border-t border-notion-divider">
+            <button v-if="prevSection" @click="activeSection = prevSection.id" class="doc-nav-btn text-left">
+                <span class="doc-nav-label">← Previous</span>
+                <span class="doc-nav-title" v-text="prevSection.title"></span>
+            </button>
+            <div v-else class="flex-1"></div>
+            <button v-if="nextSection" @click="activeSection = nextSection.id" class="doc-nav-btn text-right">
+                <span class="doc-nav-label">Next →</span>
+                <span class="doc-nav-title" v-text="nextSection.title"></span>
+            </button>
+            <div v-else class="flex-1"></div>
+        </div>
+    </div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script type="module">
+    import { createVuePage } from 'page-base';
+
+    createVuePage({
+        data() {
+            return {
+                activeTab: 'guide',
+                activeSection: 'guide-overview',
+                searchQuery: '',
+                searchFocused: false,
+                tabs: [
+                    {
+                        id: 'guide',
+                        label: 'User Guide',
+                        icon: 'book-open',
+                        sections: [
+                            { id: 'guide-overview', title: 'What is NZBPostarr?', group: 'Getting Started', keywords: 'nzbpostarr overview what is usenet upload indexer nyuu parpar rar nzb automated' },
+                            { id: 'guide-requirements', title: 'System Requirements', group: 'Getting Started', keywords: 'requirements dependencies python node npm nyuu parpar rar system prerequisites' },
+                            { id: 'guide-installation', title: 'Installation', group: 'Getting Started', keywords: 'installation install setup venv pip deploy server mkdir clone' },
+                            { id: 'guide-configuration', title: 'Configuration', group: 'Configuration', keywords: 'configuration config yaml settings folder paths categories movies tv misc poster rar' },
+                            { id: 'guide-nntp', title: 'NNTP Servers', group: 'Configuration', keywords: 'nntp server usenet ssl connections backbone provider upload' },
+                            { id: 'guide-indexer-system', title: 'Indexer Plugin System', group: 'Configuration', keywords: 'indexer plugin yaml registry api key category mapping template custom' },
+                            { id: 'guide-running', title: 'Running', group: 'Usage', keywords: 'running launch start tmux direct mode session server port' },
+                            { id: 'guide-webui', title: 'Web Interface', group: 'Usage', keywords: 'webui web interface dashboard jobs uploads pending stats pages vue' },
+                            { id: 'guide-headless', title: 'Headless CLI', group: 'Usage', keywords: 'headless cli command line upload status pending history batch' },
+                            { id: 'guide-pipeline', title: 'Upload Pipeline', group: 'Internals', keywords: 'upload pipeline processing rar par2 nyuu nzb nntp submit orchestrator' },
+                            { id: 'guide-foldermonitor', title: 'Folder Monitor', group: 'Internals', keywords: 'folder monitor watchdog auto trigger upload settle daemon' },
+                            { id: 'guide-architecture', title: 'Architecture', group: 'Internals', keywords: 'architecture structure directory modules core logic database services scheduler' },
+                            { id: 'guide-env', title: 'Environment Variables', group: 'Reference', keywords: 'environment variables env NZBP prefix override secrets dotenv' },
+                            { id: 'guide-troubleshooting', title: 'Troubleshooting', group: 'Reference', keywords: 'troubleshooting error fix debug database locked permission denied missing tools' },
+                        ],
+                    },
+                    {
+                        id: 'api',
+                        label: 'API Reference',
+                        icon: 'code',
+                        sections: [
+                            { id: 'api-overview', title: 'API Overview', group: 'General', keywords: 'api overview rest endpoints base url openapi' },
+                            { id: 'api-uploads', title: 'Uploads', group: 'Endpoints', keywords: 'uploads jobs start stop delete recent grouped history bulk' },
+                            { id: 'api-dashboard', title: 'Dashboard', group: 'Endpoints', keywords: 'dashboard summary system stats health database' },
+                            { id: 'api-settings', title: 'Settings', group: 'Endpoints', keywords: 'settings config browse reset raw preview update' },
+                            { id: 'api-console', title: 'Console', group: 'Endpoints', keywords: 'console logs' },
+                            { id: 'api-stats', title: 'Stats', group: 'Endpoints', keywords: 'stats summary full mini top directories history record' },
+                            { id: 'api-indexers', title: 'Indexers', group: 'Endpoints', keywords: 'indexers list details test connection' },
+                            { id: 'api-pending', title: 'Pending', group: 'Endpoints', keywords: 'pending category queue items' },
+                            { id: 'api-tests', title: 'Tests', group: 'Endpoints', keywords: 'tests nntp indexer connection verify' },
+                        ],
+                    },
+                ],
+            };
+        },
+        watch: {
+            activeSection(val) {
+                if (window.location.hash !== '#' + val) {
+                    window.history.pushState(null, '', '#' + val);
+                }
+            },
+        },
+        computed: {
+            currentTab() {
+                return this.tabs.find((t) => t.id === this.activeTab);
+            },
+            currentTabSections() {
+                return this.currentTab ? this.currentTab.sections : [];
+            },
+            currentTabGroups() {
+                const groups = [];
+                const seen = {};
+                for (const s of this.currentTabSections) {
+                    if (!seen[s.group]) {
+                        seen[s.group] = { label: s.group, items: [] };
+                        groups.push(seen[s.group]);
+                    }
+                    seen[s.group].items.push(s);
+                }
+                return groups;
+            },
+            flatSections() {
+                return this.currentTab ? this.currentTab.sections : [];
+            },
+            currentIndex() {
+                return this.flatSections.findIndex((s) => s.id === this.activeSection);
+            },
+            prevSection() {
+                return this.currentIndex > 0 ? this.flatSections[this.currentIndex - 1] : null;
+            },
+            nextSection() {
+                return this.currentIndex < this.flatSections.length - 1 ? this.flatSections[this.currentIndex + 1] : null;
+            },
+            searchResults() {
+                if (!this.searchQuery || this.searchQuery.length < 2) return [];
+                const q = this.searchQuery.toLowerCase();
+                const results = [];
+                for (const tab of this.tabs) {
+                    for (const s of tab.sections) {
+                        if (s.title.toLowerCase().includes(q) || s.keywords.toLowerCase().includes(q)) {
+                            results.push({ id: s.id, title: s.title, tab: tab.id, tabLabel: tab.label });
+                        }
+                    }
+                }
+                return results.slice(0, 10);
+            },
+        },
+        methods: {
+            goToSection(tabId, sectionId) {
+                this.activeTab = tabId;
+                this.activeSection = sectionId;
+                this.searchQuery = '';
+                this.searchFocused = false;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+            async downloadMarkdown() {
+                const origSection = this.activeSection;
+                const tabSections = this.currentTab.sections;
+                let md = `# NZBPostarr — ${this.currentTab.label}\n\n`;
+
+                for (const s of tabSections) {
+                    this.activeSection = s.id;
+                    await this.$nextTick();
+
+                    const sec = document.querySelector('.doc-section');
+                    if (!sec) continue;
+
+                    const clone = sec.cloneNode(true);
+                    clone.querySelectorAll('lucide-icon').forEach((i) => i.remove());
+                    clone.querySelectorAll('.idx-badge, .doc-badge').forEach((b) => {
+                        b.textContent = b.textContent.trim();
+                    });
+
+                    // Convert tables
+                    clone.querySelectorAll('table').forEach((t) => {
+                        const rows = [...t.querySelectorAll('tr')];
+                        if (!rows.length) return;
+                        const header = [...rows[0].querySelectorAll('th,td')].map((c) => c.textContent.trim());
+                        let tbl = '| ' + header.join(' | ') + ' |\n';
+                        tbl += '| ' + header.map(() => '---').join(' | ') + ' |\n';
+                        for (const row of rows.slice(1)) {
+                            const cells = [...row.querySelectorAll('td,th')].map((c) => c.textContent.trim());
+                            tbl += '| ' + cells.join(' | ') + ' |\n';
+                        }
+                        const pre = document.createElement('pre');
+                        pre.textContent = tbl;
+                        t.replaceWith(pre);
+                    });
+
+                    // Convert code blocks
+                    clone.querySelectorAll('.doc-pre, pre').forEach((p) => {
+                        if (p.tagName === 'PRE' && !p.querySelector('code') && !p.classList.contains('doc-pre')) return;
+                        p.textContent = '```\n' + p.textContent.trim() + '\n```';
+                    });
+
+                    // Convert inline code
+                    clone.querySelectorAll('.doc-code, code').forEach((c) => {
+                        if (c.closest('.doc-pre, pre')) return;
+                        c.textContent = '`' + c.textContent.trim() + '`';
+                    });
+
+                    // Walk & build markdown
+                    let text = '';
+                    for (const el of clone.children) {
+                        const tag = el.tagName?.toLowerCase();
+                        const cls = el.className || '';
+                        if (cls.includes('doc-h2')) text += '\n## ' + el.textContent.trim() + '\n\n';
+                        else if (cls.includes('doc-h3')) text += '\n### ' + el.textContent.trim() + '\n\n';
+                        else if (cls.includes('doc-pre') || tag === 'pre') text += '\n```\n' + el.textContent.trim() + '\n```\n\n';
+                        else if (cls.includes('doc-callout')) text += '\n> ' + el.textContent.trim().replace(/\n/g, '\n> ') + '\n\n';
+                        else text += el.textContent.trim() + '\n\n';
+                    }
+                    md += text;
+                }
+
+                // Restore original section
+                this.activeSection = origSection;
+                await this.$nextTick();
+
+                const blob = new Blob([md], { type: 'text/markdown' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `nzbpostarr-${this.activeTab}.md`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            },
+        },
+        mounted() {
+            // Priority 1: Check URL search params (legacy support)
+            const params = new URLSearchParams(window.location.search);
+            const tabParam = params.get('tab');
+            if (tabParam) {
+                const found = this.tabs.find((t) => t.id === tabParam);
+                if (found) {
+                    this.activeTab = tabParam;
+                    this.activeSection = found.sections[0].id;
+                }
+                // Clean search params but keep hash if present
+                window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+            }
+
+            // Priority 2: Check URL hash for direct section linking
+            const checkHash = () => {
+                const hash = window.location.hash.substring(1);
+                if (hash) {
+                    for (const t of this.tabs) {
+                        const sec = t.sections.find((s) => s.id === hash);
+                        if (sec) {
+                            this.activeTab = t.id;
+                            this.activeSection = hash;
+                            // Ensure page scrolls to top when switching sections via direct link
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            // Run on load and whenever hash changes
+            if (!checkHash() && !tabParam) {
+                // Default if no hash or param
+                this.activeTab = 'guide';
+                this.activeSection = 'guide-overview';
+            }
+
+            window.addEventListener('hashchange', checkHash);
+        },
+    });
+</script>
+{% endblock %}

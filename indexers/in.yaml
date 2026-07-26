@@ -1,0 +1,58 @@
+# NZBs.in Indexer Definition
+# https://v2.nzbs.in
+
+id: in
+name: NZBs.in
+description: NZBs.in indexer with Bearer token authentication
+website: https://nzbs.in
+favicon_url: https://nzbs.in/favicon.ico
+search_url: https://nzbs.in/search?category=&query=%22-{poster}%22
+api_key: '' # Set in config.yaml
+icon: inbox
+color: '#0da192'
+
+# API Configuration
+submit_url: https://v2.nzbs.in/api/v1/nzb/upload
+method: POST
+
+# Authentication (Bearer token in header)
+auth:
+  method: header
+  header_name: Authorization
+  header_template: 'Bearer {api_key}'
+
+# Category Mapping (different from newznab)
+categories:
+  tv: tv-shows
+  movie: movies
+  anime: anime
+  music: music
+  books: books
+  apps: apps
+  misc: ''
+  default: ''
+category_param: category
+
+# Release name
+name_param: name
+
+# File Upload Fields
+files:
+  nzb: nzb
+  nfo: nfo
+  mediainfo: mediainfo
+  nzb_mime: application/x-nzb
+
+# Form data instead of query params
+extra_form_data: {}
+
+# Success Detection
+success:
+  json_path: success
+  text_patterns:
+    - '"success":'
+    - 'ok'
+  duplicate_patterns:
+    - duplicate
+
+timeout: 30

@@ -1,0 +1,30 @@
+{% extends "base.html" %} {% block title %}[[ status_code ]] [[ error_title ]]{% endblock %} {% block header_title %}[[ error_title ]]{% endblock %} {% block content %}
+<div class="text-center space-y-6 py-8 sm:py-12 bg-notion-bg-secondary border border-notion-border rounded-lg">
+    <div class="flex justify-center">
+        <div class="w-16 h-16 sm:w-20 sm:h-20 [[ icon_bg_class ]] rounded-2xl flex items-center justify-center">
+            <lucide-icon name="[[ icon_name ]]" icon-class="size-8 sm:w-10 sm:h-10 [[ icon_color_class ]]"></lucide-icon>
+        </div>
+    </div>
+
+    <div class="space-y-2">
+        <h1 class="text-3xl sm:text-4xl font-bold text-notion-text-primary">[[ status_code ]]</h1>
+        <p class="text-notion-text-secondary text-base sm:text-lg">[[ error_title ]]</p>
+        {% if error_message %}
+        <p class="text-notion-text-tertiary text-sm px-4 sm:px-12">[[ error_message ]]</p>
+        {% endif %}
+    </div>
+
+    <div class="pt-4 flex flex-col xs:flex-row items-center justify-center gap-3 sm:gap-4 px-4">
+        {% if status_code == 500 %}
+        <button onclick="window.location.reload()" class="w-full xs:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-notion-bg-hover border border-notion-border text-notion-text-primary rounded-md font-semibold hover:bg-notion-bg-active transition-all">
+            <lucide-icon name="refresh-cw" icon-class="size-4"></lucide-icon>
+            Try Again
+        </button>
+        {% endif %}
+        <a href="/" class="w-full xs:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-notion-accent text-white rounded-md font-semibold hover:bg-notion-accent/90 transition-all">
+            <lucide-icon name="home" icon-class="size-4"></lucide-icon>
+            Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}

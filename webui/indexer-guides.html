@@ -1,0 +1,2636 @@
+{% extends "base.html" %} {% block title %}Documentation{% endblock %} {% block page_title %}Documentation{% endblock %} {% block header_title %}Documentation{% endblock %} {% block header_subtitle %}User guide, REST API reference &amp; indexer upload guides{% endblock %} {% block header_actions %}
+<div class="relative group hidden sm:block">
+    <lucide-icon name="search" icon-class="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary transition-colors group-focus-within:text-notion-accent"></lucide-icon>
+    <input
+        type="text"
+        v-model="searchQuery"
+        @focus="searchFocused=true"
+        @blur="setTimeout(()=>searchFocused=false,200)"
+        placeholder="Search guides…"
+        class="bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-8 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent w-36 md:w-52 transition-all" />
+    <div v-if="searchFocused && searchQuery.length >= 2 && searchResults.length" class="absolute top-full mt-1 left-0 right-0 bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
+        <button
+            v-for="r in searchResults"
+            :key="r.id"
+            @mousedown.prevent="activeSection = r.id; searchQuery=''; searchFocused=false; window.scrollTo({top:0,behavior:'smooth'})"
+            class="w-full text-left px-3 py-2 text-xs hover:bg-notion-bg-hover transition-colors border-b border-notion-border/50 last:border-0">
+            <span class="text-notion-text-primary font-medium" v-text="r.title"></span>
+            <span class="text-notion-text-tertiary ml-2" v-text="'— ' + r.group"></span>
+        </button>
+    </div>
+</div>
+<a href="/openapi.json" target="_blank" class="px-4 h-8 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded-md text-xs hover:bg-notion-bg-active transition-colors flex items-center justify-center gap-2">
+    <lucide-icon name="braces" icon-class="size-3.5"></lucide-icon>
+    OpenAPI
+</a>
+<button @click="downloadMarkdown" class="px-4 h-8 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded-md text-xs hover:bg-notion-bg-active transition-colors flex items-center justify-center gap-2">
+    <lucide-icon name="download" icon-class="size-3.5"></lucide-icon>
+    .md
+</button>
+{% endblock %} {% block extra_head %}
+<style>
+    .doc-sidebar a {
+        font-size: 0.75rem;
+        color: var(--notion-text-secondary);
+        transition: all 0.15s;
+        padding: 5px 10px;
+        display: block;
+        border-radius: 4px;
+    }
+    .doc-sidebar a:hover {
+        color: var(--notion-text-primary);
+        background: var(--notion-bg-hover);
+    }
+    .doc-sidebar a.active {
+        color: var(--notion-accent);
+        background: color-mix(in srgb, var(--notion-accent) 8%, transparent);
+        font-weight: 500;
+    }
+    .doc-sidebar .sidebar-group {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        color: var(--notion-text-tertiary);
+        padding: 8px 10px 4px;
+        margin-top: 8px;
+    }
+    .doc-sidebar .sidebar-group:first-child {
+        margin-top: 0;
+    }
+
+    .doc-code {
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 12px;
+        background: var(--notion-bg);
+        border: 1px solid var(--notion-border);
+        border-radius: 4px;
+        padding: 1px 6px;
+        color: #fbbf24;
+    }
+    .doc-pre {
+        background: var(--notion-bg);
+        border: 1px solid var(--notion-border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        font-size: 12px;
+        line-height: 1.6;
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        color: var(--notion-text-secondary);
+        margin: 10px 0;
+        white-space: pre;
+    }
+    .doc-table {
+        width: 100%;
+        font-size: 0.75rem;
+        border-collapse: collapse;
+    }
+    .doc-table th {
+        text-align: left;
+        padding: 8px 12px;
+        background: var(--notion-bg-hover);
+        border: 1px solid var(--notion-border);
+        color: var(--notion-accent);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 10px;
+    }
+    .doc-table td {
+        padding: 8px 12px;
+        border: 1px solid var(--notion-border);
+        color: var(--notion-text-secondary);
+    }
+    .doc-table tr:hover td {
+        background: color-mix(in srgb, var(--notion-bg-hover) 50%, transparent);
+    }
+
+    .doc-callout {
+        border: 1px solid;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 10px 0;
+        font-size: 0.75rem;
+        line-height: 1.6;
+    }
+    .doc-callout-warn {
+        background: rgba(245, 158, 11, 0.05);
+        border-color: rgba(245, 158, 11, 0.2);
+        color: #fde68a;
+    }
+    .doc-callout-ok {
+        background: rgba(34, 197, 94, 0.05);
+        border-color: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+    }
+    .doc-callout-err {
+        background: rgba(239, 68, 68, 0.05);
+        border-color: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+    }
+    .doc-callout strong {
+        color: var(--notion-text-primary);
+    }
+
+    .doc-h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--notion-text-primary);
+        margin: 1.5rem 0 0.75rem;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--notion-divider);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .doc-h2:first-child {
+        margin-top: 0;
+    }
+    .doc-h3 {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--notion-text-primary);
+        margin: 1rem 0 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .doc-nav-btn {
+        display: flex;
+        flex-direction: column;
+        padding: 12px 16px;
+        border: 1px solid var(--notion-border);
+        border-radius: 8px;
+        transition: all 0.15s;
+        min-width: 0;
+        flex: 1;
+    }
+    .doc-nav-btn:hover {
+        background: var(--notion-bg-hover);
+        border-color: var(--notion-accent);
+    }
+    .doc-nav-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--notion-text-tertiary);
+        margin-bottom: 2px;
+    }
+    .doc-nav-title {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--notion-text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .idx-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+
+    .doc-badge {
+        display: inline-block;
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+    .badge-get {
+        background: rgba(34, 197, 94, 0.15);
+        color: #4ade80;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .badge-post {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .badge-required {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .badge-optional {
+        background: rgba(100, 116, 139, 0.15);
+        color: #94a3b8;
+        border: 1px solid rgba(100, 116, 139, 0.3);
+    }
+
+    /* Tab bar (matching docs.html) */
+    .doc-tab {
+        padding: 8px 16px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--notion-text-secondary);
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+        cursor: pointer;
+        white-space: nowrap;
+        text-decoration: none;
+    }
+    .doc-tab:hover {
+        color: var(--notion-text-primary);
+    }
+    .doc-tab.active {
+        color: var(--notion-accent);
+        border-bottom-color: var(--notion-accent);
+    }
+</style>
+{% endblock %} {% block content %}
+
+<!-- Mobile search -->
+<div class="relative group sm:hidden mb-4">
+    <lucide-icon name="search" icon-class="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+    <input
+        type="text"
+        v-model="searchQuery"
+        @focus="searchFocused=true"
+        @blur="setTimeout(()=>searchFocused=false,200)"
+        placeholder="Search guides…"
+        class="bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-9 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent w-full" />
+    <div v-if="searchFocused && searchQuery.length >= 2 && searchResults.length" class="absolute top-full mt-1 left-0 right-0 bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+        <button v-for="r in searchResults" :key="r.id" @mousedown.prevent="activeSection = r.id; searchQuery=''; searchFocused=false" class="w-full text-left px-3 py-2 text-xs hover:bg-notion-bg-hover border-b border-notion-border/50 last:border-0">
+            <span class="text-notion-text-primary font-medium" v-text="r.title"></span>
+            <span class="text-notion-text-tertiary ml-1.5 text-[10px]" v-text="r.group"></span>
+        </button>
+    </div>
+</div>
+
+<!-- ── Tab Bar (mirrors docs.html) ── -->
+<div class="flex items-center gap-0 border-b border-notion-divider mb-6 -mt-2 overflow-x-auto">
+    <a href="/docs?tab=guide" class="doc-tab flex items-center gap-2">
+        <lucide-icon name="book-open" icon-class="size-4"></lucide-icon>
+        <span>User Guide</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono bg-notion-bg-hover border-notion-border text-notion-text-tertiary">14</span>
+    </a>
+    <a href="/docs?tab=api" class="doc-tab flex items-center gap-2">
+        <lucide-icon name="code" icon-class="size-4"></lucide-icon>
+        <span>API Reference</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono bg-notion-bg-hover border-notion-border text-notion-text-tertiary">9</span>
+    </a>
+    <a href="/indexer-guides" class="doc-tab active flex items-center gap-2">
+        <lucide-icon name="globe" icon-class="size-4"></lucide-icon>
+        <span>Indexer Guides</span>
+        <span class="text-[10px] px-1.5 py-0.5 rounded border font-mono bg-notion-accent/10 border-notion-accent/20 text-notion-accent">8</span>
+    </a>
+</div>
+
+<div class="flex gap-6">
+    <!-- Sidebar (desktop) -->
+    <aside class="hidden lg:block w-52 shrink-0">
+        <nav class="sticky top-16 doc-sidebar max-h-[calc(100vh-5rem)] overflow-y-auto pb-8">
+            <template v-for="g in sidebarGroups" :key="g.label">
+                <div class="sidebar-group" v-text="g.label"></div>
+                <a v-for="s in g.items" :key="s.id" href="#" @click.prevent="activeSection = s.id; window.scrollTo({top:0,behavior:'smooth'})" :class="{active: activeSection === s.id}">
+                    <span v-text="s.title"></span>
+                </a>
+            </template>
+
+            <!-- Plugin System link -->
+            <div class="sidebar-group">Resources</div>
+            <a href="/docs" @click.prevent="window.location='/docs'" class="flex items-center gap-1.5">
+                <lucide-icon name="book-open" icon-class="size-3"></lucide-icon>
+                User Guide &amp; API
+            </a>
+            <a href="/swagger" target="_blank" class="flex items-center gap-1.5">
+                <lucide-icon name="code" icon-class="size-3"></lucide-icon>
+                Swagger UI
+            </a>
+        </nav>
+    </aside>
+
+    <!-- Main Content Area -->
+    <div class="flex-1 min-w-0">
+        <!-- Mobile section selector -->
+        <div class="lg:hidden mb-4">
+            <select v-model="activeSection" class="w-full bg-notion-bg-secondary text-notion-text-primary text-xs border border-notion-border rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-notion-accent">
+                <template v-for="g in sidebarGroups" :key="g.label">
+                    <optgroup :label="g.label">
+                        <option v-for="s in g.items" :key="s.id" :value="s.id" v-text="s.title"></option>
+                    </optgroup>
+                </template>
+            </select>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  OVERVIEW                                                        -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='overview'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="puzzle" icon-class="w-4.5 h-4.5 text-notion-accent"></lucide-icon>
+                Indexer Plugin System — Overview
+            </div>
+            <p>
+                NZBPostarr uses a
+                <strong class="text-notion-text-primary">YAML plugin system</strong>
+                for indexer definitions. Each indexer is a single
+                <code class="doc-code">.yaml</code>
+                file in
+                <code class="doc-code">indexers/</code>
+                . Adding a new indexer means creating a new YAML file — no Python code required.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="layers" icon-class="size-3.5 text-violet-400"></lucide-icon>
+                How It Works
+            </div>
+            <div class="space-y-2">
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="idx-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">1</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Boot</strong>
+                        —
+                        <code class="doc-code">IndexerRegistry</code>
+                        scans
+                        <code class="doc-code">indexers/*.yaml</code>
+                        , skipping files prefixed with
+                        <code class="doc-code">_</code>
+                        . Each file is validated into an
+                        <code class="doc-code">IndexerDefinition</code>
+                        Pydantic model.
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="idx-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">2</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Config Resolution</strong>
+                        — API keys, usernames, enabled/backfill/priority flags are resolved from
+                        <code class="doc-code">config.yaml</code>
+                        at runtime via
+                        <code class="doc-code">resolve_indexer_*</code>
+                        helpers, not stored in the YAML.
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="idx-badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3)">3</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Upload</strong>
+                        — The uploader reads the indexer's
+                        <code class="doc-code">method</code>
+                        ,
+                        <code class="doc-code">auth</code>
+                        ,
+                        <code class="doc-code">files</code>
+                        , and
+                        <code class="doc-code">success</code>
+                        definitions to construct the correct HTTP request (POST multipart, cURL subprocess, etc.).
+                    </div>
+                </div>
+                <div class="flex items-start gap-3 bg-notion-bg rounded-lg border border-notion-border p-3">
+                    <span class="idx-badge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3)">4</span>
+                    <div>
+                        <strong class="text-notion-text-primary">Response</strong>
+                        — Success/duplicate detection uses
+                        <code class="doc-code">text_patterns</code>
+                        ,
+                        <code class="doc-code">json_path</code>
+                        , or
+                        <code class="doc-code">duplicate_patterns</code>
+                        from the YAML. Duplicates are treated as success.
+                    </div>
+                </div>
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="globe" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Built-in Indexers
+            </div>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+                <div
+                    v-for="s in sections.filter(x => x.id !== 'overview' && x.id !== 'template')"
+                    :key="s.id"
+                    @click="activeSection = s.id; window.scrollTo({top:0,behavior:'smooth'})"
+                    class="bg-notion-bg rounded-lg border border-notion-border px-3 py-2.5 flex items-center gap-2.5 cursor-pointer hover:border-notion-accent/40 transition-colors">
+                    <span class="idx-badge" :style="'background:' + s.color + '15; color:' + s.color + '; border: 1px solid ' + s.color + '30;'" v-text="s.letter"></span>
+                    <div>
+                        <span class="text-notion-text-primary font-medium text-xs" v-text="s.shortName"></span>
+                        <br />
+                        <span class="text-[10px] text-notion-text-tertiary" v-text="s.domain"></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Authentication Methods
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Method</th>
+                    <th>Used By</th>
+                    <th>How It Works</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">query_param</code></td>
+                    <td>NZBGeek, NZB.su, NZBPlanet</td>
+                    <td>
+                        API key appended to URL:
+                        <code class="doc-code">?apikey=KEY</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">header</code></td>
+                    <td>NZBs.in</td>
+                    <td>
+                        Bearer token in HTTP header:
+                        <code class="doc-code">Authorization: Bearer KEY</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">curl_url</code></td>
+                    <td>OMGWTFNZBs</td>
+                    <td>Username + API key embedded in cURL URL template</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">none</code></td>
+                    <td>DrunkenSlug</td>
+                    <td>No authentication — session/cookie-based upload</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="settings-2" icon-class="size-3.5 text-pink-400"></lucide-icon>
+                Config Keys Per Indexer
+            </div>
+            <pre class="doc-pre">
+# config.yaml — per-indexer controls
+api_keys:
+  geek: 'YOUR_NZBGEEK_API_KEY'
+  su: 'YOUR_NZBSU_API_KEY'
+  omg: 'YOUR_OMG_API_KEY'
+  planet: 'YOUR_NZBPLANET_API_KEY'
+  in: 'YOUR_NZBSIN_API_KEY'
+  slug: 'YOUR_DRUNKENSLUG_API_KEY'
+
+usernames:
+  omg: 'YOUR_OMG_USERNAME'        # only OMG requires a username
+
+# Per-indexer toggles (default: true)
+enable_geek: true
+enable_su: true
+enable_omg: true
+enable_planet: true
+enable_in: true
+enable_slug: true
+
+# Per-indexer backfill (upload to indexers missing this item)
+backfill_geek: true
+backfill_su: true
+
+# Per-indexer priority (processed first)
+priority_geek: false</pre
+            >
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  TEMPLATE                                                        -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='template'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <lucide-icon name="file-plus" icon-class="w-4.5 h-4.5 text-green-400"></lucide-icon>
+                Creating a Custom Indexer
+            </div>
+            <p>
+                Copy
+                <code class="doc-code">_template.yaml</code>
+                →
+                <code class="doc-code">my_indexer.yaml</code>
+                and fill in the fields below. The registry auto-loads it on next restart.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="file-code" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Full Template Reference
+            </div>
+            <pre class="doc-pre">
+# Required
+id: my_indexer                              # Unique ID (lowercase, no spaces)
+name: My Indexer Name                       # Display name in UI
+submit_url: https://api.example.com/submit  # API endpoint URL
+method: POST                                # POST, PUT, or CURL
+
+# Authentication
+auth:
+  method: query_param                       # query_param | header | form_field | curl_url | none
+  api_key_param: apikey                     # Parameter name for API key
+  # username_param: user                    # For indexers requiring username
+  # header_name: Authorization              # For header-based auth
+  # header_template: "Bearer {api_key}"     # Template for header value
+
+# For CURL method only:
+# curl_template: "https://example.com/api?user={username}&amp;api={api_key}"
+
+# Category mapping (upload category → indexer category code)
+# NZBPostarr job categories are typically: tv, movies, misc, ...
+# Singular/plural are interchangeable (movies/movie) via a fallback in the registry.
+categories:
+  tv: '5040'
+  movie: '2040'
+  anime: '5070'
+  audiobook: '3030'
+  ebook: '7020'
+  music: '3010'
+  games: '1000'
+  misc: '5000'
+  default: '5000'
+category_param: cat                         # URL param name for category
+
+# File upload field names
+files:
+  nzb: nzb                                 # Field name for NZB file
+  nfo: nfo                                 # Field name for NFO (null to disable)
+  # mediainfo: mediainfo                   # Optional separate mediainfo field
+  nzb_mime: application/x-nzb              # MIME type
+
+# Optional
+name_param: name                            # Param for release name
+extra_params:                               # Static query params always included
+  t: nzbadd
+extra_form_data: {}                         # Static form fields
+
+# Success detection
+success:
+  # JSON path check (optional)
+  json_path: response.status
+  json_value: OK
+  # Text patterns (checked against response body)
+  text_patterns:
+    - 'SUCCESS'
+    - 'OK'
+  # Duplicate patterns (treated as success)
+  duplicate_patterns:
+    - 'duplicate'
+    - 'already exists'
+
+# Behaviour
+timeout: 30                                 # Request timeout in seconds
+requires_nfo: false                         # Create empty NFO if missing
+
+# UI (optional)
+description: A brief description
+website: https://example-indexer.com
+favicon_url: https://example-indexer.com/favicon.ico
+icon: globe                                 # Lucide icon name
+color: '#808080'                            # Hex colour for UI &amp; logs</pre
+            >
+
+            <div class="doc-h3">
+                <lucide-icon name="check" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Checklist
+            </div>
+            <div class="space-y-1.5">
+                <div class="flex items-center gap-2 bg-notion-bg rounded border border-notion-border px-3 py-1.5">
+                    <lucide-icon name="square-check" icon-class="size-3.5 text-green-400"></lucide-icon>
+                    File saved as
+                    <code class="doc-code">indexers/your_id.yaml</code>
+                </div>
+                <div class="flex items-center gap-2 bg-notion-bg rounded border border-notion-border px-3 py-1.5">
+                    <lucide-icon name="square-check" icon-class="size-3.5 text-green-400"></lucide-icon>
+                    <code class="doc-code">id</code>
+                    is unique, lowercase, no spaces
+                </div>
+                <div class="flex items-center gap-2 bg-notion-bg rounded border border-notion-border px-3 py-1.5">
+                    <lucide-icon name="square-check" icon-class="size-3.5 text-green-400"></lucide-icon>
+                    API key added to
+                    <code class="doc-code">config.yaml</code>
+                    under
+                    <code class="doc-code">api_keys.your_id</code>
+                </div>
+                <div class="flex items-center gap-2 bg-notion-bg rounded border border-notion-border px-3 py-1.5">
+                    <lucide-icon name="square-check" icon-class="size-3.5 text-green-400"></lucide-icon>
+                    <code class="doc-code">enable_your_id: true</code>
+                    in config
+                </div>
+                <div class="flex items-center gap-2 bg-notion-bg rounded border border-notion-border px-3 py-1.5">
+                    <lucide-icon name="square-check" icon-class="size-3.5 text-green-400"></lucide-icon>
+                    Restart NZBPostarr — registry auto-loads on boot
+                </div>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  NZBGEEK                                                         -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='nzbgeek'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <span class="idx-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">G</span>
+                NZBGeek
+                <span class="text-[10px] text-notion-text-tertiary ml-2">nzbgeek.info</span>
+            </div>
+            <p>
+                NZBGeek is one of the most popular NZB indexers. It uses the standard
+                <strong class="text-notion-text-primary">Newznab submission API</strong>
+                with multipart form upload. Supports both NZB file upload and optional NFO attachment as separate form fields.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Authentication
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td><strong>Submit URL</strong></td>
+                    <td><code class="doc-code">https://api.nzbgeek.info/submit</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Method</strong></td>
+                    <td>POST (multipart/form-data)</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Type</strong></td>
+                    <td>Query parameter</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Param</strong></td>
+                    <td><code class="doc-code">?apikey=YOUR_KEY</code></td>
+                </tr>
+                <tr>
+                    <td><strong>API Key Location</strong></td>
+                    <td>nzbgeek.info → Profile → API Key</td>
+                </tr>
+                <tr>
+                    <td><strong>Search URL</strong></td>
+                    <td><code class="doc-code">https://nzbgeek.info/geekseek.php?browsepostedby={poster}</code></td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="tag" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Category Mapping
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Content Type</th>
+                    <th>Newznab Code</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>tv</td>
+                    <td><code class="doc-code">5040</code></td>
+                    <td>TV / HD</td>
+                </tr>
+                <tr>
+                    <td>movie</td>
+                    <td><code class="doc-code">2040</code></td>
+                    <td>Movies / HD</td>
+                </tr>
+                <tr>
+                    <td>anime</td>
+                    <td><code class="doc-code">5070</code></td>
+                    <td>TV / Anime</td>
+                </tr>
+                <tr>
+                    <td>audiobook</td>
+                    <td><code class="doc-code">3030</code></td>
+                    <td>Audio / Audiobook</td>
+                </tr>
+                <tr>
+                    <td>ebook</td>
+                    <td><code class="doc-code">7020</code></td>
+                    <td>Books / Ebook</td>
+                </tr>
+                <tr>
+                    <td>music</td>
+                    <td><code class="doc-code">3010</code></td>
+                    <td>Audio / MP3</td>
+                </tr>
+                <tr>
+                    <td>games</td>
+                    <td><code class="doc-code">1000</code></td>
+                    <td>Console</td>
+                </tr>
+                <tr>
+                    <td>misc / default</td>
+                    <td><code class="doc-code">5000</code></td>
+                    <td>TV / Other (fallback)</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Upload Fields
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Field</th>
+                    <th>Name</th>
+                    <th>Required</th>
+                    <th>Notes</th>
+                </tr>
+                <tr>
+                    <td>NZB file</td>
+                    <td><code class="doc-code">nzb</code></td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        MIME:
+                        <code class="doc-code">application/x-nzb</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td>NFO file</td>
+                    <td><code class="doc-code">nfo</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>Text NFO file with release info</td>
+                </tr>
+                <tr>
+                    <td>Category</td>
+                    <td>
+                        <code class="doc-code">cat</code>
+                        (query param)
+                    </td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>Newznab category code</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="terminal" icon-class="size-3.5 text-green-400"></lucide-icon>
+                cURL Examples
+            </div>
+            <pre class="doc-pre"><span style="color:#86efac"># Basic NZB upload</span>
+curl -k -s -L -m 60 \
+  -F "nzb=@/path/to/release.nzb" \
+  "https://api.nzbgeek.info/submit?apikey=YOUR_KEY"
+
+<span style="color:#86efac"># NZB + category</span>
+curl -k -s -L -m 60 \
+  -F "nzb=@/path/to/release.nzb" \
+  "https://api.nzbgeek.info/submit?apikey=YOUR_KEY&amp;cat=5040"
+
+<span style="color:#86efac"># NZB + NFO + category</span>
+curl -k -s -L -m 60 \
+  -F "nzb=@/path/to/release.nzb" \
+  -F "nfo=@/path/to/release.nfo" \
+  "https://api.nzbgeek.info/submit?apikey=YOUR_KEY&amp;cat=5040"</pre>
+
+            <div class="doc-h3">
+                <lucide-icon name="check-circle" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Success Detection
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Check</th>
+                    <th>Pattern</th>
+                </tr>
+                <tr>
+                    <td>JSON path</td>
+                    <td>
+                        <code class="doc-code">response.@attributes.API</code>
+                        =
+                        <code class="doc-code">OK</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Text patterns</td>
+                    <td>
+                        <code class="doc-code">"OK"</code>
+                        ,
+                        <code class="doc-code">"REGISTER"</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Duplicate</td>
+                    <td><code class="doc-code">"duplicate"</code></td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="message-square" icon-class="size-3.5 text-blue-400"></lucide-icon>
+                Response Examples
+            </div>
+            <pre class="doc-pre"><span style="color:#86efac"># Success (NZB only)</span>
+{"response":{"@attributes":{"API":"OK","REGISTER":"OK"}}}
+
+<span style="color:#86efac"># Success (NZB + NFO)</span>
+{"response":{"@attributes":{"API":"OK","NFO":"OK","REGISTER":"OK"}}}
+
+<span style="color:#86efac"># Failure — bad API key</span>
+{"response":{"@attributes":{"API":"ERROR","REGISTER":"INVALID API KEY"}}}</pre>
+
+            <div class="doc-h3">
+                <lucide-icon name="scroll-text" icon-class="size-3.5 text-orange-400"></lucide-icon>
+                Batch Upload Script (Linux)
+            </div>
+            <pre class="doc-pre">
+#!/bin/bash
+nzb_folder="/home/user/nzb_submissions"
+nzb_done="/home/user/nzb_submissions_complete"
+myapikey="YOUR_GEEK_API_KEY"
+
+if [ "$(ls -A $nzb_folder)" ]; then
+  cd "$nzb_folder"
+  for DA in *; do
+    echo "Processing: ${DA}"
+    curl -k -s -L -m 60 -F nzb=@"$nzb_folder/$DA" \
+      "https://api.nzbgeek.info/submit?apikey=$myapikey"
+    mv "$nzb_folder/$DA" "$nzb_done/$DA"
+    echo "Processed: ${DA}"
+  done
+else
+  echo "Submission Folder is Empty"
+fi</pre
+            >
+
+            <div class="doc-callout doc-callout-ok">
+                <strong>NZBPostarr config:</strong>
+                <code class="doc-code">api_keys.geek: YOUR_KEY</code>
+                — that's all. Category, NFO, success detection are all handled automatically from
+                <code class="doc-code">geek.yaml</code>
+                .
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  NZBs.in                                                         -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='nzbsin'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <span class="idx-badge" style="background: rgba(13, 161, 146, 0.15); color: #0da192; border: 1px solid rgba(13, 161, 146, 0.3)">I</span>
+                NZBs.in
+                <span class="text-[10px] text-notion-text-tertiary ml-2">nzbs.in</span>
+            </div>
+            <p>
+                NZBs.in uses
+                <strong class="text-notion-text-primary">header-based Bearer token authentication</strong>
+                — different from most Newznab indexers. It also supports optional MediaInfo, screenshots, and NFO attachments in the same upload.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Authentication
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td><strong>Submit URL</strong></td>
+                    <td><code class="doc-code">https://v2.nzbs.in/api/v1/nzb/upload</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Method</strong></td>
+                    <td>POST (multipart/form-data)</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Type</strong></td>
+                    <td>HTTP Header</td>
+                </tr>
+                <tr>
+                    <td><strong>Header</strong></td>
+                    <td><code class="doc-code">Authorization: Bearer YOUR_API_TOKEN</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Accept Header</strong></td>
+                    <td><code class="doc-code">application/json</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Search URL</strong></td>
+                    <td><code class="doc-code">https://nzbs.in/search?category=&amp;query="{poster}"</code></td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="tag" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Category Mapping
+            </div>
+            <p>
+                NZBs.in uses
+                <strong>string-based categories</strong>
+                instead of numeric codes:
+            </p>
+            <table class="doc-table">
+                <tr>
+                    <th>Content Type</th>
+                    <th>Category String</th>
+                </tr>
+                <tr>
+                    <td>tv</td>
+                    <td><code class="doc-code">tv-shows</code></td>
+                </tr>
+                <tr>
+                    <td>movie</td>
+                    <td><code class="doc-code">movies</code></td>
+                </tr>
+                <tr>
+                    <td>anime</td>
+                    <td><code class="doc-code">anime</code></td>
+                </tr>
+                <tr>
+                    <td>audiobook</td>
+                    <td><code class="doc-code">audiobooks</code></td>
+                </tr>
+                <tr>
+                    <td>ebook</td>
+                    <td><code class="doc-code">ebooks</code></td>
+                </tr>
+                <tr>
+                    <td>music</td>
+                    <td><code class="doc-code">music</code></td>
+                </tr>
+                <tr>
+                    <td>games</td>
+                    <td><code class="doc-code">games</code></td>
+                </tr>
+                <tr>
+                    <td>misc / default</td>
+                    <td><code class="doc-code">apps</code></td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Upload Fields
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Field</th>
+                    <th>Name</th>
+                    <th>Required</th>
+                    <th>Notes</th>
+                </tr>
+                <tr>
+                    <td>NZB file</td>
+                    <td><code class="doc-code">nzb</code></td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        Max 20MB. MIME:
+                        <code class="doc-code">application/x-nzb</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Category</td>
+                    <td><code class="doc-code">category</code></td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>String category (see above)</td>
+                </tr>
+                <tr>
+                    <td>Release name</td>
+                    <td><code class="doc-code">name</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>Defaults to NZB filename if omitted</td>
+                </tr>
+                <tr>
+                    <td>NFO file</td>
+                    <td><code class="doc-code">nfo</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>Plain text, max 2MB</td>
+                </tr>
+                <tr>
+                    <td>MediaInfo</td>
+                    <td><code class="doc-code">mediainfo</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>
+                        <code class="doc-code">.txt</code>
+                        file, max 2MB, standard MediaInfo format
+                    </td>
+                </tr>
+                <tr>
+                    <td>Screenshots</td>
+                    <td><code class="doc-code">screenshots[]</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>Comma-separated URLs (.jpg/.png), up to 10</td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-ok">
+                <strong>Unique feature:</strong>
+                NZBs.in is the only supported indexer that accepts
+                <strong>MediaInfo</strong>
+                and
+                <strong>screenshot URLs</strong>
+                as separate upload fields.
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="terminal" icon-class="size-3.5 text-green-400"></lucide-icon>
+                cURL Examples
+            </div>
+            <pre class="doc-pre"><span style="color:#86efac"># Basic upload</span>
+curl -X POST "https://v2.nzbs.in/api/v1/nzb/upload" \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Accept: application/json" \
+  -F "nzb=@/path/to/release.nzb" \
+  -F "name=My.Release.S01E01.1080p" \
+  -F "category=tv-shows"
+
+<span style="color:#86efac"># Full upload with all optional fields</span>
+curl -X POST "https://v2.nzbs.in/api/v1/nzb/upload" \
+  -H "Authorization: Bearer &lt;token&gt;" \
+  -H "Accept: application/json" \
+  -F "nzb=@/path/to/release.nzb" \
+  -F "name=My.Release.S01E01.1080p" \
+  -F "category=tv-shows" \
+  -F "screenshots[]=https://img.example.com/shot1.jpg,https://img.example.com/shot2.jpg" \
+  -F "mediainfo=@/path/to/mediainfo.txt" \
+  -F "nfo=@/path/to/release.nfo"</pre>
+
+            <div class="doc-h3">
+                <lucide-icon name="code" icon-class="size-3.5 text-violet-400"></lucide-icon>
+                Python Example
+            </div>
+            <pre class="doc-pre">
+import requests
+
+response = requests.post(
+    url="https://v2.nzbs.in/api/v1/nzb/upload",
+    headers={
+        "Authorization": "Bearer YOUR_API_TOKEN",
+        "Accept": "application/json",
+    },
+    files={
+        "nzb": open("/path/to/release.nzb", "rb"),
+        "mediainfo": open("/path/to/mediainfo.txt", "rb"),  # optional
+        "nfo": open("/path/to/release.nfo", "rb"),           # optional
+    },
+    data={
+        "category": "movies",
+        "name": "My.Movie.2024.1080p.BluRay-GROUP",
+    },
+)
+
+result = response.json()
+if result.get("success"):
+    print("Upload successful:", result["success"])
+else:
+    print("Upload failed:", result)</pre
+            >
+
+            <div class="doc-h3">
+                <lucide-icon name="check-circle" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Success Detection
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Check</th>
+                    <th>Pattern</th>
+                </tr>
+                <tr>
+                    <td>JSON path</td>
+                    <td>
+                        <code class="doc-code">success</code>
+                        field in response JSON
+                    </td>
+                </tr>
+                <tr>
+                    <td>Text patterns</td>
+                    <td>
+                        <code class="doc-code">"success":</code>
+                        ,
+                        <code class="doc-code">"ok"</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Duplicate</td>
+                    <td><code class="doc-code">"duplicate"</code></td>
+                </tr>
+            </table>
+
+            <div class="doc-callout doc-callout-warn">
+                <strong>Important notes:</strong>
+                <br />
+                • Uploads are
+                <strong>not counted</strong>
+                towards your API rate limits.
+                <br />
+                • Processing may take a few minutes after upload — don't re-upload.
+                <br />
+                • Add a 2-second delay between consecutive uploads to avoid abuse protection.
+                <br />
+                •
+                <strong>NZBPostarr config:</strong>
+                <code class="doc-code">api_keys.in: YOUR_TOKEN</code>
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  NZB.su / NZB.life                                               -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='nzbsu'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <span class="idx-badge" style="background: rgba(14, 165, 233, 0.15); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.3)">S</span>
+                NZB.su / NZB.life
+                <span class="text-[10px] text-notion-text-tertiary ml-2">api.nzb.life</span>
+            </div>
+
+            <div class="doc-callout doc-callout-err">
+                <strong>CRITICAL — The URL situation:</strong>
+                NZB.su has
+                <strong>two domains</strong>
+                . Only
+                <code class="doc-code">https://api.nzb.life/api</code>
+                works for API calls. Using
+                <code class="doc-code">https://nzb.su/api</code>
+                returns
+                <code class="doc-code">Missing parameter</code>
+                on every request. If your app asks for a host/base URL and appends
+                <code class="doc-code">/api</code>
+                automatically, use
+                <code class="doc-code">https://api.nzb.life/</code>
+                as the host. If you get error 200 on everything, you're hitting the wrong domain.
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Authentication
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td><strong>Base URL</strong></td>
+                    <td><code class="doc-code">https://api.nzb.life/api</code></td>
+                </tr>
+                <tr>
+                    <td><strong>App Base Host</strong></td>
+                    <td>
+                        <code class="doc-code">https://api.nzb.life/</code>
+                        if the client appends
+                        <code class="doc-code">/api</code>
+                        automatically
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>API Style</strong></td>
+                    <td>GET for search/read endpoints, POST multipart/form-data for uploads</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Type</strong></td>
+                    <td>Query parameter</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Param</strong></td>
+                    <td>
+                        <code class="doc-code">?apikey=YOUR_KEY</code>
+                        (32-char hex)
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>API Key Location</strong></td>
+                    <td>nzb.su → Profile → API Key</td>
+                </tr>
+                <tr>
+                    <td><strong>Rate Limiting</strong></td>
+                    <td>Cloudflare — wait 1-2s between requests; HTTP 429 with Retry-After: 5 on burst</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
+                NZB Upload —
+                <code class="doc-code">t=nzbadd</code>
+            </div>
+            <p>
+                This is the upload function. All parameters go in the
+                <strong>URL query string</strong>
+                , while the NZB file goes in the
+                <strong>multipart POST body</strong>
+                :
+            </p>
+            <table class="doc-table">
+                <tr>
+                    <th>Param</th>
+                    <th>Location</th>
+                    <th>Required</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">apikey</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>Your API key</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">t</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        Must be
+                        <code class="doc-code">nzbadd</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">cat</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-optional">recommended</span></td>
+                    <td>
+                        Newznab category ID (e.g.
+                        <code class="doc-code">5040</code>
+                        )
+                    </td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">name</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-optional">recommended</span></td>
+                    <td>Release name for display</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">file</code></td>
+                    <td>POST body</td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        The .nzb file. Field name MUST be
+                        <code class="doc-code">file</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">nfo</code></td>
+                    <td>POST body</td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>NFO file (text/plain)</td>
+                </tr>
+            </table>
+
+            <div class="doc-callout doc-callout-warn">
+                <strong>Category matters:</strong>
+                NZB.su will accept uploads without a valid
+                <code class="doc-code">cat</code>
+                , but they can appear as
+                <code class="doc-code">No category</code>
+                (and may show
+                <code class="doc-code">0 MB</code>
+                until processed). NZBPostarr sets
+                <code class="doc-code">cat</code>
+                automatically from the job's
+                <code class="doc-code">category</code>
+                (tv/movies/misc) using your indexer YAML mapping.
+            </div>
+
+            <div class="doc-callout doc-callout-warn">
+                <strong>Common mistakes that cause "Missing parameter":</strong>
+                <br />
+                • Using
+                <code class="doc-code">nzb.su/api</code>
+                instead of
+                <code class="doc-code">api.nzb.life/api</code>
+                <br />
+                • Putting
+                <code class="doc-code">cat</code>
+                /
+                <code class="doc-code">name</code>
+                in POST body instead of URL query
+                <br />
+                • Using field name
+                <code class="doc-code">nzb</code>
+                instead of
+                <code class="doc-code">file</code>
+                <br />
+                • Forgetting
+                <code class="doc-code">t=nzbadd</code>
+                in the query string
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="terminal" icon-class="size-3.5 text-green-400"></lucide-icon>
+                cURL Upload Example
+            </div>
+            <pre class="doc-pre">
+curl -X POST \
+  "https://api.nzb.life/api?apikey=YOUR_KEY&amp;t=nzbadd&amp;cat=5040&amp;name=My.Release.1080p-GROUP" \
+    -F "file=@/path/to/My.Release.1080p-GROUP.nzb;type=application/x-nzb" \
+    -F "nfo=@/path/to/My.Release.1080p-GROUP.nfo;type=text/plain"</pre
+            >
+
+            <div class="doc-h3">
+                <lucide-icon name="code" icon-class="size-3.5 text-violet-400"></lucide-icon>
+                Python Upload Example
+            </div>
+            <pre class="doc-pre">
+import requests
+
+response = requests.post(
+    url="https://api.nzb.life/api",
+    params={
+        "apikey": "YOUR_API_KEY",
+        "t": "nzbadd",
+        "cat": "5040",
+        "name": "My.Release.S01E01.1080p.WEB-DL-GROUP"
+    },
+    files={
+        "file": (
+            "My.Release.S01E01.1080p.WEB-DL-GROUP.nzb",
+            open("release.nzb", "rb"),
+            "application/x-nzb",
+        ),
+        # Optional NFO upload
+        "nfo": (
+            "My.Release.S01E01.1080p.WEB-DL-GROUP.nfo",
+            open("release.nfo", "rb"),
+            "text/plain",
+        ),
+    },
+    timeout=30
+)
+
+if "&lt;success" in response.text.lower():
+    print("Upload successful!")
+else:
+    print(f"Upload failed: {response.text}")</pre
+            >
+
+            <div class="doc-h3">
+                <lucide-icon name="check-circle" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Response Examples
+            </div>
+            <pre class="doc-pre"><span style="color:#86efac"># Success</span>
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;success ID="52515749" guid="dec84dcc..." categoryID="5000"
+  name="Your.Release.Name" /&gt;
+
+<span style="color:#fca5a5"># Failure</span>
+&lt;?xml version="1.0" encoding="UTF-8"?&gt;
+&lt;error code="200" description="Missing parameter"/&gt;</pre>
+
+            <div class="doc-h3">
+                <lucide-icon name="search" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                Search API Functions
+            </div>
+            <p>NZB.su also has a full Newznab search API (used by Sonarr/Radarr etc.):</p>
+            <table class="doc-table">
+                <tr>
+                    <th>Function</th>
+                    <th>Param</th>
+                    <th>Key Params</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>Capabilities</td>
+                    <td><code class="doc-code">t=caps</code></td>
+                    <td>None (no auth needed)</td>
+                    <td>Server info, category tree</td>
+                </tr>
+                <tr>
+                    <td>Search</td>
+                    <td><code class="doc-code">t=search</code></td>
+                    <td>q, cat, limit, offset, sort, minsize, maxsize</td>
+                    <td>General text search</td>
+                </tr>
+                <tr>
+                    <td>TV Search</td>
+                    <td><code class="doc-code">t=tvsearch</code></td>
+                    <td>q, rid, tvdbid, tvmazeid, season, ep</td>
+                    <td>Filter by show IDs</td>
+                </tr>
+                <tr>
+                    <td>Movie Search</td>
+                    <td><code class="doc-code">t=movie</code></td>
+                    <td>q, imdbid, genre</td>
+                    <td>Filter by IMDB ID</td>
+                </tr>
+                <tr>
+                    <td>Music Search</td>
+                    <td><code class="doc-code">t=music</code></td>
+                    <td>artist, album, label, year, genre</td>
+                    <td>Audio search</td>
+                </tr>
+                <tr>
+                    <td>Book Search</td>
+                    <td><code class="doc-code">t=book</code></td>
+                    <td>author, title</td>
+                    <td>Book/ebook search</td>
+                </tr>
+                <tr>
+                    <td>Details</td>
+                    <td><code class="doc-code">t=details</code></td>
+                    <td>id</td>
+                    <td>NZB details by GUID</td>
+                </tr>
+                <tr>
+                    <td>Get NZB</td>
+                    <td><code class="doc-code">t=get</code></td>
+                    <td>id</td>
+                    <td>Download .nzb file</td>
+                </tr>
+                <tr>
+                    <td>Get NFO</td>
+                    <td><code class="doc-code">t=getnfo</code></td>
+                    <td>id, raw</td>
+                    <td>Download NFO</td>
+                </tr>
+                <tr>
+                    <td>Comments</td>
+                    <td><code class="doc-code">t=comments</code></td>
+                    <td>id, text</td>
+                    <td>Read/add comments</td>
+                </tr>
+                <tr>
+                    <td>Cart Add</td>
+                    <td><code class="doc-code">t=cartadd</code></td>
+                    <td>id</td>
+                    <td>Add to download cart</td>
+                </tr>
+                <tr>
+                    <td>Cart Delete</td>
+                    <td><code class="doc-code">t=cartdel</code></td>
+                    <td>id</td>
+                    <td>Remove from cart</td>
+                </tr>
+                <tr>
+                    <td>Register</td>
+                    <td><code class="doc-code">t=register</code></td>
+                    <td>email</td>
+                    <td>Create new account</td>
+                </tr>
+            </table>
+            <p>
+                Output: XML default. Add
+                <code class="doc-code">&amp;o=json</code>
+                for JSON. Add
+                <code class="doc-code">&amp;extended=1</code>
+                for full metadata. Sort:
+                <code class="doc-code">&amp;sort=size_desc</code>
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="tag" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Category Reference
+            </div>
+            <p>
+                The full category tree is available from
+                <code class="doc-code">t=caps</code>
+                . Common IDs are summarized below:
+            </p>
+            <div class="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-0">
+                <table class="doc-table">
+                    <tr>
+                        <th>ID</th>
+                        <th>Category</th>
+                    </tr>
+                    <tr>
+                        <td>1000</td>
+                        <td><strong>Console</strong></td>
+                    </tr>
+                    <tr>
+                        <td>1010-1100</td>
+                        <td>NDS, PSP, Wii, Switch, Xbox, PS3/PS4</td>
+                    </tr>
+                    <tr>
+                        <td>2000</td>
+                        <td><strong>Movies</strong></td>
+                    </tr>
+                    <tr>
+                        <td>2010</td>
+                        <td>Foreign</td>
+                    </tr>
+                    <tr>
+                        <td>2030</td>
+                        <td>SD</td>
+                    </tr>
+                    <tr>
+                        <td>2040</td>
+                        <td>HD</td>
+                    </tr>
+                    <tr>
+                        <td>2045</td>
+                        <td>UHD</td>
+                    </tr>
+                </table>
+                <table class="doc-table">
+                    <tr>
+                        <th>ID</th>
+                        <th>Category</th>
+                    </tr>
+                    <tr>
+                        <td>3000</td>
+                        <td><strong>Audio</strong></td>
+                    </tr>
+                    <tr>
+                        <td>3010/3030/3040</td>
+                        <td>MP3 / Audiobook / Lossless</td>
+                    </tr>
+                    <tr>
+                        <td>4000</td>
+                        <td><strong>PC</strong></td>
+                    </tr>
+                    <tr>
+                        <td>4010-4070</td>
+                        <td>0day, ISO, Mac, Mobile, Games</td>
+                    </tr>
+                    <tr>
+                        <td>5000</td>
+                        <td><strong>TV</strong></td>
+                    </tr>
+                    <tr>
+                        <td>5030/5040/5045</td>
+                        <td>SD / HD / UHD</td>
+                    </tr>
+                    <tr>
+                        <td>5070</td>
+                        <td>Anime</td>
+                    </tr>
+                </table>
+                <table class="doc-table">
+                    <tr>
+                        <th>ID</th>
+                        <th>Category</th>
+                    </tr>
+                    <tr>
+                        <td>6000</td>
+                        <td><strong>XXX</strong></td>
+                    </tr>
+                    <tr>
+                        <td>7000</td>
+                        <td><strong>Books</strong></td>
+                    </tr>
+                    <tr>
+                        <td>7010</td>
+                        <td>Mags</td>
+                    </tr>
+                    <tr>
+                        <td>7020</td>
+                        <td>Ebook</td>
+                    </tr>
+                    <tr>
+                        <td>7030</td>
+                        <td>Comics</td>
+                    </tr>
+                    <tr>
+                        <td>8000</td>
+                        <td><strong>Misc</strong></td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="alert-triangle" icon-class="size-3.5 text-red-400"></lucide-icon>
+                Error Codes
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Code</th>
+                    <th>Description</th>
+                    <th>Meaning</th>
+                </tr>
+                <tr>
+                    <td>100</td>
+                    <td>Incorrect user credentials</td>
+                    <td>Bad or expired API key</td>
+                </tr>
+                <tr>
+                    <td>200</td>
+                    <td>Missing parameter</td>
+                    <td>Forgot apikey/t, or using wrong domain</td>
+                </tr>
+                <tr>
+                    <td>201</td>
+                    <td>Incorrect parameter</td>
+                    <td>A parameter value is invalid</td>
+                </tr>
+                <tr>
+                    <td>202</td>
+                    <td>No such function</td>
+                    <td>The t= value doesn't exist</td>
+                </tr>
+                <tr>
+                    <td>203</td>
+                    <td>Function not available</td>
+                    <td>The feature exists but is disabled on the server</td>
+                </tr>
+                <tr>
+                    <td>300</td>
+                    <td>No items found</td>
+                    <td>Search returned zero results</td>
+                </tr>
+                <tr>
+                    <td>500</td>
+                    <td>Request limit reached</td>
+                    <td>Daily/hourly API quota exceeded</td>
+                </tr>
+                <tr>
+                    <td>910</td>
+                    <td>API disabled</td>
+                    <td>API access turned off for your account</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="list" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                Common Extended Attributes
+            </div>
+            <p>
+                Add
+                <code class="doc-code">&amp;extended=1</code>
+                for all metadata, or
+                <code class="doc-code">&amp;attrs=field1,field2</code>
+                for specific ones:
+            </p>
+            <div class="grid grid-cols-3 md:grid-cols-5 gap-1 text-[10px]">
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">files</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">poster</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">group</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">team</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">grabs</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">password</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">comments</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">usenetdate</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">info</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">year</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">season</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">episode</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">rageid</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">tvdbid</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">tvmazeid</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">tvtitle</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">tvairdate</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">video</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">audio</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">resolution</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">framerate</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">language</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdb</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbscore</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbtitle</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbtagline</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbplot</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbyear</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbdirector</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbactors</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">genre</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">artist</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">album</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">publisher</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">tracks</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">coverurl</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">backdropcoverurl</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">review</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">subs</span>
+            </div>
+
+            <div class="doc-callout doc-callout-ok">
+                <strong>NZBPostarr config:</strong>
+                <code class="doc-code">api_keys.su: YOUR_KEY</code>
+                . The YAML plugin uses
+                <code class="doc-code">t=nzbadd</code>
+                as an extra param and field name
+                <code class="doc-code">file</code>
+                automatically.
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  OMGWTFNZBs                                                      -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='omg'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <span class="idx-badge" style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border: 1px solid rgba(34, 197, 94, 0.3)">O</span>
+                OMGWTFNZBs
+                <span class="text-[10px] text-notion-text-tertiary ml-2">omgwtfnzbs.org</span>
+            </div>
+            <p>
+                OMG is unique among indexers — it uses
+                <strong class="text-notion-text-primary">cURL-based submission</strong>
+                with both username and API key in the query string, and its own category system. It also
+                <strong>requires an NFO</strong>
+                for every upload.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Authentication
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td><strong>Submit URL</strong></td>
+                    <td><code class="doc-code">https://omgwtfnzbs.org/api-upload</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Method</strong></td>
+                    <td>CURL (multipart form POST via cURL subprocess)</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Type</strong></td>
+                    <td>
+                        URL parameters:
+                        <code class="doc-code">?user=USERNAME&amp;api=API_KEY</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Requires Username</strong></td>
+                    <td>
+                        Yes — both
+                        <code class="doc-code">api_keys.omg</code>
+                        and
+                        <code class="doc-code">usernames.omg</code>
+                        in config
+                    </td>
+                </tr>
+                <tr>
+                    <td><strong>Search URL</strong></td>
+                    <td><code class="doc-code">https://omgwtfnzbs.org/browse.php?search="{poster}"</code></td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-warn">
+                <strong>Why cURL?</strong>
+                OMG has specific SSL/form requirements that standard Python
+                <code class="doc-code">requests</code>
+                doesn't handle reliably. NZBPostarr shells out to cURL for this indexer.
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="tag" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Category Mapping
+            </div>
+            <p>
+                OMG uses a
+                <strong>mixed system</strong>
+                — some categories are strings, some are numbers:
+            </p>
+            <table class="doc-table">
+                <tr>
+                    <th>Content Type</th>
+                    <th>Category Value</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>tv</td>
+                    <td><code class="doc-code">tv</code></td>
+                    <td>Auto-detected TV (SD/HD/UHD sub-categories)</td>
+                </tr>
+                <tr>
+                    <td>movie</td>
+                    <td><code class="doc-code">movie</code></td>
+                    <td>Auto-detected Movie (SD/HD/UHD)</td>
+                </tr>
+                <tr>
+                    <td>anime</td>
+                    <td><code class="doc-code">anime</code></td>
+                    <td>Anime content</td>
+                </tr>
+                <tr>
+                    <td>audiobook</td>
+                    <td><code class="doc-code">audio</code></td>
+                    <td>Audio content</td>
+                </tr>
+                <tr>
+                    <td>music</td>
+                    <td><code class="doc-code">music</code></td>
+                    <td>Music content</td>
+                </tr>
+                <tr>
+                    <td>games</td>
+                    <td><code class="doc-code">games</code></td>
+                    <td>Games</td>
+                </tr>
+                <tr>
+                    <td>ebook / misc</td>
+                    <td><code class="doc-code">29</code></td>
+                    <td>Audiobook/Other numeric code</td>
+                </tr>
+                <tr>
+                    <td>default</td>
+                    <td><code class="doc-code">video</code></td>
+                    <td>General auto-detect for any video</td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-ok">
+                <strong>Auto-category:</strong>
+                Using
+                <code class="doc-code">catid=tv</code>
+                ,
+                <code class="doc-code">catid=movie</code>
+                ,
+                <code class="doc-code">catid=xxx</code>
+                , or
+                <code class="doc-code">catid=video</code>
+                triggers automatic sub-category detection (e.g. TV HD vs TV SD).
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="list" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                Full OMG Category Table
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Site Name</th>
+                    <th>RSS/Legacy</th>
+                    <th>Newznab</th>
+                    <th>NZB Header</th>
+                </tr>
+                <tr>
+                    <td>TV: SD</td>
+                    <td>19</td>
+                    <td>5030</td>
+                    <td>TV &gt; SD</td>
+                </tr>
+                <tr>
+                    <td>TV: HD</td>
+                    <td>20</td>
+                    <td>5040</td>
+                    <td>TV &gt; HD</td>
+                </tr>
+                <tr>
+                    <td>TV: UHD</td>
+                    <td>30</td>
+                    <td>5045</td>
+                    <td>TV &gt; UHD</td>
+                </tr>
+                <tr>
+                    <td>TV: Other</td>
+                    <td>21</td>
+                    <td>5060</td>
+                    <td>TV &gt; Other</td>
+                </tr>
+                <tr>
+                    <td>Movies: SD</td>
+                    <td>15</td>
+                    <td>2030</td>
+                    <td>Movies &gt; SD</td>
+                </tr>
+                <tr>
+                    <td>Movies: HD</td>
+                    <td>16</td>
+                    <td>2040</td>
+                    <td>Movies &gt; HD</td>
+                </tr>
+                <tr>
+                    <td>Movies: UHD</td>
+                    <td>31</td>
+                    <td>2045</td>
+                    <td>Movies &gt; UHD</td>
+                </tr>
+                <tr>
+                    <td>Movies: Full BR</td>
+                    <td>35</td>
+                    <td>2050</td>
+                    <td>Movies &gt; Full BR</td>
+                </tr>
+                <tr>
+                    <td>Movies: DVD</td>
+                    <td>17</td>
+                    <td>2070</td>
+                    <td>Movies &gt; DVD</td>
+                </tr>
+                <tr>
+                    <td>Music: MP3</td>
+                    <td>7</td>
+                    <td>3010</td>
+                    <td>Music &gt; MP3</td>
+                </tr>
+                <tr>
+                    <td>Music: FLAC</td>
+                    <td>22</td>
+                    <td>3040</td>
+                    <td>Music &gt; FLAC</td>
+                </tr>
+                <tr>
+                    <td>Audiobook</td>
+                    <td>29</td>
+                    <td>3030</td>
+                    <td>Audiobook</td>
+                </tr>
+                <tr>
+                    <td>Games: PC</td>
+                    <td>12</td>
+                    <td>8010</td>
+                    <td>Games &gt; PC</td>
+                </tr>
+                <tr>
+                    <td>Other: E-Books</td>
+                    <td>9</td>
+                    <td>7020</td>
+                    <td>Other &gt; E-Books</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Upload Fields
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Field</th>
+                    <th>Param</th>
+                    <th>Required</th>
+                    <th>Notes</th>
+                </tr>
+                <tr>
+                    <td>NZB file</td>
+                    <td><code class="doc-code">nzb=@$file</code></td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        Full path with
+                        <code class="doc-code">@</code>
+                        prefix
+                    </td>
+                </tr>
+                <tr>
+                    <td>Release name</td>
+                    <td><code class="doc-code">rlsname=$rls</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>Defaults to NZB filename</td>
+                </tr>
+                <tr>
+                    <td>Category</td>
+                    <td><code class="doc-code">catid=$cat</code></td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>See category table above</td>
+                </tr>
+                <tr>
+                    <td>NFO file</td>
+                    <td><code class="doc-code">nfo=@$nfo</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>
+                        NFO file with
+                        <code class="doc-code">@</code>
+                        prefix
+                    </td>
+                </tr>
+                <tr>
+                    <td>Cover art</td>
+                    <td><code class="doc-code">cover=@$cov</code></td>
+                    <td><span class="doc-badge badge-optional">optional</span></td>
+                    <td>Music and XXX categories only</td>
+                </tr>
+                <tr>
+                    <td>Upload flag</td>
+                    <td><code class="doc-code">upload=upload</code></td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>Static form field</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="terminal" icon-class="size-3.5 text-green-400"></lucide-icon>
+                cURL Examples
+            </div>
+            <pre class="doc-pre"><span style="color:#86efac"># Basic upload</span>
+curl -k -s -L -m 60 \
+  -F "rlsname=My.Show.S01E01.1080p" \
+  -F "catid=tv" \
+  -F "nzb=@/path/to/release.nzb" \
+  -F "upload=upload" \
+  "https://omgwtfnzbs.org/api-upload?user=USERNAME&amp;api=API_KEY"
+
+<span style="color:#86efac"># With NFO</span>
+curl -k -s -L -m 60 \
+  -F "rlsname=My.Show.S01E01.1080p" \
+  -F "catid=tv" \
+  -F "nzb=@/path/to/release.nzb" \
+  -F "nfo=@/path/to/release.nfo" \
+  -F "upload=upload" \
+  "https://omgwtfnzbs.org/api-upload?user=USERNAME&amp;api=API_KEY"
+
+<span style="color:#86efac"># ngPost integration</span>
+NZB_POST_CMD = curl -X POST -k -s -L -m 60 \
+  -F "nzb=@__nzbPath__" -F "catid=video" -F "upload=upload" \
+  "https://omgwtfnzbs.org/api-upload?user=USERNAME&amp;api=API_KEY"</pre>
+
+            <div class="doc-h3">
+                <lucide-icon name="check-circle" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Success Detection
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Check</th>
+                    <th>Pattern</th>
+                </tr>
+                <tr>
+                    <td>Text patterns</td>
+                    <td>
+                        <code class="doc-code">"OK"</code>
+                        ,
+                        <code class="doc-code">"SAVED"</code>
+                        ,
+                        <code class="doc-code">"SUCCESS"</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Duplicate</td>
+                    <td>
+                        <code class="doc-code">"DUPLICATE"</code>
+                        ,
+                        <code class="doc-code">"ALREADY EXISTS"</code>
+                        ,
+                        <code class="doc-code">"ALREADY UPLOADED"</code>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="info" icon-class="size-3.5 text-blue-400"></lucide-icon>
+                Important Notes
+            </div>
+            <div class="space-y-1.5 text-[11px]">
+                <div class="flex items-start gap-2">
+                    <span class="text-amber-400">•</span>
+                    Special characters (
+                    <code class="doc-code">/</code>
+                    or
+                    <code class="doc-code">\</code>
+                    ) are removed from titles
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-amber-400">•</span>
+                    You can edit and delete uploads for ~12 hours — after that they become anonymous
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-amber-400">•</span>
+                    NZB details are processed automatically after a few seconds of delay
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-amber-400">•</span>
+                    OMG requires NFO for every upload — NZBPostarr creates an empty one if missing (
+                    <code class="doc-code">requires_nfo: true</code>
+                    )
+                </div>
+                <div class="flex items-start gap-2">
+                    <span class="text-amber-400">•</span>
+                    Bulk zip upload available via staff request
+                </div>
+            </div>
+
+            <div class="doc-callout doc-callout-ok">
+                <strong>NZBPostarr config:</strong>
+                <code class="doc-code">api_keys.omg: YOUR_KEY</code>
+                <strong>and</strong>
+                <code class="doc-code">usernames.omg: YOUR_USERNAME</code>
+                . Both are required.
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  NZBPlanet                                                       -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='nzbplanet'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <span class="idx-badge" style="background: rgba(37, 99, 232, 0.15); color: #2563eb; border: 1px solid rgba(37, 99, 232, 0.3)">P</span>
+                NZBPlanet
+                <span class="text-[10px] text-notion-text-tertiary ml-2">nzbplanet.net</span>
+            </div>
+            <p>
+                NZBPlanet uses the standard
+                <strong class="text-notion-text-primary">Newznab protocol</strong>
+                . It has both primary and Australian mirror domains. Note: NZBPlanet does
+                <strong>NOT</strong>
+                support NFO uploads — sending an NFO field causes errors.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Authentication
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td><strong>API URL</strong></td>
+                    <td><code class="doc-code">https://api.nzbplanet.net/api</code></td>
+                </tr>
+                <tr>
+                    <td><strong>AU Mirror</strong></td>
+                    <td><code class="doc-code">https://nzbplanet.org</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Method</strong></td>
+                    <td>POST (multipart/form-data)</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Type</strong></td>
+                    <td>Query parameter</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Param</strong></td>
+                    <td><code class="doc-code">?apikey=YOUR_KEY</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Search URL</strong></td>
+                    <td><code class="doc-code">https://nzbplanet.net/search/{poster}</code></td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
+                NZB Upload —
+                <code class="doc-code">t=nzbadd</code>
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Param</th>
+                    <th>Location</th>
+                    <th>Required</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">apikey</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>Your API key</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">t</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        Must be
+                        <code class="doc-code">nzbadd</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">cat</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-optional">recommended</span></td>
+                    <td>Newznab category ID</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">name</code></td>
+                    <td>URL query</td>
+                    <td><span class="doc-badge badge-optional">recommended</span></td>
+                    <td>Release name</td>
+                </tr>
+                <tr>
+                    <td><code class="doc-code">file</code></td>
+                    <td>POST body</td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        The .nzb file. Must use field name
+                        <code class="doc-code">file</code>
+                    </td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-err">
+                <strong>No NFO support:</strong>
+                NZBPlanet does NOT accept NFO uploads. Sending an
+                <code class="doc-code">nfo</code>
+                multipart field causes
+                <code class="doc-code">"Missing parameter"</code>
+                (error 200). The YAML plugin intentionally has no
+                <code class="doc-code">nfo</code>
+                field configured.
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="tag" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                Category Mapping
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Content Type</th>
+                    <th>Newznab Code</th>
+                    <th>Description</th>
+                </tr>
+                <tr>
+                    <td>tv</td>
+                    <td><code class="doc-code">5040</code></td>
+                    <td>TV / HD</td>
+                </tr>
+                <tr>
+                    <td>movie</td>
+                    <td><code class="doc-code">2040</code></td>
+                    <td>Movies / HD</td>
+                </tr>
+                <tr>
+                    <td>anime</td>
+                    <td><code class="doc-code">5070</code></td>
+                    <td>TV / Anime</td>
+                </tr>
+                <tr>
+                    <td>audiobook</td>
+                    <td><code class="doc-code">3030</code></td>
+                    <td>Audio / Audiobook</td>
+                </tr>
+                <tr>
+                    <td>ebook</td>
+                    <td><code class="doc-code">7020</code></td>
+                    <td>Books / Ebook</td>
+                </tr>
+                <tr>
+                    <td>music</td>
+                    <td><code class="doc-code">3010</code></td>
+                    <td>Audio / MP3</td>
+                </tr>
+                <tr>
+                    <td>games</td>
+                    <td><code class="doc-code">1000</code></td>
+                    <td>Console</td>
+                </tr>
+                <tr>
+                    <td>misc / default</td>
+                    <td><code class="doc-code">5000</code></td>
+                    <td>TV / Other</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="terminal" icon-class="size-3.5 text-green-400"></lucide-icon>
+                cURL Upload Example
+            </div>
+            <pre class="doc-pre">
+curl -X POST \
+  "https://api.nzbplanet.net/api?apikey=YOUR_KEY&amp;t=nzbadd&amp;cat=5040&amp;name=My.Release.1080p" \
+  -F "file=@/path/to/release.nzb;type=application/x-nzb"</pre
+            >
+
+            <div class="doc-h3">
+                <lucide-icon name="check-circle" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Success Detection
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Check</th>
+                    <th>Pattern</th>
+                </tr>
+                <tr>
+                    <td>Text patterns</td>
+                    <td>
+                        <code class="doc-code">"&lt;success"</code>
+                        ,
+                        <code class="doc-code">"&lt;SUCCESS"</code>
+                        ,
+                        <code class="doc-code">"CODE=\"601\""</code>
+                        ,
+                        <code class="doc-code">"item added"</code>
+                    </td>
+                </tr>
+                <tr>
+                    <td>Duplicate</td>
+                    <td>
+                        <code class="doc-code">"duplicate"</code>
+                        ,
+                        <code class="doc-code">"already exists"</code>
+                        ,
+                        <code class="doc-code">"DUPLICATE"</code>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="search" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                Search API Functions
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Function</th>
+                    <th>Param</th>
+                    <th>Key Params</th>
+                </tr>
+                <tr>
+                    <td>Search</td>
+                    <td><code class="doc-code">t=search</code></td>
+                    <td>q, cat, group, extended</td>
+                </tr>
+                <tr>
+                    <td>TV Search</td>
+                    <td><code class="doc-code">t=tvsearch</code></td>
+                    <td>q, rid, tvdbid, tvmazeid, season, ep</td>
+                </tr>
+                <tr>
+                    <td>Movie Search</td>
+                    <td><code class="doc-code">t=movie</code></td>
+                    <td>q, imdbid, genre</td>
+                </tr>
+                <tr>
+                    <td>Music Search</td>
+                    <td><code class="doc-code">t=music</code></td>
+                    <td>artist, album, label, year, genre</td>
+                </tr>
+                <tr>
+                    <td>Book Search</td>
+                    <td><code class="doc-code">t=book</code></td>
+                    <td>author, title</td>
+                </tr>
+                <tr>
+                    <td>Get NZB</td>
+                    <td><code class="doc-code">t=get</code></td>
+                    <td>id</td>
+                </tr>
+                <tr>
+                    <td>Details</td>
+                    <td><code class="doc-code">t=details</code></td>
+                    <td>id</td>
+                </tr>
+                <tr>
+                    <td>Get NFO</td>
+                    <td><code class="doc-code">t=getnfo</code></td>
+                    <td>id, raw</td>
+                </tr>
+                <tr>
+                    <td>Comments</td>
+                    <td><code class="doc-code">t=comments</code></td>
+                    <td>id, text</td>
+                </tr>
+                <tr>
+                    <td>Cart Add</td>
+                    <td><code class="doc-code">t=cartadd</code></td>
+                    <td>id</td>
+                </tr>
+                <tr>
+                    <td>Cart Delete</td>
+                    <td><code class="doc-code">t=cartdel</code></td>
+                    <td>id</td>
+                </tr>
+            </table>
+            <p>
+                Output: XML default.
+                <code class="doc-code">&amp;o=json</code>
+                for JSON.
+                <code class="doc-code">&amp;extended=1</code>
+                for all metadata.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="list" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                Extended Attributes
+            </div>
+            <div class="grid grid-cols-3 md:grid-cols-5 gap-1 text-[10px]">
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">files</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">poster</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">group</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">team</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">grabs</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">password</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">usenetdate</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">video</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">audio</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">resolution</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdb</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">imdbtitle</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">genre</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">artist</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">album</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">coverurl</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">backdropcoverurl</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">review</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">rageid</span>
+                <span class="bg-notion-bg rounded border border-notion-border px-2 py-1 text-center">tvtitle</span>
+            </div>
+
+            <div class="doc-callout doc-callout-ok">
+                <strong>NZBPostarr config:</strong>
+                <code class="doc-code">api_keys.planet: YOUR_KEY</code>
+                . NFO field is disabled automatically in the plugin YAML.
+            </div>
+        </div>
+
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <!--  DrunkenSlug                                                     -->
+        <!-- ══════════════════════════════════════════════════════════════════ -->
+        <div v-if="activeSection==='drunkenslug'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
+            <div class="doc-h2" style="margin-top: 0">
+                <span class="idx-badge" style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3)">D</span>
+                DrunkenSlug
+                <span class="text-[10px] text-notion-text-tertiary ml-2">drunkenslug.com</span>
+            </div>
+            <p>
+                DrunkenSlug uses a simple file upload endpoint with
+                <strong class="text-notion-text-primary">no authentication</strong>
+                — it relies on cookies/session for authorization. It does
+                <strong>not</strong>
+                use categories or NFO for uploads.
+            </p>
+
+            <div class="doc-h3">
+                <lucide-icon name="key" icon-class="size-3.5 text-amber-400"></lucide-icon>
+                Authentication
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Property</th>
+                    <th>Value</th>
+                </tr>
+                <tr>
+                    <td><strong>Submit URL</strong></td>
+                    <td><code class="doc-code">https://nzbs.drunkenslug.com/upload.php</code></td>
+                </tr>
+                <tr>
+                    <td><strong>Method</strong></td>
+                    <td>POST (multipart/form-data)</td>
+                </tr>
+                <tr>
+                    <td><strong>Auth Type</strong></td>
+                    <td>None (session/cookie based)</td>
+                </tr>
+                <tr>
+                    <td><strong>Search URL</strong></td>
+                    <td><code class="doc-code">https://drunkenslug.com/search?searchadvposter={poster}</code></td>
+                </tr>
+            </table>
+            <div class="doc-callout doc-callout-warn">
+                <strong>Note:</strong>
+                DrunkenSlug requires an active browser session/cookie for uploads to work. Automated submission may require maintaining session state.
+            </div>
+
+            <div class="doc-h3">
+                <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Upload Fields
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Field</th>
+                    <th>Name</th>
+                    <th>Required</th>
+                    <th>Notes</th>
+                </tr>
+                <tr>
+                    <td>NZB file</td>
+                    <td><code class="doc-code">files[]</code></td>
+                    <td><span class="doc-badge badge-required">required</span></td>
+                    <td>
+                        MIME:
+                        <code class="doc-code">application/x-nzb</code>
+                        . Note the array-style field name.
+                    </td>
+                </tr>
+                <tr>
+                    <td>NFO</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>Not supported</td>
+                </tr>
+                <tr>
+                    <td>Category</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>Not used — auto-categorized by DrunkenSlug</td>
+                </tr>
+            </table>
+
+            <div class="doc-h3">
+                <lucide-icon name="check-circle" icon-class="size-3.5 text-green-400"></lucide-icon>
+                Success Detection
+            </div>
+            <table class="doc-table">
+                <tr>
+                    <th>Check</th>
+                    <th>Pattern</th>
+                </tr>
+                <tr>
+                    <td>Text patterns</td>
+                    <td><code class="doc-code">"true"</code></td>
+                </tr>
+                <tr>
+                    <td>Duplicate</td>
+                    <td>
+                        <code class="doc-code">"duplicate"</code>
+                        ,
+                        <code class="doc-code">"already exists"</code>
+                    </td>
+                </tr>
+            </table>
+
+            <div class="doc-callout doc-callout-ok">
+                <strong>NZBPostarr config:</strong>
+                <code class="doc-code">api_keys.slug: YOUR_KEY</code>
+                (used internally for tracking, though the upload itself is session-based).
+            </div>
+        </div>
+
+        <!-- ── Prev / Next Navigation ── -->
+        <div class="flex gap-3 mt-8 pt-6 border-t border-notion-divider">
+            <button v-if="prevSection" @click="activeSection = prevSection.id; window.scrollTo({top:0,behavior:'smooth'})" class="doc-nav-btn text-left">
+                <span class="doc-nav-label">← Previous</span>
+                <span class="doc-nav-title" v-text="prevSection.title"></span>
+            </button>
+            <div v-else class="flex-1"></div>
+            <button v-if="nextSection" @click="activeSection = nextSection.id; window.scrollTo({top:0,behavior:'smooth'})" class="doc-nav-btn text-right">
+                <span class="doc-nav-label">Next →</span>
+                <span class="doc-nav-title" v-text="nextSection.title"></span>
+            </button>
+            <div v-else class="flex-1"></div>
+        </div>
+    </div>
+</div>
+
+{% endblock %} {% block scripts %}
+<script type="module">
+    import { createVuePage } from 'page-base';
+
+    createVuePage({
+        data() {
+            return {
+                activeSection: 'overview',
+                searchQuery: '',
+                searchFocused: false,
+                sections: [
+                    { id: 'overview', title: 'Plugin System Overview', shortName: 'Overview', group: 'System', letter: '★', color: '#a78bfa', domain: '', keywords: 'overview plugin system registry yaml how it works authentication methods' },
+                    { id: 'template', title: 'Creating Custom Indexers', shortName: 'Template', group: 'System', letter: '+', color: '#4ade80', domain: '', keywords: 'template custom create new indexer yaml plugin file checklist' },
+                    { id: 'nzbgeek', title: 'NZBGeek', shortName: 'NZBGeek', group: 'Newznab', letter: 'G', color: '#6366f1', domain: 'nzbgeek.info', keywords: 'nzbgeek geek api newznab upload submit nzb nfo category curl batch script' },
+                    { id: 'nzbsin', title: 'NZBs.in', shortName: 'NZBs.in', group: 'Custom Auth', letter: 'I', color: '#0da192', domain: 'nzbs.in', keywords: 'nzbsin nzbs.in bearer token header authentication mediainfo screenshots upload python curl' },
+                    { id: 'nzbsu', title: 'NZB.su / NZB.life', shortName: 'NZB.su', group: 'Newznab', letter: 'S', color: '#0ea5e9', domain: 'api.nzb.life', keywords: 'nzbsu nzb.su life api newznab nzbadd search tvsearch movie upload categories error codes extended attributes domain' },
+                    { id: 'omg', title: 'OMGWTFNZBs', shortName: 'OMG', group: 'Custom Auth', letter: 'O', color: '#22c55e', domain: 'omgwtfnzbs.org', keywords: 'omg omgwtfnzbs curl upload username api key categories nfo required auto category video' },
+                    { id: 'nzbplanet', title: 'NZBPlanet', shortName: 'NZBPlanet', group: 'Newznab', letter: 'P', color: '#2563eb', domain: 'nzbplanet.net', keywords: 'nzbplanet planet api newznab nzbadd search tvsearch movie music book cart no nfo extended attributes' },
+                    { id: 'drunkenslug', title: 'DrunkenSlug', shortName: 'DrunkenSlug', group: 'Session Auth', letter: 'D', color: '#f59e0b', domain: 'drunkenslug.com', keywords: 'drunkenslug slug session cookie upload no auth no category files[]' },
+                ],
+            };
+        },
+        computed: {
+            sidebarGroups() {
+                const groups = [];
+                const seen = {};
+                for (const s of this.sections) {
+                    if (!seen[s.group]) {
+                        seen[s.group] = { label: s.group, items: [] };
+                        groups.push(seen[s.group]);
+                    }
+                    seen[s.group].items.push(s);
+                }
+                return groups;
+            },
+            currentIndex() {
+                return this.sections.findIndex((s) => s.id === this.activeSection);
+            },
+            prevSection() {
+                return this.currentIndex > 0 ? this.sections[this.currentIndex - 1] : null;
+            },
+            nextSection() {
+                return this.currentIndex < this.sections.length - 1 ? this.sections[this.currentIndex + 1] : null;
+            },
+            searchResults() {
+                if (!this.searchQuery || this.searchQuery.length < 2) return [];
+                const q = this.searchQuery.toLowerCase();
+                return this.sections.filter((s) => s.title.toLowerCase().includes(q) || s.keywords.toLowerCase().includes(q)).slice(0, 8);
+            },
+        },
+        methods: {
+            async downloadMarkdown() {
+                const origActive = this.activeSection;
+                let md = '# NZBPostarr \u2014 Indexer Guides\n\n';
+
+                for (const sec of this.sections) {
+                    this.activeSection = sec.id;
+                    await this.$nextTick();
+
+                    const el = document.querySelector('.doc-section');
+                    if (!el) continue;
+
+                    const clone = el.cloneNode(true);
+                    clone.querySelectorAll('lucide-icon').forEach((i) => i.remove());
+                    clone.querySelectorAll('.idx-badge, .doc-badge').forEach((b) => {
+                        b.textContent = b.textContent.trim();
+                    });
+
+                    clone.querySelectorAll('table').forEach((t) => {
+                        const rows = [...t.querySelectorAll('tr')];
+                        if (!rows.length) return;
+                        const header = [...rows[0].querySelectorAll('th,td')].map((c) => c.textContent.trim());
+                        let tbl = '| ' + header.join(' | ') + ' |\n';
+                        tbl += '| ' + header.map(() => '---').join(' | ') + ' |\n';
+                        for (const row of rows.slice(1)) {
+                            const cells = [...row.querySelectorAll('td,th')].map((c) => c.textContent.trim());
+                            tbl += '| ' + cells.join(' | ') + ' |\n';
+                        }
+                        const pre = document.createElement('pre');
+                        pre.textContent = tbl;
+                        t.replaceWith(pre);
+                    });
+
+                    clone.querySelectorAll('.doc-pre, pre').forEach((p) => {
+                        p.textContent = '```\n' + p.textContent.trim() + '\n```';
+                    });
+
+                    clone.querySelectorAll('.doc-code, code').forEach((c) => {
+                        if (c.closest('.doc-pre, pre')) return;
+                        c.textContent = '`' + c.textContent.trim() + '`';
+                    });
+
+                    let text = '';
+                    for (const child of clone.children) {
+                        const cls = child.className || '';
+                        if (cls.includes('doc-h2')) text += '\n## ' + child.textContent.trim() + '\n\n';
+                        else if (cls.includes('doc-h3')) text += '\n### ' + child.textContent.trim() + '\n\n';
+                        else if (cls.includes('doc-pre') || child.tagName === 'PRE') text += '\n```\n' + child.textContent.trim() + '\n```\n\n';
+                        else if (cls.includes('doc-callout')) text += '\n> ' + child.textContent.trim().replace(/\n/g, '\n> ') + '\n\n';
+                        else text += child.textContent.trim() + '\n\n';
+                    }
+                    md += text;
+                }
+
+                this.activeSection = origActive;
+                await this.$nextTick();
+
+                const blob = new Blob([md], { type: 'text/markdown' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = 'nzbpostarr-indexer-guides.md';
+                a.click();
+                URL.revokeObjectURL(a.href);
+            },
+        },
+    });
+</script>
+{% endblock %}

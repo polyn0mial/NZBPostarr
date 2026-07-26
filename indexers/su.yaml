@@ -1,0 +1,60 @@
+# NZB.su Indexer Definition
+# https://nzb.su
+
+id: su
+name: NZB.su
+description: NZB.su indexer with newznab API
+website: https://nzb.su
+favicon_url: https://nzb.su/templates/default/images/favicon.ico
+search_url: https://www.nzb.life/search/%22-{poster}%22
+api_key: '' # Set in config.yaml
+icon: database
+color: '#0ea5e9'
+
+# API Configuration
+submit_url: https://api.nzb.life/api
+method: POST
+
+# Authentication
+auth:
+  method: query_param
+  api_key_param: apikey
+
+# Category Mapping (newznab standard)
+categories:
+  tv: '5040' # TV/HD
+  movie: '2040' # Movies/HD
+  movie_sd: '2030' # Movies/SD
+  movie_hd: '2040' # Movies/HD
+  movie_uhd: '2045' # Movies/UHD
+  movie_dvd: '2070' # Movies/DVD
+  anime: '5070' # TV/Anime
+  music: '3010' # Audio/MP3
+  books: '7020' # Books/Ebook
+  apps: '' # Auto-detect would violate strict mapping
+  misc: '' # Auto-detect disabled for strict mapping
+  default: ''
+category_param: cat
+
+# Extra params
+extra_params:
+  t: nzbadd
+
+# Release name
+name_param: name
+
+# File Upload Fields
+files:
+  nzb: file
+  nfo: nfo
+  nzb_mime: application/x-nzb
+
+# Success Detection
+success:
+  text_patterns:
+    - '<SUCCESS'
+    - 'CODE="601"'
+  duplicate_patterns:
+    - DUPLICATE
+
+timeout: 30

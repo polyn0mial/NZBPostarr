@@ -1,0 +1,624 @@
+{% extends "base.html" %} {% block title %}History{% endblock %} {% block page_title %}History{% endblock %} {% block header_title %}History{% endblock %} {% block header_subtitle %}History of completed uploads to indexers{% endblock %} {% block header_divider_classes %}pb-1 mb-0{% endblock %} {%
+block content %}
+<div class="flex flex-wrap gap-2">
+    <div class="bg-notion-bg border border-notion-border rounded-lg px-4 py-2 text-center flex-1 min-w-25 cursor-help" title="Total TV show items (episodes and packs) uploaded successfully in the last 60 minutes">
+        <p class="text-xl font-semibold text-cyan-400" v-text="stats.tvLastHour"></p>
+        <p class="text-[10px] text-notion-text-tertiary">TV Last Hour</p>
+    </div>
+    <div class="bg-notion-bg border border-notion-border rounded-lg px-4 py-2 text-center flex-1 min-w-25 cursor-help" title="Total movie items uploaded successfully in the last 60 minutes">
+        <p class="text-xl font-semibold text-purple-400" v-text="stats.moviesLastHour"></p>
+        <p class="text-[10px] text-notion-text-tertiary">Movies Last Hour</p>
+    </div>
+    <div class="bg-notion-bg border border-notion-border rounded-lg px-4 py-2 text-center flex-1 min-w-25 cursor-help" title="Total number of items successfully uploaded across all categories in the last 24 hours (rolling window)">
+        <p class="text-xl font-semibold text-notion-text-primary" v-text="stats.totalToday"></p>
+        <p class="text-[10px] text-notion-text-tertiary">Total Today</p>
+    </div>
+    <div class="bg-notion-bg border border-notion-border rounded-lg px-4 py-2 text-center flex-1 min-w-25 cursor-help" title="Average time taken for a single destination upload, calculated over the last 24 hours of activity">
+        <p class="text-xl font-semibold text-notion-text-primary" v-text="formatDuration(stats.avgTime)"></p>
+        <p class="text-[10px] text-notion-text-tertiary">Avg Time/Upload</p>
+    </div>
+</div>
+
+<div class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-all duration-200">
+    <!-- Integrated Toolbar -->
+    <div class="px-3 py-2 bg-notion-bg-secondary/50 border-b border-notion-divider flex flex-wrap items-center justify-start gap-2">
+        <!-- Search + Literal (inline on mobile) -->
+        <div class="toolbar-search-row">
+            <div class="relative search-input-wrap flex-1 min-w-37.5 sm:min-w-50">
+                <lucide-icon name="search" icon-class="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+                <input
+                    type="text"
+                    v-model="searchQuery"
+                    placeholder="Search all uploads..."
+                    class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none h-9 sm:h-8" />
+            </div>
+            <!-- Literal Search Toggle -->
+            <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer h-9 sm:h-8 px-2 rounded-md hover:bg-notion-bg-hover transition-colors shrink-0" title="Search for exact text including dots, dashes, underscores">
+                <input type="checkbox" v-model="literalSearch" class="size-4 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                <span class="hidden xs:inline">Literal</span>
+            </label>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+            <select v-model="filterDestination" class="px-3 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none h-9 sm:h-8 min-w-25">
+                <option v-for="opt in destinationOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+            </select>
+        </div>
+
+        <button v-if="selectedCount > 0 && viewMode !== 'jobs'" @click="bulkDelete" class="action-btn action-btn--error px-3 sm:px-4 py-2 gap-2 h-9 sm:h-8 min-w-8">
+            <lucide-icon name="trash-2" icon-class="size-4"></lucide-icon>
+            <span class="hidden xs:inline">Delete ({{ selectedCount }})</span>
+        </button>
+        <button v-if="selectedJobIds.length > 0 && viewMode === 'jobs'" @click="bulkDeleteJobs" class="action-btn action-btn--error px-3 sm:px-4 py-2 gap-2 h-9 sm:h-8 min-w-8">
+            <lucide-icon name="trash-2" icon-class="size-4"></lucide-icon>
+            <span class="hidden xs:inline">Delete ({{ selectedJobIds.length }})</span>
+        </button>
+
+        <!-- View Mode Toggle -->
+        <div class="flex items-center bg-notion-bg border border-notion-border rounded-md h-9 sm:h-8 overflow-hidden">
+            <button @click="viewMode = 'flat'" :class="viewMode === 'flat' ? 'bg-notion-accent text-white' : 'text-notion-text-secondary hover:bg-notion-bg-hover'" class="px-2.5 h-full text-xs transition-colors flex items-center gap-1">
+                <lucide-icon name="list" icon-class="size-3.5"></lucide-icon>
+                <span class="hidden sm:inline">Flat</span>
+            </button>
+            <button @click="viewMode = 'grouped'" :class="viewMode === 'grouped' ? 'bg-notion-accent text-white' : 'text-notion-text-secondary hover:bg-notion-bg-hover'" class="px-2.5 h-full text-xs transition-colors flex items-center gap-1">
+                <lucide-icon name="folder-tree" icon-class="size-3.5"></lucide-icon>
+                <span class="hidden sm:inline">Grouped</span>
+            </button>
+            <button @click="viewMode = 'jobs'" :class="viewMode === 'jobs' ? 'bg-notion-accent text-white' : 'text-notion-text-secondary hover:bg-notion-bg-hover'" class="px-2.5 h-full text-xs transition-colors flex items-center gap-1">
+                <lucide-icon name="briefcase" icon-class="size-3.5"></lucide-icon>
+                <span class="hidden sm:inline">Jobs</span>
+            </button>
+        </div>
+
+        <div class="hidden sm:flex-1 sm:block"></div>
+
+        <button @click="loadUploads(true)" class="px-3 sm:px-4 py-2 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded-md text-xs hover:bg-notion-bg-active transition-colors flex items-center justify-center gap-2 h-9 sm:h-8 min-w-8">
+            <lucide-icon name="refresh-cw" :icon-class="['size-4', loading ? 'animate-spin' : '']"></lucide-icon>
+            <span class="hidden sm:inline">Refresh</span>
+        </button>
+    </div>
+
+    <div class="overflow-x-auto overflow-y-hidden uploads-table" style="-webkit-overflow-scrolling: touch">
+        <table class="w-max min-w-full text-xs border-collapse">
+            <thead class="bg-notion-bg-elevated border-b border-notion-border">
+                <tr v-if="viewMode === 'jobs'">
+                    <th class="w-8 pl-3 pr-1 py-2 text-left">
+                        <input type="checkbox" :checked="isAllJobsSelected" @change="toggleSelectAllJobs" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                    </th>
+                    <th class="text-left px-3 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-25 text-[10px]">Job ID</th>
+                    <th class="text-right px-4 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-20 sm:w-24 text-[10px]">Size</th>
+                    <th class="text-center px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-28 text-[10px]">Status</th>
+                    <th class="text-right px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-16 text-[10px]">Items</th>
+                    <th class="text-right px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-24 text-[10px]">Duration</th>
+                    <th class="text-right px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-28 text-[10px]">Started</th>
+                    <th class="w-10 pr-3 text-right col-actions hidden sm:table-cell"></th>
+                </tr>
+                <tr v-else>
+                    <th class="w-8 pl-3 pr-1 py-2 text-left">
+                        <input type="checkbox" :checked="selectAll" @change="toggleSelectAll($event.target.checked)" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                    </th>
+                    <th @click="handleSort('name')" class="text-left px-3 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider cursor-pointer hover:text-notion-text-primary transition-colors text-[10px] min-w-37.5">
+                        <div class="flex items-center gap-1">
+                            <span class="truncate">Name</span>
+                            <lucide-icon :name="getSortIcon('name')" :icon-class="[sortIconClass('name'), 'size-3 shrink-0']"></lucide-icon>
+                        </div>
+                    </th>
+                    <th @click="handleSort('size')" class="text-right px-4 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-20 sm:w-24 cursor-pointer hover:text-notion-text-primary transition-colors text-[10px]">
+                        <div class="flex items-center justify-end gap-1">
+                            Size
+                            <lucide-icon :name="getSortIcon('size')" :icon-class="[sortIconClass('size'), 'size-3 shrink-0']"></lucide-icon>
+                        </div>
+                    </th>
+                    <th class="text-center px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-28 text-[10px]">Dests</th>
+                    <th class="text-right px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-16 text-[10px]">Time</th>
+                    <th class="text-right px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-24 text-[10px]">Speed</th>
+                    <th @click="handleSort('when')" class="text-right px-2 py-2 font-medium text-notion-text-tertiary uppercase tracking-wider w-28 cursor-pointer hover:text-notion-text-primary transition-colors text-[10px]">
+                        <div class="flex items-center justify-end gap-1">
+                            When
+                            <lucide-icon :name="getSortIcon('when')" :icon-class="[sortIconClass('when'), 'size-3 shrink-0']"></lucide-icon>
+                        </div>
+                    </th>
+                    <th class="w-10 pr-3 text-right col-actions hidden sm:table-cell"></th>
+                </tr>
+            </thead>
+            <tbody :class="{'opacity-60 pointer-events-none transition-opacity duration-200': loading && tableDataLength > 0}" class="divide-y divide-notion-divider">
+                <!-- Loading State -->
+                <tr v-if="loading && tableDataLength === 0">
+                    <td colspan="8" class="px-3 py-6 text-center text-notion-text-tertiary text-sm">
+                        <lucide-icon name="loader-2" icon-class="size-5 animate-spin mx-auto mb-2"></lucide-icon>
+                        Loading...
+                    </td>
+                </tr>
+                <!-- Empty State -->
+                <tr v-else-if="!loading && tableDataLength === 0">
+                    <td colspan="8" class="px-3 py-6 text-center text-notion-text-tertiary text-sm">
+                        <lucide-icon name="inbox" icon-class="size-6 mx-auto mb-2 opacity-50"></lucide-icon>
+                        <p>{{ emptyStateMessage }}</p>
+                        <p v-if="!literalSearch && searchQuery" class="text-xs mt-1">Tip: Enable "Literal" to search for exact text</p>
+                    </td>
+                </tr>
+                <!-- Upload Rows: FLAT view -->
+                <template v-else-if="viewMode === 'flat'">
+                    <tr v-for="item in (uploads || [])" :key="item?.item_name || Math.random()" class="hover:bg-notion-bg-hover transition-colors group cursor-pointer" @click="openUploadDetails(item)">
+                        <td class="pl-3 pr-1 py-1.5 align-middle">
+                            <input type="checkbox" :checked="isItemSelected(item?.item_name)" @click.stop @change="toggleItemSelection(item?.item_name, $event.target.checked)" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                        </td>
+                        <td class="px-3 py-1.5 align-middle min-w-0 max-w-0">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <div :title="getCategoryLabel(item?.media_type)" :class="getCategoryIconBg(item?.media_type)" class="size-4 rounded flex items-center justify-center shrink-0">
+                                    <lucide-icon :name="getCategoryIconName(item?.media_type)" :icon-class="'size-2.5 ' + getCategoryIconColor(item?.media_type)"></lucide-icon>
+                                </div>
+                                <div :title="item?.item_name || ''" class="text-notion-text-primary truncate font-medium">
+                                    <template v-for="(seg, si) in highlightSegments(getItemDisplayName(item?.item_name))" :key="si">
+                                        <mark v-if="seg.hl" class="bg-notion-accent/20 text-notion-text-primary rounded px-0.5">{{ seg.text }}</mark>
+                                        <template v-else>{{ seg.text }}</template>
+                                    </template>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-4 py-1.5 text-notion-text-secondary text-right whitespace-nowrap tabular-nums align-middle col-size-mobile">{{ formatSize(item?.filesize) }}</td>
+                        <td class="px-2 py-1.5 text-center align-middle col-dests-mobile">
+                            <div class="flex items-center justify-center gap-0.5">
+                                <span
+                                    v-for="dest in getDestinationDots(item)"
+                                    :key="dest.id"
+                                    class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                    :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.status === 'success' ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
+                                    <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
+                                    <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                        <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                                        <path d="M3 12a9 3 0 0 0 18 0" />
+                                    </svg>
+                                    <div class="infotip-content">
+                                        <div class="infotip-header">
+                                            <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-3 object-cover" />
+                                            {{ dest.name }}
+                                        </div>
+                                        <div v-if="dest.status === 'failed'" class="infotip-footer" style="color: var(--notion-error)">Failed: {{ dest.error || 'Unknown Error' }}</div>
+                                        <div v-else class="infotip-footer">Successful Upload</div>
+                                        <div class="infotip-arrow"></div>
+                                    </div>
+                                </span>
+                            </div>
+                        </td>
+                        <td class="px-2 py-1.5 text-notion-text-tertiary text-right whitespace-nowrap align-middle">{{ formatDuration(getBestStats(item).duration) }}</td>
+                        <td :class="speedCellClass(item)" class="text-right whitespace-nowrap tabular-nums px-2 py-1.5 align-middle">{{ formatSpeed(getBestStats(item).speed) }}</td>
+                        <td class="px-2 py-1.5 text-notion-text-tertiary text-right align-middle" :title="formatDateFull(item.updated_at)">
+                            <div class="flex flex-col items-end leading-tight">
+                                <span class="text-notion-text-secondary">{{ formatWhenAge(item.updated_at) }}</span>
+                                <span class="text-[10px] text-notion-text-tertiary">{{ formatWhenTime(item.updated_at) }}</span>
+                            </div>
+                        </td>
+                        <td class="pl-1 pr-3 py-1.5 text-right w-10 align-middle col-actions hidden sm:table-cell">
+                            <button @click.stop="deleteUpload(item?.item_name)" v-if="item?.item_name" class="p-1 text-notion-text-tertiary hover:text-notion-error hover:bg-notion-error/10 rounded transition-colors opacity-0 group-hover:opacity-100" title="Delete from history">
+                                <lucide-icon name="trash-2" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                        </td>
+                    </tr>
+                </template>
+                <!-- Upload Rows: GROUPED view -->
+                <template v-else-if="viewMode === 'grouped'">
+                    <template v-for="row in groupedRows" :key="row.key">
+                        <!-- ── GROUP HEADER ── -->
+                        <tr v-if="row.type === 'group'" class="bg-notion-bg-elevated cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleGroup(row.group.key)">
+                            <td class="pl-3 pr-1 py-2 align-middle" @click.stop>
+                                <input type="checkbox" :checked="isGroupSelected(row.group)" @change="toggleGroupSelection(row.group, $event.target.checked)" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                            </td>
+                            <td class="px-3 py-2 align-middle" colspan="2">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <lucide-icon :name="expandedGroups[row.group.key] ? 'chevron-down' : 'chevron-right'" icon-class="size-3.5 text-notion-text-tertiary shrink-0 hidden sm:block group-hide-mobile"></lucide-icon>
+                                    <!-- Movie icon -->
+                                    <div v-if="row.group.isMovie" class="size-5 bg-purple-500/15 rounded hidden items-center justify-center shrink-0 sm:flex group-hide-mobile">
+                                        <lucide-icon name="film" icon-class="size-3 text-purple-400"></lucide-icon>
+                                    </div>
+                                    <!-- TV icon -->
+                                    <div v-else class="size-5 bg-cyan-500/15 rounded hidden items-center justify-center shrink-0 sm:flex group-hide-mobile">
+                                        <lucide-icon name="folder" icon-class="size-3 text-cyan-400"></lucide-icon>
+                                    </div>
+                                    <span class="text-xs font-medium text-notion-text-primary truncate" :title="row.group.name">{{ row.group.name.replace(/\./g, ' ') }}</span>
+                                    <span class="text-[10px] text-notion-text-tertiary font-mono shrink-0">
+                                        {{ row.group.itemCount }}
+                                        <span class="items-word-mobile">item{{ row.group.itemCount !== 1 ? 's' : '' }}</span>
+                                    </span>
+                                    <span class="text-[10px] text-notion-text-tertiary font-mono shrink-0">{{ formatSize(row.group.totalSize) }}</span>
+                                    <!-- Movie type badge -->
+                                    <span v-if="row.group.isMovie" class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-500/15 text-purple-400 rounded text-[10px] font-semibold shrink-0">
+                                        <lucide-icon name="film" icon-class="size-2.5"></lucide-icon>
+                                        <span class="badge-text-mobile">Movie</span>
+                                    </span>
+                                    <!-- TV episode-missing badges (only for non-movies) -->
+                                    <template v-if="!row.group.isMovie">
+                                        <span v-if="row.group.allEpMissingSeasonsCount === row.group.seasonList.length && row.group.seasonList.length > 0" class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-notion-error/15 text-notion-error rounded text-[10px] font-semibold shrink-0">
+                                            <lucide-icon name="alert-triangle" icon-class="size-2.5"></lucide-icon>
+                                            <span class="badge-text-mobile">All EP Missing</span>
+                                        </span>
+                                        <template v-else>
+                                            <span v-if="row.group.allEpMissingSeasonsCount > 0" class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-notion-error/15 text-notion-error rounded text-[10px] font-semibold shrink-0">
+                                                <lucide-icon name="alert-triangle" icon-class="size-2.5"></lucide-icon>
+                                                <span class="badge-text-mobile">{{ row.group.allEpMissingSeasonsCount }} season{{ row.group.allEpMissingSeasonsCount !== 1 ? 's' : '' }} no EP</span>
+                                            </span>
+                                            <span v-if="row.group.missingCount > 0" class="infotip-trigger relative inline-flex items-center gap-1 px-1.5 py-0.5 bg-notion-warning/15 text-notion-warning rounded text-[10px] font-semibold shrink-0">
+                                                <lucide-icon name="alert-triangle" icon-class="size-2.5"></lucide-icon>
+                                                <span class="badge-text-mobile">{{ row.group.missingCount }} missing</span>
+                                                <div class="infotip-content text-left">
+                                                    <div class="font-semibold mb-1">Missing Episodes</div>
+                                                    <template v-for="s in row.group.seasonList.filter(s => s.missingCount > 0)" :key="s.num">
+                                                        <div v-if="row.group.seasonList.length > 1" class="font-medium mt-1">Season {{ s.num }}:</div>
+                                                        <div>Expected {{ s.expectedEps }} (E{{ s.firstEp.toString().padStart(2,'0') }}-E{{ s.lastEp.toString().padStart(2,'0') }}), found {{ s.foundEps }}</div>
+                                                        <div v-if="s.missingList.length" class="text-notion-text-tertiary">Missing: {{ s.missingList.map(n => 'E' + n.toString().padStart(2,'0')).join(', ') }}</div>
+                                                    </template>
+                                                    <div class="infotip-arrow"></div>
+                                                </div>
+                                            </span>
+                                        </template>
+                                    </template>
+                                </div>
+                            </td>
+                            <td class="px-2 py-2 text-center align-middle col-dests-mobile">
+                                <div class="flex items-center justify-center gap-0.5">
+                                    <span
+                                        v-for="dest in getGroupDests(row.group)"
+                                        :key="dest.id"
+                                        class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                        :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.allDone ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
+                                        <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
+                                        <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                            <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                                            <path d="M3 12a9 3 0 0 0 18 0" />
+                                        </svg>
+                                        <div class="infotip-content">
+                                            {{ dest.name }}: {{ dest.count }}/{{ row.group.itemCount }}
+                                            <div class="infotip-arrow"></div>
+                                        </div>
+                                    </span>
+                                </div>
+                            </td>
+                            <td></td>
+                            <td></td>
+                            <td class="px-2 py-2 text-notion-text-tertiary text-right align-middle text-[10px]" :title="formatDateFull(row.group.latestDate)">
+                                <div class="flex flex-col items-end leading-tight">
+                                    <span class="text-notion-text-secondary">{{ formatWhenAge(row.group.latestDate) }}</span>
+                                    <span class="text-[10px] text-notion-text-tertiary">{{ formatWhenTime(row.group.latestDate) }}</span>
+                                </div>
+                            </td>
+                            <td class="pl-1 pr-3 py-2 text-right align-middle col-actions hidden sm:table-cell"></td>
+                        </tr>
+                        <tr v-else-if="row.type === 'loading'" class="bg-notion-bg/30">
+                            <td colspan="8" class="px-3 py-3 text-center text-notion-text-tertiary text-xs">
+                                <lucide-icon name="loader-2" icon-class="size-4 animate-spin inline-block mr-2"></lucide-icon>
+                                Loading group details...
+                            </td>
+                        </tr>
+                        <!-- ── SEASON SUB-HEADER ── -->
+                        <tr v-else-if="row.type === 'season'" class="bg-notion-bg-elevated/50 cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSeason(row.seasonKey)">
+                            <td class="pl-8 py-1.5 align-middle" @click.stop>
+                                <input type="checkbox" :checked="isGroupSelected(row.season)" @change="toggleGroupSelection(row.season, $event.target.checked)" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                            </td>
+                            <td class="pl-8 py-1.5 align-middle" colspan="2">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <lucide-icon :name="expandedSeasons[row.seasonKey] ? 'chevron-down' : 'chevron-right'" icon-class="size-3 text-notion-text-tertiary shrink-0 hidden sm:block group-hide-mobile"></lucide-icon>
+                                    <div class="size-4 bg-violet-500/15 rounded hidden items-center justify-center shrink-0 sm:flex group-hide-mobile">
+                                        <lucide-icon name="layers" icon-class="size-2.5 text-violet-400"></lucide-icon>
+                                    </div>
+                                    <span class="text-xs font-medium text-notion-text-primary">{{ row.season.num === 0 ? 'Specials' : 'Season ' + row.season.num }}</span>
+                                    <span class="text-[10px] text-notion-text-tertiary font-mono shrink-0">
+                                        <template v-if="row.season.epNumbers.length > 0">{{ row.season.epNumbers.length }} ep{{ row.season.epNumbers.length !== 1 ? 's' : '' }}</template>
+                                        <template v-else>{{ row.season.items.length }} pack{{ row.season.items.length !== 1 ? 's' : '' }}</template>
+                                    </span>
+                                    <span class="text-[10px] text-notion-text-tertiary font-mono shrink-0">{{ formatSize(row.season.totalSize) }}</span>
+                                    <span v-if="row.season.allEpMissing" class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-notion-error/15 text-notion-error rounded text-[10px] font-semibold shrink-0">
+                                        <lucide-icon name="alert-triangle" icon-class="size-2.5"></lucide-icon>
+                                        <span class="badge-text-mobile">All EP Missing</span>
+                                    </span>
+                                    <span v-else-if="row.season.missingCount > 0" class="infotip-trigger relative inline-flex items-center gap-1 px-1.5 py-0.5 bg-notion-warning/15 text-notion-warning rounded text-[10px] font-semibold shrink-0">
+                                        <lucide-icon name="alert-triangle" icon-class="size-2.5"></lucide-icon>
+                                        <span class="badge-text-mobile">{{ row.season.missingCount }} missing</span>
+                                        <div class="infotip-content text-left">
+                                            <div class="font-semibold mb-1">Missing Episodes (S{{ row.season.label }})</div>
+                                            <div>Expected {{ row.season.expectedEps }} (E{{ row.season.firstEp.toString().padStart(2,'0') }}-E{{ row.season.lastEp.toString().padStart(2,'0') }}), found {{ row.season.foundEps }}</div>
+                                            <div v-if="row.season.missingList.length" class="mt-1 text-notion-text-tertiary">Missing: {{ row.season.missingList.map(n => 'E' + n.toString().padStart(2,'0')).join(', ') }}</div>
+                                            <div class="infotip-arrow"></div>
+                                        </div>
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="px-2 py-1.5 text-center align-middle col-dests-mobile">
+                                <div class="flex items-center justify-center gap-0.5">
+                                    <span
+                                        v-for="dest in getGroupDests(row.season)"
+                                        :key="dest.id"
+                                        class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                        :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.allDone ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
+                                        <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
+                                        <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                            <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                                            <path d="M3 12a9 3 0 0 0 18 0" />
+                                        </svg>
+                                        <div class="infotip-content">
+                                            {{ dest.name }}: {{ dest.count }}/{{ row.season.items.length }}
+                                            <div class="infotip-arrow"></div>
+                                        </div>
+                                    </span>
+                                </div>
+                            </td>
+                            <td></td>
+                            <td></td>
+                            <td class="px-2 py-1.5 text-notion-text-tertiary text-right whitespace-nowrap align-middle text-[10px]"></td>
+                            <td class="pl-1 pr-3 py-1.5 text-right align-middle col-actions hidden sm:table-cell"></td>
+                        </tr>
+                        <!-- ── ITEM ROW ── -->
+                        <tr v-else class="hover:bg-notion-bg-hover transition-colors group cursor-pointer" :class="row.indent > 0 ? 'bg-notion-bg/50' : ''" @click="openUploadDetails(row.item)">
+                            <td class="py-1.5 align-middle" :class="row.indent >= 2 ? 'pl-12' : row.indent >= 1 ? 'pl-8' : 'px-3'">
+                                <input type="checkbox" :checked="isItemSelected(row.item.item_name)" @click.stop @change="toggleItemSelection(row.item.item_name, $event.target.checked)" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                            </td>
+                            <td class="py-1.5 align-middle min-w-0 max-w-0" :class="row.indent >= 2 ? 'pl-12' : row.indent >= 1 ? 'pl-8' : 'px-3'">
+                                <div class="flex items-center gap-1.5 min-w-0">
+                                    <!-- Movie icon for movie items inside TV groups -->
+                                    <lucide-icon v-if="row.isMovieInTvGroup" name="film" icon-class="size-3 text-purple-400 shrink-0"></lucide-icon>
+                                    <svg v-else class="size-3 text-notion-text-tertiary shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+                                        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+                                        <path d="m10 11 5 3-5 3v-6Z" />
+                                    </svg>
+                                    <div :title="row.item.item_name" class="text-notion-text-primary truncate font-medium">
+                                        <template v-for="(seg, si) in highlightSegments(row.displayName)" :key="si">
+                                            <mark v-if="seg.hl" class="bg-notion-accent/20 text-notion-text-primary rounded px-0.5">{{ seg.text }}</mark>
+                                            <template v-else>{{ seg.text }}</template>
+                                        </template>
+                                    </div>
+                                    <span v-if="row.isMovieInTvGroup" class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-500/15 text-purple-400 rounded text-[10px] font-semibold shrink-0">Movie</span>
+                                </div>
+                            </td>
+                            <td class="px-4 py-1.5 text-notion-text-secondary text-right whitespace-nowrap tabular-nums align-middle col-size-mobile">{{ formatSize(row.item.filesize) }}</td>
+                            <td class="px-2 py-1.5 text-center align-middle col-dests-mobile">
+                                <div class="flex items-center justify-center gap-0.5">
+                                    <span
+                                        v-for="dest in getDestinationDots(row.item)"
+                                        :key="dest.id"
+                                        class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                        :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.status === 'success' ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
+                                        <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
+                                        <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                            <ellipse cx="12" cy="5" rx="9" ry="3" />
+                                            <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+                                            <path d="M3 12a9 3 0 0 0 18 0" />
+                                        </svg>
+                                        <div class="infotip-content">
+                                            <div class="font-semibold">{{ dest.name }}</div>
+                                            <div v-if="dest.status === 'failed'" class="text-[10px] mt-1 text-notion-error">Failed: {{ dest.error || 'Unknown Error' }}</div>
+                                            <div v-else class="text-[10px] mt-1 text-notion-success">Successful Upload</div>
+                                            <div class="infotip-arrow"></div>
+                                        </div>
+                                    </span>
+                                </div>
+                            </td>
+                            <td class="px-2 py-1.5 text-notion-text-tertiary text-right whitespace-nowrap align-middle">{{ formatDuration(getBestStats(row.item).duration) }}</td>
+                            <td :class="speedCellClass(row.item)" class="text-right whitespace-nowrap tabular-nums px-2 py-1.5 align-middle">{{ formatSpeed(getBestStats(row.item).speed) }}</td>
+                            <td class="px-2 py-1.5 text-notion-text-tertiary text-right align-middle" :title="formatDateFull(row.item.updated_at)">
+                                <div class="flex flex-col items-end leading-tight">
+                                    <span class="text-notion-text-secondary">{{ formatWhenAge(row.item.updated_at) }}</span>
+                                    <span class="text-[10px] text-notion-text-tertiary">{{ formatWhenTime(row.item.updated_at) }}</span>
+                                </div>
+                            </td>
+                            <td class="pl-1 pr-3 py-1.5 text-right w-10 align-middle col-actions hidden sm:table-cell">
+                                <button @click.stop="deleteUpload(row.item.item_name)" v-if="row.item.item_name" class="p-1 text-notion-text-tertiary hover:text-notion-error hover:bg-notion-error/10 rounded transition-colors opacity-0 group-hover:opacity-100" title="Delete from history">
+                                    <lucide-icon name="trash-2" icon-class="size-3.5"></lucide-icon>
+                                </button>
+                            </td>
+                        </tr>
+                    </template>
+                </template>
+                <!-- Upload Rows: JOBS view -->
+                <template v-else-if="viewMode === 'jobs'">
+                    <tr v-for="job in jobsList" :key="job.job_id" class="hover:bg-notion-bg-hover transition-colors cursor-pointer group" :class="{ 'bg-notion-accent/5': selectedJobIds.includes(job.job_id) }" @click="showJobUploads(job)">
+                        <td class="pl-3 pr-1 py-1.5 align-middle" @click.stop>
+                            <input type="checkbox" :value="job.job_id" v-model="selectedJobIds" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                        </td>
+                        <td class="px-3 py-1.5 align-middle min-w-0 max-w-0">
+                            <div class="flex items-center gap-1.5 min-w-0">
+                                <div :title="getCategoryLabel(job.category)" :class="getCategoryIconBg(job.category)" class="size-4 rounded flex items-center justify-center shrink-0">
+                                    <lucide-icon :name="getCategoryIconName(job.category)" :icon-class="'size-2.5 ' + getCategoryIconColor(job.category)"></lucide-icon>
+                                </div>
+                                <span class="font-mono text-notion-text-primary font-medium text-[11px] sm:text-xs truncate">{{ job.job_id }}</span>
+                                <span v-if="job.test_mode" class="bg-notion-warning/20 text-notion-warning rounded font-bold px-1.5 py-0.5 text-[10px] shrink-0">TEST</span>
+                            </div>
+                        </td>
+                        <td class="px-4 py-1.5 text-notion-text-secondary text-right whitespace-nowrap tabular-nums align-middle col-size-mobile">{{ formatSize(job.total_bytes) }}</td>
+                        <td class="px-2 py-1.5 text-center align-middle col-dests-mobile">
+                            <span :class="jobStatusBadgeClass(job.status)">
+                                <lucide-icon :name="getJobStatusConfig(job.status).icon" icon-class="size-3.5"></lucide-icon>
+                                <span class="hidden sm:inline">{{ job.status }}</span>
+                            </span>
+                        </td>
+                        <td class="px-2 py-1.5 text-notion-text-secondary text-right whitespace-nowrap align-middle font-mono text-[11px]">
+                            <span class="text-notion-success font-bold">{{ job.items_processed }}</span>
+                            <span class="text-notion-text-tertiary text-[10px] ml-0.5">/ {{ job.items_total }}</span>
+                        </td>
+                        <td class="px-2 py-1.5 text-notion-text-secondary text-right whitespace-nowrap align-middle">{{ formatDuration(job.duration_seconds) }}</td>
+                        <td class="px-2 py-1.5 text-notion-text-tertiary text-right whitespace-nowrap align-middle" :title="formatDateFull(job.started_at)">{{ formatDateCompact(job.started_at) }}</td>
+                        <td class="pl-1 pr-3 py-1.5 text-right w-10 align-middle col-actions hidden sm:table-cell">
+                            <button @click.stop="deleteJobHistory(job.job_id)" class="p-1 text-notion-text-tertiary hover:text-notion-error hover:bg-notion-error/10 rounded transition-colors opacity-0 group-hover:opacity-100" title="Delete job">
+                                <lucide-icon name="trash-2" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Upload Item Details Modal -->
+<Transition name="modal">
+    <div v-if="uploadDetailModalOpen" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
+        <div class="absolute inset-0 bg-black/60" @click="closeUploadDetails()"></div>
+        <div class="relative bg-notion-bg border border-notion-border rounded-t-xl sm:rounded-xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh] sm:max-h-[85vh]">
+            <div class="shrink-0 flex items-center justify-between px-5 py-4 border-b border-notion-border bg-notion-bg-secondary">
+                <div class="flex items-center gap-3 min-w-0">
+                    <lucide-icon name="info" icon-class="size-5 text-notion-accent"></lucide-icon>
+                    <h3 class="text-lg font-semibold text-notion-text-primary truncate">Upload Details</h3>
+                </div>
+                <button @click="closeUploadDetails()" class="p-1.5 text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover rounded-md transition-colors">
+                    <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                </button>
+            </div>
+
+            <div v-if="uploadDetailItem" class="p-5 overflow-y-auto flex-1 space-y-4">
+                <div class="bg-notion-bg-secondary border border-notion-border rounded-lg p-4 space-y-2">
+                    <div class="text-sm font-semibold text-notion-text-primary break-all">{{ uploadDetailItem.item_name }}</div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                        <div class="text-notion-text-tertiary">
+                            Category:
+                            <span class="text-notion-text-primary">{{ getCategoryLabel(uploadDetailItem.media_type) }}</span>
+                        </div>
+                        <div class="text-notion-text-tertiary">
+                            Size:
+                            <span class="text-notion-text-primary">{{ formatSize(uploadDetailItem.filesize) }}</span>
+                        </div>
+                        <div class="text-notion-text-tertiary">
+                            Updated:
+                            <span class="text-notion-text-primary">{{ formatDateFull(uploadDetailItem.updated_at) || '-' }}</span>
+                        </div>
+                        <div class="text-notion-text-tertiary">
+                            Created:
+                            <span class="text-notion-text-primary">{{ formatDateFull(uploadDetailItem.created_at) || '-' }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden">
+                    <div class="px-4 py-2 border-b border-notion-divider text-xs font-semibold uppercase tracking-wider text-notion-text-tertiary">Destinations</div>
+                    <div v-if="getUploadDetailDestinations(uploadDetailItem).length === 0" class="px-4 py-4 text-xs text-notion-text-tertiary">No destination metadata recorded.</div>
+                    <div v-else class="divide-y divide-notion-divider">
+                        <div v-for="dest in getUploadDetailDestinations(uploadDetailItem)" :key="dest.id + '-' + dest.name" class="px-4 py-2 text-xs">
+                            <div class="flex items-center justify-between gap-3">
+                                <div class="flex items-center gap-2 min-w-0">
+                                    <img v-if="dest.favicon" :src="dest.favicon" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="size-3.5 object-contain rounded-sm" />
+                                    <lucide-icon v-else :name="dest.icon || 'database'" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                                    <span class="text-notion-text-primary truncate">{{ dest.name }}</span>
+                                </div>
+                                <span :class="dest.status === 'failed' ? 'text-notion-error bg-notion-error/10' : 'text-notion-success bg-notion-success/10'" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase">{{ dest.status || 'success' }}</span>
+                            </div>
+                            <div class="mt-1 grid grid-cols-1 sm:grid-cols-3 gap-1 text-[11px] text-notion-text-tertiary">
+                                <div>
+                                    Duration:
+                                    <span class="text-notion-text-secondary">{{ formatDuration(dest.duration) }}</span>
+                                </div>
+                                <div>
+                                    Speed:
+                                    <span class="text-notion-text-secondary">{{ formatSpeed(dest.speed) }}</span>
+                                </div>
+                                <div>
+                                    Server:
+                                    <span class="text-notion-text-secondary">{{ dest.server || '-' }}</span>
+                                </div>
+                            </div>
+                            <div v-if="dest.error" class="mt-1 text-[11px] text-notion-error wrap-break-word">Error: {{ dest.error }}</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden">
+                    <div class="px-4 py-2 border-b border-notion-divider text-xs font-semibold uppercase tracking-wider text-notion-text-tertiary">Raw Data</div>
+                    <pre class="p-4 text-[11px] leading-4 overflow-auto text-notion-text-secondary">{{ prettyJson(uploadDetailItem) }}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</Transition>
+
+<!-- Job Uploads Modal (for jobs view) -->
+<Transition name="modal">
+    <div v-if="jobModalOpen" class="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
+        <div class="absolute inset-0 bg-black/60" @click="jobModalOpen = false"></div>
+        <div class="relative bg-notion-bg border border-notion-border rounded-t-xl sm:rounded-xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh] sm:max-h-[80vh]">
+            <div class="shrink-0 flex items-center justify-between px-5 py-4 border-b border-notion-border bg-notion-bg-secondary">
+                <div class="flex items-center gap-3">
+                    <lucide-icon name="list" icon-class="size-5 text-notion-accent"></lucide-icon>
+                    <h3 class="text-lg font-semibold text-notion-text-primary">{{ jobModalTitle }}</h3>
+                </div>
+                <button @click="jobModalOpen = false" class="p-1.5 text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover rounded-md transition-colors">
+                    <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                </button>
+            </div>
+            <div class="p-5 overflow-y-auto flex-1">
+                <div v-if="jobModalLoading" class="flex items-center justify-center py-8">
+                    <lucide-icon name="loader-2" icon-class="size-6 animate-spin text-notion-text-tertiary"></lucide-icon>
+                    <span class="ml-2 text-notion-text-tertiary">Loading uploads...</span>
+                </div>
+                <div v-else-if="jobModalUploads.length === 0" class="text-center py-8 text-notion-text-tertiary">
+                    <lucide-icon name="inbox" icon-class="size-8 mx-auto mb-2 opacity-50"></lucide-icon>
+                    <p>No uploads recorded for this job</p>
+                </div>
+                <template v-else>
+                    <div class="divide-y divide-notion-divider">
+                        <div v-for="upload in jobModalUploads" :key="upload.item_name" class="flex items-center gap-3 px-3 py-1.5 hover:bg-notion-bg-hover/30 transition-colors">
+                            <div :title="getCategoryLabel(upload.media_type)" :class="getCategoryIconBg(upload.media_type)" class="size-4 rounded flex items-center justify-center shrink-0">
+                                <lucide-icon :name="getCategoryIconName(upload.media_type)" :icon-class="'size-2.5 ' + getCategoryIconColor(upload.media_type)"></lucide-icon>
+                            </div>
+                            <span :title="upload.item_name" class="text-notion-text-primary truncate flex-1 text-[13px]">{{ upload.item_name }}</span>
+                            <span class="text-notion-text-tertiary font-mono whitespace-nowrap tabular-nums text-[11px]">{{ formatSize(upload.filesize) }}</span>
+                            <div class="flex items-center shrink-0 justify-end gap-0.5 min-w-15" style="overflow: visible; z-index: 10">
+                                <div v-for="dest in getDestinationDots(upload)" :key="dest.name" class="infotip-trigger relative flex items-center justify-center">
+                                    <span :class="destDotClass(dest)"></span>
+                                    <div class="infotip-content text-[10px] text-notion-text-primary">
+                                        <div class="infotip-header">{{ dest.name }}</div>
+                                        <div class="infotip-footer">Successful Upload</div>
+                                        <div class="infotip-arrow"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-4 pt-4 border-t border-notion-divider text-notion-text-tertiary text-center uppercase tracking-widest font-semibold text-[10px]">{{ jobModalUploads.length }} item{{ jobModalUploads.length !== 1 ? 's' : '' }} uploaded</div>
+                </template>
+            </div>
+        </div>
+    </div>
+</Transition>
+
+<!-- Pagination -->
+<div v-if="viewMode !== 'jobs'" class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
+    <div class="text-notion-text-tertiary text-center sm:text-left">
+        Showing {{ showingStart }}-{{ showingEnd }} of {{ totalCount }}
+        <template v-if="viewMode === 'grouped'">groups</template>
+    </div>
+    <div class="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-4">
+        <!-- Pagination Controls -->
+        <div class="flex items-center gap-1">
+            <button @click="goToPage(1)" :disabled="isFirstPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="First page">
+                <lucide-icon name="chevrons-left" icon-class="size-3.5"></lucide-icon>
+            </button>
+            <button @click="prevPage" :disabled="isFirstPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Previous page">
+                <lucide-icon name="chevron-left" icon-class="size-3.5"></lucide-icon>
+            </button>
+            <span class="px-2 text-xs text-notion-text-secondary">
+                Page
+                <span class="font-medium text-notion-text-primary">{{ currentPage }}</span>
+                of {{ totalPages }}
+            </span>
+            <button @click="nextPage" :disabled="isLastPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Next page">
+                <lucide-icon name="chevron-right" icon-class="size-3.5"></lucide-icon>
+            </button>
+            <button @click="goToPage(totalPages)" :disabled="isLastPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Last page">
+                <lucide-icon name="chevrons-right" icon-class="size-3.5"></lucide-icon>
+            </button>
+        </div>
+        <!-- Page Size -->
+        <div class="flex items-center gap-2">
+            <select v-model.number="pageSize" class="px-2 py-1 bg-notion-bg-secondary border border-notion-border rounded text-xs text-notion-text-primary">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+            </select>
+        </div>
+    </div>
+</div>
+<div v-if="viewMode === 'jobs'" class="text-sm text-notion-text-tertiary text-center sm:text-left">Showing {{ jobsList.length }} jobs</div>
+{% endblock %} {% block scripts %}
+<script type="module" crossorigin src="/assets/js/dist/pages/history.js?t=[[ cache_bust ]]"></script>
+{% endblock %}

@@ -1,0 +1,357 @@
+@import 'tailwindcss';
+@config '../../tailwind.config.cjs';
+
+@layer components {
+    .nav-link {
+        display: flex;
+        align-items: center;
+        padding: 0.375rem 0.75rem;
+        border-radius: var(--radius-md);
+        font-size: var(--text-sm);
+        line-height: var(--text-sm--line-height);
+        color: var(--notion-text-secondary);
+        transition-property: all;
+        transition-timing-function: var(--default-transition-timing-function);
+        transition-duration: var(--default-transition-duration);
+        &:hover {
+            color: var(--notion-text-primary);
+            background-color: var(--notion-bg-hover);
+        }
+        &.active {
+            color: var(--notion-text-primary);
+            background-color: var(--notion-bg-active);
+        }
+    }
+    /* Desktop nav dropdown on hover */
+    .nav-dropdown-parent:hover .nav-dropdown-menu,
+    .nav-dropdown-menu:hover {
+        display: block !important;
+    }
+    .notion-card {
+        border: 1px solid var(--notion-border);
+        border-radius: var(--radius-lg);
+        background-color: var(--notion-bg-secondary);
+        overflow: clip;
+    }
+    .icon-btn {
+        padding: 0.375rem;
+        border-radius: var(--radius-md);
+        color: var(--notion-text-tertiary);
+        transition-property: all;
+        transition-timing-function: var(--default-transition-timing-function);
+        transition-duration: var(--default-transition-duration);
+        &:hover {
+            color: var(--notion-text-primary);
+            background-color: var(--notion-bg-hover);
+        }
+    }
+    /* Ensure table rows pop up for tooltips */
+    tr {
+        transition-property: color, background-color, border-color, outline-color, text-decoration-color, fill, stroke;
+        transition-timing-function: var(--default-transition-timing-function);
+        transition-duration: var(--default-transition-duration);
+    }
+    tr:hover {
+        position: relative;
+        z-index: 50;
+    }
+    .infotip-trigger {
+        position: relative;
+        cursor: pointer;
+        user-select: none;
+    }
+    .infotip-trigger:hover {
+        z-index: 500;
+    }
+    .infotip-content {
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        z-index: 10000;
+        pointer-events: none;
+        visibility: hidden;
+        opacity: 0;
+        padding: 0.375rem 0.625rem;
+        border-radius: var(--radius-md);
+        box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+        transition-property: all;
+        transition-timing-function: var(--default-transition-timing-function);
+        transition-duration: 100ms;
+        transform: translateX(-50%) translateY(-8px);
+        background: var(--notion-bg-elevated);
+        border: 1px solid var(--notion-border-strong);
+        width: max-content;
+        min-width: 40px;
+        max-width: 200px;
+        font-size: 10px;
+        line-height: var(--leading-normal);
+        white-space: normal;
+    }
+    .infotip-trigger:hover .infotip-content {
+        visibility: visible;
+        opacity: 1;
+        transform: translateX(-50%) translateY(-12px);
+    }
+    .infotip-bottom .infotip-content {
+        top: 100%;
+        bottom: auto;
+        transform: translateX(-50%) translateY(8px);
+    }
+    .infotip-bottom:hover .infotip-content {
+        transform: translateX(-50%) translateY(12px);
+    }
+    .infotip-bottom .infotip-arrow {
+        top: auto;
+        bottom: 100%;
+        border-top-width: 0;
+        border-bottom-width: 6px;
+        border-bottom-color: var(--notion-border-strong);
+    }
+    .infotip-bottom .infotip-arrow::after {
+        top: 1px;
+        bottom: auto;
+        border-top-width: 0;
+        border-bottom-width: 5.5px;
+        border-bottom-color: var(--notion-bg-elevated);
+    }
+    .infotip-bottom-right .infotip-content {
+        top: 100%;
+        right: 0;
+        bottom: auto;
+        left: auto;
+        transform: translateY(8px);
+    }
+    .infotip-bottom-right:hover .infotip-content {
+        transform: translateY(12px);
+    }
+    .infotip-bottom-right .infotip-arrow {
+        top: auto;
+        right: 0.75rem;
+        bottom: 100%;
+        left: auto;
+        translate: 0 0;
+        border-top-width: 0;
+        border-bottom-width: 6px;
+        border-bottom-color: var(--notion-border-strong);
+    }
+    .infotip-bottom-right .infotip-arrow::after {
+        top: 1.2px;
+        left: -5.5px;
+        border-top-width: 0;
+        border-bottom-width: 5.5px;
+        border-bottom-color: var(--notion-bg-elevated);
+    }
+    .section-content {
+        display: grid;
+        grid-template-rows: 1fr;
+        transition: grid-template-rows 300ms cubic-bezier(0.4, 0, 0.2, 1);
+        overflow: hidden;
+        min-width: 0;
+    }
+    /* Elevate hovered sections so tooltips appear above later siblings */
+    [data-section]:hover,
+    [data-card]:hover {
+        position: relative;
+        z-index: 10;
+    }
+    .section-collapsed {
+        grid-template-rows: 0fr !important;
+        overflow: clip !important;
+    }
+    .section-content > div {
+        min-height: 0;
+        min-width: 0;
+        overflow: hidden;
+        transition:
+            opacity 300ms,
+            padding 300ms;
+    }
+    .section-collapsed > div {
+        opacity: 0;
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+    }
+    .dots-anim::after {
+        content: '.';
+        animation: dots 1.5s steps(5, end) infinite;
+    }
+    @keyframes dots {
+        0%,
+        20% {
+            content: '.';
+        }
+        40% {
+            content: '..';
+        }
+        60% {
+            content: '...';
+        }
+        80% {
+            content: '....';
+        }
+        100% {
+            content: '.';
+        }
+    }
+    [v-cloak] {
+        display: none !important;
+    }
+}
+
+@layer utilities {
+    .dark .dark\:hidden,
+    [data-theme='dark'] .dark\:hidden {
+        display: none;
+    }
+
+    .dark .dark\:block,
+    [data-theme='dark'] .dark\:block {
+        display: block;
+    }
+
+    .dark .dark\:opacity-0,
+    [data-theme='dark'] .dark\:opacity-0 {
+        opacity: 0;
+    }
+
+    .dark .dark\:opacity-100,
+    [data-theme='dark'] .dark\:opacity-100 {
+        opacity: 1;
+    }
+
+    .dark .dark\:text-amber-400,
+    [data-theme='dark'] .dark\:text-amber-400 {
+        color: var(--color-amber-400);
+    }
+
+    @media (hover: hover) {
+        .dark .group:hover .group-hover\:dark\:opacity-0,
+        [data-theme='dark'] .group:hover .group-hover\:dark\:opacity-0 {
+            opacity: 0;
+        }
+    }
+}
+
+.infotip-header {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    margin-bottom: 0.25rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid var(--notion-divider);
+    font-size: 9.5px;
+    font-weight: var(--font-weight-semibold);
+    letter-spacing: var(--tracking-wider);
+    color: var(--notion-text-tertiary);
+    text-transform: uppercase;
+}
+/* Hide border if header is the only content (ignoring the arrow) */
+.infotip-header:first-child:is(:last-child, :nth-last-child(2)) {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom-width: 0;
+}
+.infotip-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-block: 0.125rem;
+    font-size: 10.5px;
+    line-height: var(--leading-normal);
+    color: var(--notion-text-primary);
+    flex-wrap: nowrap;
+}
+.infotip-value {
+    font-family: 'SFMono-Regular', Menlo, Consolas, 'PT Mono', 'Liberation Mono', Courier, monospace;
+    font-size: 10px;
+    color: var(--notion-text-primary);
+}
+.infotip-footer {
+    margin-top: 0.25rem;
+    padding-inline: 0.125rem;
+    padding-top: 0.375rem;
+    border-top: 1px solid var(--notion-divider);
+    font-size: 9px;
+    line-height: var(--leading-tight);
+    font-weight: var(--font-weight-medium);
+    color: var(--notion-text-tertiary);
+}
+/* Remove double lines when header + footer are adjacent */
+.infotip-header + .infotip-footer {
+    margin-top: 0;
+    padding-top: 0.125rem;
+    border-top-width: 0;
+}
+.infotip-footer:first-child {
+    margin-top: 0;
+    padding-top: 0;
+    border-top-width: 0;
+}
+
+/* ─── Vue <Transition> CSS ─── */
+/* Modal: scale + fade */
+.modal-enter-active {
+    transition:
+        opacity 0.2s ease,
+        transform 0.2s ease;
+}
+.modal-leave-active {
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease;
+}
+.modal-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+}
+.modal-leave-to {
+    opacity: 0;
+    transform: scale(0.95) translateY(8px);
+}
+
+/* Fade: simple opacity */
+.fade-enter-active,
+.fade-leave-active {
+    transition: opacity 0.2s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+    opacity: 0;
+}
+
+/* Flyout: slide down + fade */
+.flyout-enter-active {
+    transition:
+        opacity 0.15s ease,
+        transform 0.15s ease;
+}
+.flyout-leave-active {
+    transition:
+        opacity 0.1s ease,
+        transform 0.1s ease;
+}
+.flyout-enter-from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+}
+.flyout-leave-to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+}
+
+/* ─── SortableJS Drag States ─── */
+.sortable-ghost {
+    opacity: 0.3;
+    background: rgba(var(--accent-rgb, 59, 130, 246), 0.08) !important;
+}
+.sortable-chosen {
+    background: var(--notion-bg-hover, #2c2c2c) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    border-radius: 6px;
+}
+.sortable-drag {
+    opacity: 0.9;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+}

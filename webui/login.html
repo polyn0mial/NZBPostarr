@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Sign In - NZBPostarr</title>
+        <link rel="icon" type="image/svg+xml" href="/assets/images/favicon.svg" />
+
+        <!-- Apply saved theme before paint to avoid flash -->
+        <script>
+            (function () {
+                const savedTheme = localStorage.getItem('nzbpostarr_theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                if (savedTheme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+            })();
+        </script>
+
+        <link rel="stylesheet" href="/assets/css/core.css" />
+        <link rel="stylesheet" href="/assets/css/tailwind.css?t=[[ cache_bust ]]" />
+</head>
+    <body class="bg-notion-bg text-notion-text-secondary font-sans min-h-dvh flex items-center justify-center px-4">
+
+        <div class="w-full max-w-sm">
+
+            <!-- Logo + Title -->
+            <div class="flex flex-col items-center mb-8 gap-3">
+                <div class="relative size-10">
+                    <img src="/assets/images/logo.png" alt="NZBPostarr" class="absolute inset-0 w-full h-full object-contain dark:hidden" />
+                    <img src="/assets/images/logo_white.png" alt="NZBPostarr" class="absolute inset-0 w-full h-full object-contain hidden dark:block" />
+                </div>
+                <div class="text-center">
+                    <h1 class="text-lg font-semibold text-notion-text-primary tracking-tight">NZBPostarr</h1>
+                    <p class="text-xs text-notion-text-tertiary mt-0.5">Sign in to continue</p>
+                </div>
+            </div>
+
+            <!-- Login Card -->
+            <div class="bg-notion-bg-secondary rounded-xl border border-notion-border shadow-lg overflow-hidden">
+
+                <!-- Error Banner -->
+                {% if error %}
+                <div class="px-5 py-3 bg-notion-error/10 border-b border-notion-error/20 flex items-center gap-2">
+                    <svg class="size-3.5 text-notion-error shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <span class="text-xs text-notion-error font-medium">Invalid username or password</span>
+                </div>
+                {% endif %}
+
+                <!-- Form -->
+                <form method="POST" action="/login" class="p-5 space-y-4" autocomplete="on">
+                    <input type="hidden" name="next_url" value="[[ next_url ]]" />
+
+                    <div class="space-y-1.5">
+                        <label for="username" class="block text-[10px] uppercase tracking-wider font-semibold text-notion-text-tertiary">Username</label>
+                        <input
+                            id="username"
+                            type="text"
+                            name="username"
+                            required
+                            autofocus
+                            autocomplete="username"
+                            class="w-full bg-notion-bg text-notion-text-primary px-3 py-2 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent text-sm placeholder:text-notion-text-tertiary"
+                            placeholder="admin" />
+                    </div>
+
+                    <div class="space-y-1.5">
+                        <label for="password" class="block text-[10px] uppercase tracking-wider font-semibold text-notion-text-tertiary">Password</label>
+                        <input
+                            id="password"
+                            type="password"
+                            name="password"
+                            required
+                            autocomplete="current-password"
+                            class="w-full bg-notion-bg text-notion-text-primary px-3 py-2 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent text-sm placeholder:text-notion-text-tertiary"
+                            placeholder="••••••••" />
+                    </div>
+
+                    <button
+                        type="submit"
+                        class="w-full mt-1 bg-notion-accent hover:brightness-110 text-white font-medium text-sm py-2 px-4 rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-notion-accent focus:ring-offset-2 focus:ring-offset-notion-bg-secondary">
+                        Sign In
+                    </button>
+                </form>
+            </div>
+
+        </div>
+
+    </body>
+</html>

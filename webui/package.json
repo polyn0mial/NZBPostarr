@@ -1,0 +1,29 @@
+{
+  "name": "nzbpostarr-webui",
+  "version": "1.0.0",
+  "private": true,
+  "description": "NZBPostarr Web UI asset build",
+  "type": "commonjs",
+  "scripts": {
+    "build": "npm run build:css && npm run build:js",
+    "build:css": "tailwindcss -c tailwind.config.cjs -i ./assets/css/tailwind-input.css -o ./assets/css/tailwind.css --minify",
+    "build:js": "node scripts/build-js.mjs",
+    "check": "npm run build"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.3",
+    "esbuild": "0.28.1",
+    "tailwindcss": "4.3.3"
+  },
+  "dependencies": {
+    "@floating-ui/dom": "1.8.0",
+    "copy-to-clipboard": "4.0.2",
+    "dayjs": "1.11.21",
+    "escape-string-regexp": "5.0.0",
+    "filesize": "11.0.22",
+    "humanize-duration": "3.34.0",
+    "lodash.debounce": "4.0.8",
+    "sortablejs": "1.15.7",
+    "vue": "3.5.40"
+  }
+}
