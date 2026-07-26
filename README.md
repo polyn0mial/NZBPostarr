@@ -195,7 +195,10 @@ Actions performs the same checks and publishes those files for `v*` tags.
 
 Focused pull requests are welcome. Create a branch from `main`, install the
 `dev` dependency group, run `npm ci` in `webui`, and add regression
-tests for behavior changes. Before opening a pull request, run:
+tests for behavior changes. AI coding tools and automated contributors should
+read [AGENTS.md](AGENTS.md) for the repository map, setup commands, invariants,
+deployment procedure, and public-release checklist. Before opening a pull
+request, run:
 
 ```bash
 ruff check app.py main.py setup.py version.py core logic .github/*.py tests
