@@ -3937,11 +3937,14 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     async renameJobInline(job) {
       if (!job || !job.job_id) return;
       const currentName = (job.display_name || "").trim();
-      const nextName = window.prompt(
-        `Set a custom name for job ${job.job_id}.
-Leave blank to clear the custom name.`,
-        currentName
-      );
+      const nextName = await this.promptDialog(`Set a custom name for job ${job.job_id}.`, {
+        title: "Rename Job",
+        detail: "Leave blank to clear the custom name.",
+        icon: "pencil",
+        value: currentName,
+        placeholder: "e.g. Weekend TV batch",
+        confirmLabel: "Save Name"
+      });
       if (nextName === null) return;
       try {
         const res = await this.apiFetch(`/api/uploads/jobs/${job.job_id}/name`, {
@@ -3969,24 +3972,36 @@ Leave blank to clear the custom name.`,
       const hasCurrent = !!(current && !Number.isNaN(current.getTime()));
       const currentDate = hasCurrent ? `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}` : "";
       const currentTime = hasCurrent ? `${String(current.getHours()).padStart(2, "0")}:${String(current.getMinutes()).padStart(2, "0")}` : "12:00";
-      const dateText = window.prompt(
-        `Set deferred date for job ${job.job_id} (YYYY-MM-DD).
-Leave blank for Immediate.`,
-        currentDate
-      );
+      const dateText = await this.promptDialog(`Set a deferred date for job ${job.job_id}.`, {
+        title: "Schedule Job",
+        detail: "Leave blank to run the job immediately.",
+        icon: "calendar-clock",
+        value: currentDate,
+        placeholder: "YYYY-MM-DD",
+        inputType: "date",
+        confirmLabel: "Continue"
+      });
       if (dateText === null) return;
       const date = dateText.trim();
       let runAfter = null;
       if (date) {
         const useTime = await this.confirmDialog("Set a specific time for this job?", {
           title: "Schedule Time",
-          detail: `Choose "Use 12:00 PM" to run at noon on ${date || "the chosen date"}.`,
+          detail: `Choose "Use 12:00 PM" to run at noon on ${date}.`,
           confirmLabel: "Pick a Time",
           cancelLabel: "Use 12:00 PM"
         });
         let time = "12:00";
         if (useTime) {
-          const timeText = window.prompt("Time (HH:MM, 24-hour format)", currentTime);
+          const timeText = await this.promptDialog(`Time to start job ${job.job_id} on ${date}.`, {
+            title: "Schedule Time",
+            detail: "24-hour format (HH:MM).",
+            icon: "clock",
+            value: currentTime,
+            placeholder: "HH:MM",
+            inputType: "time",
+            confirmLabel: "Set Time"
+          });
           if (timeText === null) return;
           time = timeText.trim() || "12:00";
         }

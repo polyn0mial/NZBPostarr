@@ -1259,6 +1259,16 @@ def get_grouped(
     )
 
 
+@uploads_router.get("/grouped/items")
+def get_grouped_items(title_key: str, destination: str = "all") -> Dict[str, Any]:
+    """Full upload rows behind one grouped-history row.
+
+    Backs the History page's group expansion; database.get_group_upload_items
+    already existed but had no route, so expanding a group 404'd.
+    """
+    return database.get_group_upload_items(title_key, destination=destination)
+
+
 @uploads_router.get("/history")
 async def get_history(limit: int = 100) -> List[Dict[str, Any]]:
     """Listing of completed upload jobs."""
@@ -2113,6 +2123,7 @@ class MarkUploadedRequest(BaseModel):
 
     item_keys: List[str]
     indexer_ids: List[str]
+    itype: str = "Misc"
 
 
 class ForceUploadRequest(BaseModel):
@@ -2608,6 +2619,27 @@ def get_pending_children(
     state = _pending_index.get_state()
     data = state.get("snapshot") or {}
     return pending_snapshot_mod.build_external_children_for_request(data, key, path)
+
+
+@pending_router.post("/mark-uploaded")
+async def mark_items_uploaded(req: MarkUploadedRequest) -> Dict[str, Any]:
+    """Record items as already uploaded without posting them.
+
+    Backs the queue page's "Mark Uploaded" action; database.mark_as_uploaded
+    already existed but had no route, so the button 404'd.
+    """
+    if not req.item_keys:
+        raise HTTPException(status_code=400, detail="No items specified")
+    if not req.indexer_ids:
+        raise HTTPException(status_code=400, detail="No indexers specified")
+
+    created = database.mark_as_uploaded(req.item_keys, req.indexer_ids, itype=req.itype)
+    return {
+        "status": "success",
+        "records_created": created,
+        "items": len(req.item_keys),
+        "indexers": len(req.indexer_ids),
+    }
 
 
 @pending_router.post("/force-upload")

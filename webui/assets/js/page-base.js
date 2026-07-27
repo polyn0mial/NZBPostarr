@@ -502,6 +502,7 @@ const Modal = {
         open: { type: Boolean, default: false },
         title: { type: String, default: '' },
         subtitle: { type: String, default: '' },
+        subtitleClass: { type: String, default: '' },
         icon: { type: String, default: '' },
         iconClass: { type: String, default: 'text-notion-accent' },
         badge: { type: [String, Number], default: null },
@@ -524,7 +525,7 @@ const Modal = {
                                 <lucide-icon v-if="icon" :name="icon" :icon-class="['size-4 shrink-0', iconClass]"></lucide-icon>
                                 <div class="min-w-0">
                                     <h3 class="text-sm font-semibold text-notion-text-primary truncate">{{ title }}</h3>
-                                    <p v-if="subtitle" class="text-[10px] text-notion-text-tertiary truncate">{{ subtitle }}</p>
+                                    <p v-if="subtitle" :class="['text-[10px] text-notion-text-tertiary truncate', subtitleClass]">{{ subtitle }}</p>
                                 </div>
                                 <span v-if="badge !== null && badge !== ''" class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium shrink-0">{{ badge }}</span>
                             </div>
@@ -771,6 +772,10 @@ export function createVuePage(pageOptions = {}) {
                 danger: false,
                 confirmLabel: 'Confirm',
                 cancelLabel: 'Cancel',
+                prompt: false,
+                value: '',
+                placeholder: '',
+                inputType: 'text',
             },
             _confirmResolver: null,
             _confirmKeyHandler: null,
@@ -1016,26 +1021,41 @@ export function createVuePage(pageOptions = {}) {
         },
 
         // ============================================================
-        // SHARED CONFIRM DIALOG
-        // Themed, promise-returning replacement for the native confirm():
+        // SHARED CONFIRM / PROMPT DIALOG
+        // Themed, promise-returning replacements for the native confirm()
+        // and prompt(), sharing one dialog shell:
         //     if (!(await this.confirmDialog('Delete 3 jobs?', { danger: true }))) return;
-        // Resolves true on confirm, false on cancel / Escape / backdrop click.
+        //     const name = await this.promptDialog('New name?', { value: current });
+        // confirmDialog resolves true/false; promptDialog resolves the string, or
+        // null when cancelled. Both cancel on Escape or a backdrop click.
         // The markup lives in base.html so every page inherits it.
         // ============================================================
         confirmDialog(message, options = {}) {
+            return this._openDialog(message, options, false);
+        },
+
+        promptDialog(message, options = {}) {
+            return this._openDialog(message, options, true);
+        },
+
+        _openDialog(message, options, isPrompt) {
             // Opening a second dialog cancels the first instead of orphaning its promise.
             if (this._confirmResolver) this._settleConfirmDialog(false);
 
             const opts = options || {};
             this.confirmState = {
                 open: true,
-                title: opts.title || 'Are you sure?',
+                title: opts.title || (isPrompt ? 'Enter a value' : 'Are you sure?'),
                 message: message === null || message === undefined ? '' : String(message),
                 detail: opts.detail ? String(opts.detail) : '',
-                icon: opts.icon || (opts.danger ? 'alert-triangle' : 'help-circle'),
+                icon: opts.icon || (opts.danger ? 'alert-triangle' : (isPrompt ? 'pencil' : 'help-circle')),
                 danger: !!opts.danger,
-                confirmLabel: opts.confirmLabel || 'Confirm',
+                confirmLabel: opts.confirmLabel || (isPrompt ? 'Save' : 'Confirm'),
                 cancelLabel: opts.cancelLabel || 'Cancel',
+                prompt: isPrompt,
+                value: opts.value === null || opts.value === undefined ? '' : String(opts.value),
+                placeholder: opts.placeholder ? String(opts.placeholder) : '',
+                inputType: opts.inputType || 'text',
             };
 
             // Capture-phase so the dialog wins over page-level key handlers.
@@ -1048,8 +1068,10 @@ export function createVuePage(pageOptions = {}) {
             document.addEventListener('keydown', this._confirmKeyHandler, true);
 
             this.$nextTick(() => {
-                const btn = this.$refs.confirmDialogAccept;
-                if (btn && typeof btn.focus === 'function') btn.focus();
+                const target = isPrompt ? this.$refs.confirmDialogInput : this.$refs.confirmDialogAccept;
+                if (!target || typeof target.focus !== 'function') return;
+                target.focus();
+                if (isPrompt && typeof target.select === 'function') target.select();
             });
 
             return new Promise((resolve) => {
@@ -1057,15 +1079,22 @@ export function createVuePage(pageOptions = {}) {
             });
         },
 
-        _settleConfirmDialog(result) {
+        _settleConfirmDialog(accepted) {
             const resolver = this._confirmResolver;
+            const wasPrompt = this.confirmState.prompt;
+            const value = this.confirmState.value;
             this._confirmResolver = null;
             if (this._confirmKeyHandler) {
                 document.removeEventListener('keydown', this._confirmKeyHandler, true);
                 this._confirmKeyHandler = null;
             }
             this.confirmState = { ...this.confirmState, open: false };
-            if (resolver) resolver(result);
+            if (!resolver) return;
+            if (wasPrompt) {
+                resolver(accepted ? value : null);
+            } else {
+                resolver(accepted);
+            }
         },
 
         acceptConfirmDialog() {

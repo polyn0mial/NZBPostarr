@@ -1419,6 +1419,15 @@
         <polyline points="5 12 12 5 19 12" />
     </svg>
 </button>
+
+{% endblock %} {% block scripts %}
+<script type="module" crossorigin src="/assets/js/dist/pages/queue.js?t=[[ cache_bust ]]"></script>
+<!--
+    Must live in `scripts`, not `content`: everything in `content` is rendered
+    inside #app, and Vue's template compiler silently discards <script> tags in
+    a client component template. While this block sat in `content` the FAB had
+    no click handler and its icon never toggled.
+-->
 <script>
     (function () {
         function init() {
@@ -1454,9 +1463,6 @@
         }
     })();
 </script>
-
-{% endblock %} {% block scripts %}
-<script type="module" crossorigin src="/assets/js/dist/pages/queue.js?t=[[ cache_bust ]]"></script>
 {% endblock %}
 
 
