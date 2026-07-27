@@ -9,18 +9,18 @@ indexers.
 
 ## Features
 
-- **Web UI** — manage uploads, view history, and monitor system stats from any browser
-- **Auto-bootstrap** — runs `python main.py` and it creates its own venv and installs deps on first run
-- **First-run setup wizard** — guided interactive installer for new deployments
-- **Multi-indexer support** — submit NZBs to multiple indexers simultaneously via a YAML plugin system
-- **Dynamic categories** — add any folder/category without touching code
-- **Duplicate detection** — skips content already present on enabled indexers
-- **Headless / CLI mode** — `--headless upload tv` for scripted / cron use cases
-- **Direct NZB reposting** — `--headless stream /path/to/file.nzb` queues Usenet-to-Usenet stream jobs from the CLI
-- **On-demand CLI stats** — `--headless stats` shows a live snapshot without running the WebUI collector
-- **Folder monitor** — watches folders via `watchdog` and auto-triggers uploads on new content
-- **tmux integration** — offers to run inside a persistent tmux session on first launch
-- **Process reaper** — cleans up orphaned nyuu/rar/parpar processes automatically
+- **Web UI**: manage uploads, view history, and monitor system stats from any browser
+- **Auto-bootstrap**: runs `python main.py` and it creates its own venv and installs deps on first run
+- **First-run setup wizard**: guided interactive installer for new deployments
+- **Multi-indexer support**: submit NZBs to multiple indexers simultaneously via a YAML plugin system
+- **Dynamic categories**: add any folder/category without touching code
+- **Duplicate detection**: skips content already present on enabled indexers
+- **Headless / CLI mode**: `--headless upload tv` for scripted / cron use cases
+- **Direct NZB reposting**: `--headless stream /path/to/file.nzb` queues Usenet-to-Usenet stream jobs from the CLI
+- **On-demand CLI stats**: `--headless stats` shows a live snapshot without running the WebUI collector
+- **Folder monitor**: watches folders via `watchdog` and auto-triggers uploads on new content
+- **tmux integration**: offers to run inside a persistent tmux session on first launch
+- **Process reaper**: cleans up orphaned nyuu/rar/parpar processes automatically
 
 ---
 
@@ -51,7 +51,7 @@ dependency group in `pyproject.toml` (`pip install --group dev`).
 git clone https://github.com/polyn0mial/nzbpostarr.git
 cd nzbpostarr
 
-# 2. Run — the bootstrapper handles venv + deps automatically
+# 2. Run - the bootstrapper handles venv + deps automatically
 python3 main.py
 ```
 
@@ -102,15 +102,39 @@ export NZBP_API_KEYS__GEEK=your_key_here
 
 ## Indexers
 
-Indexer definitions live in `indexers/` as YAML files. Copy `_template.yaml` to add a new indexer — no code changes needed.
+Indexer definitions live in `indexers/` as YAML files. No code changes are needed
+to add one.
 
 Supported indexers included by default:
 - NZBGeek (`geek`)
 - NZBPlanet (`planet`)
-- NZBsu (`su`)
-- NZBslug (`slug`)
-- NZBsin (`in`)
-- OMGwtfNZBs (`omg`)
+- NZB.su (`su`)
+- DrunkenSlug (`slug`)
+- NZBs.in (`in`)
+- OMGwtfnzbs (`omg`)
+
+### Adding your own
+
+Most indexers run Newznab/nZEDb and share one submission shape. For those, copy
+`indexers/newznab.example.yaml`, rename it to `yourindexer.yaml`, and fill in the
+host and category codes:
+
+```bash
+cp indexers/newznab.example.yaml indexers/yourindexer.yaml
+```
+
+Set `profile: newznab` to opt in explicitly to the standard Newznab request
+parameters. For anything that is not a plain Newznab API (header auth, a custom
+upload path, curl-style submission), start from `indexers/_template.yaml`
+instead, which documents every supported field.
+
+Files named `*.example.yaml`, `*.template.yaml`, or starting with `_` are never
+loaded as live indexers, so the bundled examples stay inert until you copy them.
+
+Confirm the submit endpoint, API-key parameter name, and category codes against
+your indexer's own API documentation before use. These differ even between sites
+that both run Newznab: the six bundled definitions already use three different
+upload paths.
 
 ---
 
@@ -151,7 +175,70 @@ python3 main.py --headless pending
 
 # View upload history
 python3 main.py --headless history
+
+# Inspect and control the shared upload queue
+python3 main.py --headless queue status
+python3 main.py --headless queue pause
+python3 main.py --headless queue resume
+python3 main.py --headless queue clear
+python3 main.py --headless queue job retry <JOB_ID>
+
+# Tail the application log
+python3 main.py --headless logs --lines 200
 ```
+
+### Scripting
+
+Every command accepts `--json` and writes machine-readable output to stdout,
+with all logging on stderr, so it pipes straight into `jq`:
+
+```bash
+python3 main.py --headless queue status --json | jq '.running[].job_id'
+```
+
+`status` exits 1 when a required external tool is missing, and `indexers` exits
+1 when no indexer is enabled, so a monitoring script can check state without
+parsing output.
+
+---
+
+## MCP Endpoint (optional)
+
+NZBPostarr can expose a [Model Context Protocol](https://modelcontextprotocol.io)
+endpoint so an AI assistant can inspect the queue, read stats and (optionally)
+control jobs.
+
+It is **off by default** and the SDK is **not** part of `requirements.lock`,
+because it pulls in roughly fifteen further packages that nothing else needs.
+To turn it on:
+
+```bash
+pip install mcp
+```
+
+```yaml
+mcp_enabled: true
+mcp_token: 'a-long-random-string' # required; no token means no endpoint
+mcp_allow_mutations: false # true also exposes the job-control tools
+```
+
+The endpoint is served at `/mcp` inside the normal web process, so it sees the
+same live queue the UI does. It authenticates with its own bearer token rather
+than the browser session cookie:
+
+```
+Authorization: Bearer a-long-random-string
+```
+
+Read-only tools: `get_status`, `list_jobs`, `get_job`, `get_job_items`,
+`get_dashboard`, `get_stats`, `list_indexers`, `get_history`,
+`get_recent_errors`, `get_logs`.
+
+Additional tools when `mcp_allow_mutations` is true: `trigger_upload`,
+`pause_queue`, `resume_queue`, `pause_job`, `resume_job`, `stop_job`,
+`retry_job`.
+
+API keys and NNTP credentials are never included in any tool response.
 
 ---
 
@@ -251,4 +338,4 @@ excluded from version control and preserved across packaged upgrades.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).

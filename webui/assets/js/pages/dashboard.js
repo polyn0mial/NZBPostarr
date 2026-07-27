@@ -1,5 +1,6 @@
 import {
     appendHistoryPoint,
+    badgeClass,
     computePositiveRateDelta,
     createVuePage,
     mapDeltaHistorySeries,
@@ -811,10 +812,12 @@ const dashboard = createVuePage({
             return `size-8 rounded-lg flex items-center justify-center ${cfg.bg}`;
         },
         jobSpeedBadgeClass() {
-            return 'flex items-center px-2 bg-notion-accent/10 rounded font-medium text-notion-accent gap-1.5 py-0.5 text-[10px] whitespace-nowrap';
+            return 'badge flex items-center gap-1.5 bg-notion-accent/10 font-medium text-notion-accent whitespace-nowrap';
         },
         jobStatusBadgeClass() {
-            return 'font-medium uppercase px-2 rounded bg-notion-bg-hover text-notion-text-secondary text-[10px] py-0.5 whitespace-nowrap';
+            // 'gray' in colorClassMap is exactly this neutral tint; going through
+            // the shared helper keeps the badge shape in one place.
+            return badgeClass('gray', 'font-medium uppercase whitespace-nowrap');
         },
         monitorRowStatusClass(monitor) {
             const job = monitor.displayJob;

@@ -15,7 +15,9 @@ _SENSITIVE_KEY_RE = re.compile(
     r"(?:$|[-_.])",
     re.IGNORECASE,
 )
-_URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+# Any scheme, not just http(s): NNTP/FTP/WS URLs carry userinfo too, and a
+# credential-bearing nntp://user:pass@host in a log line must be masked.
+_URL_RE = re.compile(r"[a-z][a-z0-9+.\-]*://[^\s\"'<>]+", re.IGNORECASE)
 _KEY_VALUE_RE = re.compile(
     r"(?P<prefix>(?<![\w-])"
     r"(?:api|api[-_]?keys?|apikey|tokens?|secrets?|password|passwd|pass|authorization|auth|usernames?|user)"

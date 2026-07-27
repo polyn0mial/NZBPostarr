@@ -404,7 +404,7 @@
         <div :class="sectionContentClass('active-jobs')">
             <div>
                 <!-- Running Job -->
-                <div v-if="primaryRunningJob" class="p-4 bg-notion-bg hover:bg-notion-bg-hover transition-all duration-300 overflow-hidden min-w-0">
+                <div v-if="primaryRunningJob" class="p-4 bg-notion-bg hover:bg-notion-bg-hover transition-colors duration-300 overflow-hidden min-w-0">
                     <div class="flex items-center justify-between mb-3">
                         <div class="flex items-center gap-3 min-w-0 overflow-hidden">
                             <div :class="jobStatusBgClass(primaryRunningJob)" class="shrink-0">
@@ -501,7 +501,7 @@
                     </div>
                 </div>
 
-                <!-- Next Queue Item (peek — max 1) -->
+                <!-- Next Queue Item (peek - max 1) -->
                 <div v-if="nextQueueItem" class="flex items-center gap-3 px-4 py-2.5 bg-notion-bg border-t border-notion-divider">
                     <div class="size-6 rounded flex items-center justify-center bg-notion-bg-hover shrink-0">
                         <lucide-icon name="clock" icon-class="size-3 text-notion-text-tertiary"></lucide-icon>

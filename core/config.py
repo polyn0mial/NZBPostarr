@@ -233,6 +233,18 @@ class Config(BaseSettings):
     enable_password: bool = False
     web_username: str = "admin"
 
+    # Model Context Protocol endpoint, mounted at /mcp when enabled.
+    # Off by default: it needs the optional `mcp` package, and it exposes queue
+    # control to any client holding mcp_token. The token is required; without
+    # one the endpoint stays unmounted even if mcp_enabled is true.
+    mcp_enabled: bool = False
+    mcp_token: Optional[str] = None
+    mcp_allow_mutations: bool = False
+    # Host header allow-list for the MCP endpoint. ["*"] disables the SDK's
+    # DNS-rebinding check, which is the workable default for a self-hosted app
+    # reached under a LAN IP, reverse proxy or container alias.
+    mcp_allowed_hosts: List[str] = ["*"]
+
     # Dashboard Settings
     dashboard_stats_enabled: bool
     dashboard_stats_modules: List[str]

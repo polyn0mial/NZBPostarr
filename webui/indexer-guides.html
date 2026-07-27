@@ -15,7 +15,7 @@
             @mousedown.prevent="activeSection = r.id; searchQuery=''; searchFocused=false; window.scrollTo({top:0,behavior:'smooth'})"
             class="w-full text-left px-3 py-2 text-xs hover:bg-notion-bg-hover transition-colors border-b border-notion-border/50 last:border-0">
             <span class="text-notion-text-primary font-medium" v-text="r.title"></span>
-            <span class="text-notion-text-tertiary ml-2" v-text="'— ' + r.group"></span>
+            <span class="text-notion-text-tertiary ml-2" v-text="'- ' + r.group"></span>
         </button>
     </div>
 </div>
@@ -332,7 +332,7 @@
         <div v-if="activeSection==='overview'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
             <div class="doc-h2" style="margin-top: 0">
                 <lucide-icon name="puzzle" icon-class="w-4.5 h-4.5 text-notion-accent"></lucide-icon>
-                Indexer Plugin System — Overview
+                Indexer Plugin System - Overview
             </div>
             <p>
                 NZBPostarr uses a
@@ -341,7 +341,7 @@
                 <code class="doc-code">.yaml</code>
                 file in
                 <code class="doc-code">indexers/</code>
-                . Adding a new indexer means creating a new YAML file — no Python code required.
+                . Adding a new indexer means creating a new YAML file - no Python code required.
             </p>
 
             <div class="doc-h3">
@@ -353,7 +353,7 @@
                     <span class="idx-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">1</span>
                     <div>
                         <strong class="text-notion-text-primary">Boot</strong>
-                        —
+                        -
                         <code class="doc-code">IndexerRegistry</code>
                         scans
                         <code class="doc-code">indexers/*.yaml</code>
@@ -368,7 +368,7 @@
                     <span class="idx-badge" style="background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3)">2</span>
                     <div>
                         <strong class="text-notion-text-primary">Config Resolution</strong>
-                        — API keys, usernames, enabled/backfill/priority flags are resolved from
+                        - API keys, usernames, enabled/backfill/priority flags are resolved from
                         <code class="doc-code">config.yaml</code>
                         at runtime via
                         <code class="doc-code">resolve_indexer_*</code>
@@ -379,7 +379,7 @@
                     <span class="idx-badge" style="background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3)">3</span>
                     <div>
                         <strong class="text-notion-text-primary">Upload</strong>
-                        — The uploader reads the indexer's
+                        - The uploader reads the indexer's
                         <code class="doc-code">method</code>
                         ,
                         <code class="doc-code">auth</code>
@@ -394,7 +394,7 @@
                     <span class="idx-badge" style="background: rgba(34, 197, 94, 0.15); color: #4ade80; border: 1px solid rgba(34, 197, 94, 0.3)">4</span>
                     <div>
                         <strong class="text-notion-text-primary">Response</strong>
-                        — Success/duplicate detection uses
+                        - Success/duplicate detection uses
                         <code class="doc-code">text_patterns</code>
                         ,
                         <code class="doc-code">json_path</code>
@@ -458,7 +458,7 @@
                 <tr>
                     <td><code class="doc-code">none</code></td>
                     <td>DrunkenSlug</td>
-                    <td>No authentication — session/cookie-based upload</td>
+                    <td>No authentication - session/cookie-based upload</td>
                 </tr>
             </table>
 
@@ -467,7 +467,7 @@
                 Config Keys Per Indexer
             </div>
             <pre class="doc-pre">
-# config.yaml — per-indexer controls
+# config.yaml - per-indexer controls
 api_keys:
   geek: 'YOUR_NZBGEEK_API_KEY'
   su: 'YOUR_NZBSU_API_KEY'
@@ -617,7 +617,7 @@ color: '#808080'                            # Hex colour for UI &amp; logs</pre
                 </div>
                 <div class="flex items-center gap-2 bg-notion-bg rounded border border-notion-border px-3 py-1.5">
                     <lucide-icon name="square-check" icon-class="size-3.5 text-green-400"></lucide-icon>
-                    Restart NZBPostarr — registry auto-loads on boot
+                    Restart NZBPostarr - registry auto-loads on boot
                 </div>
             </div>
         </div>
@@ -822,7 +822,7 @@ curl -k -s -L -m 60 \
 <span style="color:#86efac"># Success (NZB + NFO)</span>
 {"response":{"@attributes":{"API":"OK","NFO":"OK","REGISTER":"OK"}}}
 
-<span style="color:#86efac"># Failure — bad API key</span>
+<span style="color:#86efac"># Failure - bad API key</span>
 {"response":{"@attributes":{"API":"ERROR","REGISTER":"INVALID API KEY"}}}</pre>
 
             <div class="doc-h3">
@@ -852,7 +852,7 @@ fi</pre
             <div class="doc-callout doc-callout-ok">
                 <strong>NZBPostarr config:</strong>
                 <code class="doc-code">api_keys.geek: YOUR_KEY</code>
-                — that's all. Category, NFO, success detection are all handled automatically from
+                - that's all. Category, NFO, success detection are all handled automatically from
                 <code class="doc-code">geek.yaml</code>
                 .
             </div>
@@ -870,7 +870,7 @@ fi</pre
             <p>
                 NZBs.in uses
                 <strong class="text-notion-text-primary">header-based Bearer token authentication</strong>
-                — different from most Newznab indexers. It also supports optional MediaInfo, screenshots, and NFO attachments in the same upload.
+                - different from most Newznab indexers. It also supports optional MediaInfo, screenshots, and NFO attachments in the same upload.
             </p>
 
             <div class="doc-h3">
@@ -1110,7 +1110,7 @@ else:
                 <strong>not counted</strong>
                 towards your API rate limits.
                 <br />
-                • Processing may take a few minutes after upload — don't re-upload.
+                • Processing may take a few minutes after upload - don't re-upload.
                 <br />
                 • Add a 2-second delay between consecutive uploads to avoid abuse protection.
                 <br />
@@ -1131,7 +1131,7 @@ else:
             </div>
 
             <div class="doc-callout doc-callout-err">
-                <strong>CRITICAL — The URL situation:</strong>
+                <strong>CRITICAL - The URL situation:</strong>
                 NZB.su has
                 <strong>two domains</strong>
                 . Only
@@ -1190,13 +1190,13 @@ else:
                 </tr>
                 <tr>
                     <td><strong>Rate Limiting</strong></td>
-                    <td>Cloudflare — wait 1-2s between requests; HTTP 429 with Retry-After: 5 on burst</td>
+                    <td>Cloudflare - wait 1-2s between requests; HTTP 429 with Retry-After: 5 on burst</td>
                 </tr>
             </table>
 
             <div class="doc-h3">
                 <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
-                NZB Upload —
+                NZB Upload -
                 <code class="doc-code">t=nzbadd</code>
             </div>
             <p>
@@ -1697,7 +1697,7 @@ else:
                 <span class="text-[10px] text-notion-text-tertiary ml-2">omgwtfnzbs.org</span>
             </div>
             <p>
-                OMG is unique among indexers — it uses
+                OMG is unique among indexers - it uses
                 <strong class="text-notion-text-primary">cURL-based submission</strong>
                 with both username and API key in the query string, and its own category system. It also
                 <strong>requires an NFO</strong>
@@ -1731,7 +1731,7 @@ else:
                 <tr>
                     <td><strong>Requires Username</strong></td>
                     <td>
-                        Yes — both
+                        Yes - both
                         <code class="doc-code">api_keys.omg</code>
                         and
                         <code class="doc-code">usernames.omg</code>
@@ -1757,7 +1757,7 @@ else:
             <p>
                 OMG uses a
                 <strong>mixed system</strong>
-                — some categories are strings, some are numbers:
+                - some categories are strings, some are numbers:
             </p>
             <table class="doc-table">
                 <tr>
@@ -2045,7 +2045,7 @@ NZB_POST_CMD = curl -X POST -k -s -L -m 60 \
                 </div>
                 <div class="flex items-start gap-2">
                     <span class="text-amber-400">•</span>
-                    You can edit and delete uploads for ~12 hours — after that they become anonymous
+                    You can edit and delete uploads for ~12 hours - after that they become anonymous
                 </div>
                 <div class="flex items-start gap-2">
                     <span class="text-amber-400">•</span>
@@ -2053,7 +2053,7 @@ NZB_POST_CMD = curl -X POST -k -s -L -m 60 \
                 </div>
                 <div class="flex items-start gap-2">
                     <span class="text-amber-400">•</span>
-                    OMG requires NFO for every upload — NZBPostarr creates an empty one if missing (
+                    OMG requires NFO for every upload - NZBPostarr creates an empty one if missing (
                     <code class="doc-code">requires_nfo: true</code>
                     )
                 </div>
@@ -2086,7 +2086,7 @@ NZB_POST_CMD = curl -X POST -k -s -L -m 60 \
                 <strong class="text-notion-text-primary">Newznab protocol</strong>
                 . It has both primary and Australian mirror domains. Note: NZBPlanet does
                 <strong>NOT</strong>
-                support NFO uploads — sending an NFO field causes errors.
+                support NFO uploads - sending an NFO field causes errors.
             </p>
 
             <div class="doc-h3">
@@ -2126,7 +2126,7 @@ NZB_POST_CMD = curl -X POST -k -s -L -m 60 \
 
             <div class="doc-h3">
                 <lucide-icon name="upload" icon-class="size-3.5 text-green-400"></lucide-icon>
-                NZB Upload —
+                NZB Upload -
                 <code class="doc-code">t=nzbadd</code>
             </div>
             <table class="doc-table">
@@ -2399,7 +2399,7 @@ curl -X POST \
             <p>
                 DrunkenSlug uses a simple file upload endpoint with
                 <strong class="text-notion-text-primary">no authentication</strong>
-                — it relies on cookies/session for authorization. It does
+                - it relies on cookies/session for authorization. It does
                 <strong>not</strong>
                 use categories or NFO for uploads.
             </p>
@@ -2458,15 +2458,15 @@ curl -X POST \
                 </tr>
                 <tr>
                     <td>NFO</td>
-                    <td>—</td>
-                    <td>—</td>
+                    <td>-</td>
+                    <td>-</td>
                     <td>Not supported</td>
                 </tr>
                 <tr>
                     <td>Category</td>
-                    <td>—</td>
-                    <td>—</td>
-                    <td>Not used — auto-categorized by DrunkenSlug</td>
+                    <td>-</td>
+                    <td>-</td>
+                    <td>Not used - auto-categorized by DrunkenSlug</td>
                 </tr>
             </table>
 

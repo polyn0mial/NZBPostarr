@@ -187,6 +187,17 @@ export const colorClassMap = {
     'gray': { bg: 'bg-notion-bg-hover', text: 'text-notion-text-secondary', dot: 'bg-gray-400' },
 };
 
+/**
+ * Build a badge class string: the shared `.badge` layout primitive (padding/
+ * rounded/font-size, see tailwind-input.css) plus the bg/text tint for a
+ * colorClassMap key. Falls back to the neutral 'gray' tint for unknown colors.
+ * Extra classes (e.g. 'font-bold uppercase') can be appended by the caller.
+ */
+export function badgeClass(color, extraClasses = '') {
+    const tint = colorClassMap[color] || colorClassMap['gray'];
+    return `badge ${tint.bg} ${tint.text}${extraClasses ? ' ' + extraClasses : ''}`;
+}
+
 // ============================================================
 //  STATUS CONFIGS FOR JOBS
 // ============================================================
@@ -473,6 +484,97 @@ const StatsCard = {
     }
 };
 
+/**
+ * Shared modal shell: teleport + backdrop + panel + header + close button.
+ *
+ * Replaces the hand-coded block that had drifted apart across the pages (some
+ * used a self-click backdrop, some a separate overlay div, headers differed).
+ * Body content goes in the default slot; extra header buttons in #header-actions.
+ *
+ *   <modal :open="showThing" title="Thing" icon="list" @close="closeThing()">
+ *       <div class="overflow-y-auto">...</div>
+ *   </modal>
+ */
+const openModalStack = []; // Escape only closes the topmost open modal
+
+const Modal = {
+    props: {
+        open: { type: Boolean, default: false },
+        title: { type: String, default: '' },
+        subtitle: { type: String, default: '' },
+        icon: { type: String, default: '' },
+        iconClass: { type: String, default: 'text-notion-accent' },
+        badge: { type: [String, Number], default: null },
+        maxWidth: { type: String, default: 'max-w-2xl' },
+        panelClass: { type: String, default: 'bg-notion-bg-secondary max-h-[85vh]' },
+        zClass: { type: String, default: 'z-50' },
+        teleport: { type: Boolean, default: true },
+        closeDisabled: { type: Boolean, default: false },
+        closeOnBackdrop: { type: Boolean, default: true }
+    },
+    emits: ['close'],
+    template: `
+        <Teleport to="body" :disabled="!teleport">
+            <Transition name="modal">
+                <div v-if="open" :class="['fixed inset-0 flex items-end sm:items-center justify-center sm:p-4', zClass]" role="dialog" aria-modal="true">
+                    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="onBackdrop()"></div>
+                    <div :class="['relative border border-notion-border rounded-t-xl sm:rounded-lg shadow-2xl w-full flex flex-col overflow-hidden', maxWidth, panelClass]">
+                        <div class="shrink-0 flex items-center justify-between gap-3 px-4 py-3 border-b border-notion-divider bg-notion-bg-secondary">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <lucide-icon v-if="icon" :name="icon" :icon-class="['size-4 shrink-0', iconClass]"></lucide-icon>
+                                <div class="min-w-0">
+                                    <h3 class="text-sm font-semibold text-notion-text-primary truncate">{{ title }}</h3>
+                                    <p v-if="subtitle" class="text-[10px] text-notion-text-tertiary truncate">{{ subtitle }}</p>
+                                </div>
+                                <span v-if="badge !== null && badge !== ''" class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium shrink-0">{{ badge }}</span>
+                            </div>
+                            <div class="flex items-center gap-3 shrink-0">
+                                <slot name="header-actions"></slot>
+                                <button @click="$emit('close')" :disabled="closeDisabled" class="icon-btn disabled:opacity-40" aria-label="Close">
+                                    <lucide-icon name="x" icon-class="size-4"></lucide-icon>
+                                </button>
+                            </div>
+                        </div>
+                        <slot></slot>
+                    </div>
+                </div>
+            </Transition>
+        </Teleport>
+    `,
+    watch: {
+        open: {
+            immediate: true,
+            handler(isOpen) {
+                const at = openModalStack.indexOf(this);
+                if (isOpen) {
+                    if (at === -1) openModalStack.push(this);
+                } else if (at !== -1) {
+                    openModalStack.splice(at, 1);
+                }
+            }
+        }
+    },
+    mounted() {
+        this._modalKeyHandler = (event) => {
+            if (event.key !== 'Escape' || this.closeDisabled) return;
+            if (openModalStack[openModalStack.length - 1] !== this) return;
+            event.preventDefault();
+            this.$emit('close');
+        };
+        document.addEventListener('keydown', this._modalKeyHandler);
+    },
+    beforeUnmount() {
+        document.removeEventListener('keydown', this._modalKeyHandler);
+        const at = openModalStack.indexOf(this);
+        if (at !== -1) openModalStack.splice(at, 1);
+    },
+    methods: {
+        onBackdrop() {
+            if (this.closeOnBackdrop && !this.closeDisabled) this.$emit('close');
+        }
+    }
+};
+
 const Sparkline = {
     props: {
         data: Array,
@@ -659,6 +761,19 @@ export function createVuePage(pageOptions = {}) {
                 { label: 'Stats', href: '/stats', icon: 'activity', title: 'System Stats', visibilityKey: 'stats_page_enabled' },
                 { label: 'Settings', href: '/settings', icon: 'settings', title: 'Settings', iconOnly: true }
             ],
+            // Shared confirm dialog (see confirmDialog(); markup lives in base.html)
+            confirmState: {
+                open: false,
+                title: 'Are you sure?',
+                message: '',
+                detail: '',
+                icon: 'help-circle',
+                danger: false,
+                confirmLabel: 'Confirm',
+                cancelLabel: 'Cancel',
+            },
+            _confirmResolver: null,
+            _confirmKeyHandler: null,
             sessionPeaks: {}, // Shared peak tracking for sparklines
             historyIdCounter: 1000, // Shared ID counter
             toastIdCounter: 0,
@@ -900,6 +1015,67 @@ export function createVuePage(pageOptions = {}) {
             }
         },
 
+        // ============================================================
+        // SHARED CONFIRM DIALOG
+        // Themed, promise-returning replacement for the native confirm():
+        //     if (!(await this.confirmDialog('Delete 3 jobs?', { danger: true }))) return;
+        // Resolves true on confirm, false on cancel / Escape / backdrop click.
+        // The markup lives in base.html so every page inherits it.
+        // ============================================================
+        confirmDialog(message, options = {}) {
+            // Opening a second dialog cancels the first instead of orphaning its promise.
+            if (this._confirmResolver) this._settleConfirmDialog(false);
+
+            const opts = options || {};
+            this.confirmState = {
+                open: true,
+                title: opts.title || 'Are you sure?',
+                message: message === null || message === undefined ? '' : String(message),
+                detail: opts.detail ? String(opts.detail) : '',
+                icon: opts.icon || (opts.danger ? 'alert-triangle' : 'help-circle'),
+                danger: !!opts.danger,
+                confirmLabel: opts.confirmLabel || 'Confirm',
+                cancelLabel: opts.cancelLabel || 'Cancel',
+            };
+
+            // Capture-phase so the dialog wins over page-level key handlers.
+            this._confirmKeyHandler = (event) => {
+                if (event.key !== 'Escape' && event.key !== 'Enter') return;
+                event.preventDefault();
+                event.stopPropagation();
+                this._settleConfirmDialog(event.key === 'Enter');
+            };
+            document.addEventListener('keydown', this._confirmKeyHandler, true);
+
+            this.$nextTick(() => {
+                const btn = this.$refs.confirmDialogAccept;
+                if (btn && typeof btn.focus === 'function') btn.focus();
+            });
+
+            return new Promise((resolve) => {
+                this._confirmResolver = resolve;
+            });
+        },
+
+        _settleConfirmDialog(result) {
+            const resolver = this._confirmResolver;
+            this._confirmResolver = null;
+            if (this._confirmKeyHandler) {
+                document.removeEventListener('keydown', this._confirmKeyHandler, true);
+                this._confirmKeyHandler = null;
+            }
+            this.confirmState = { ...this.confirmState, open: false };
+            if (resolver) resolver(result);
+        },
+
+        acceptConfirmDialog() {
+            this._settleConfirmDialog(true);
+        },
+
+        cancelConfirmDialog() {
+            this._settleConfirmDialog(false);
+        },
+
         // Format utilities available on the instance
         formatBytes: formatUtils.formatBytes,
         formatDuration: formatUtils.formatDuration,
@@ -987,8 +1163,8 @@ export function createVuePage(pageOptions = {}) {
             const displayName = this.jobDisplayName(job);
             if (displayName) return displayName;
             const catName = categoryLabel(job.category);
-            if (job.status === 'queued') return `${catName} — Queued`;
-            if (job.status === 'paused') return `${catName} — Paused`;
+            if (job.status === 'queued') return `${catName} - Queued`;
+            if (job.status === 'paused') return `${catName} - Paused`;
             return `${catName} Processing`;
         },
 
@@ -1469,6 +1645,8 @@ export function createVuePage(pageOptions = {}) {
                 document.removeEventListener('click', this._touchInfotipHandler);
                 this._touchInfotipHandler = null;
             }
+            // Release any awaiter blocked on an open confirm dialog.
+            if (this._confirmResolver) this._settleConfirmDialog(false);
             // Clear all managed intervals
             this._intervals.forEach(handle => {
                 if (handle && typeof handle === 'object') {
@@ -1492,6 +1670,7 @@ export function createVuePage(pageOptions = {}) {
     app.component('lucide-icon', LucideIcon);
     app.component('stats-card', StatsCard);
     app.component('sparkline', Sparkline);
+    app.component('modal', Modal);
     Object.entries(pageOptions.components || {}).forEach(([name, component]) => {
         app.component(name, component);
     });

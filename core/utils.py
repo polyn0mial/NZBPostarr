@@ -139,7 +139,7 @@ def log_backend_timing(
 
 def strip_ansi(text: str) -> str:
     """Remove ANSI escape sequences from a string."""
-    return Text.from_ansi(text).plain
+    return str(Text.from_ansi(text).plain)
 
 
 def extract_percentage(line: str) -> Optional[float]:
@@ -201,7 +201,7 @@ def _process_output_line(
         if not quiet:
             logger.log("PROGRESS", f"[{log_prefix}] {line}")
     elif lower_line.startswith("[warn]") or "will retry" in lower_line:
-        # Tool-level warnings (e.g. Nyuu [WARN] NNTP timeouts, post-check retries) —
+        # Tool-level warnings (e.g. Nyuu [WARN] NNTP timeouts, post-check retries) -
         # these are transient/recoverable and should be WARNING, not ERROR.
         logger.warning(f"[{log_prefix}] {line}")
     elif any(x in lower_line for x in ["error", "unknown", "failed"]):
@@ -276,11 +276,14 @@ def run_command(
             # or exits.  The unbuffered binary pipe also lets each read return
             # whatever is currently available.
             chunks: queue.Queue[Optional[bytes]] = queue.Queue()
+            # Bind the pipe locally: the `if process.stdout` guard above does not
+            # narrow the attribute inside the closure.
+            stdout_pipe = process.stdout
 
             def read_stdout() -> None:
                 try:
                     while True:
-                        chunk = process.stdout.read(64 * 1024)
+                        chunk = stdout_pipe.read(64 * 1024)
                         if not chunk:
                             break
                         if isinstance(chunk, str):
@@ -760,7 +763,7 @@ def should_skip_file(filename: str, category: str, skip_config: Optional[Dict[st
                 if re.search(pattern, filename, re.IGNORECASE):
                     return True
             except re.error:
-                continue  # invalid regex — skip silently
+                continue  # invalid regex - skip silently
         else:
             if fnmatch.fnmatch(filename.lower(), pattern.lower()):
                 return True

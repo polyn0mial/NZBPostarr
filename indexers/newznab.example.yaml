@@ -1,0 +1,105 @@
+# Generic Newznab Indexer Example
+# Copy this file to your_indexer.yaml, replace YOUR-HOST/your API key details,
+# and it is ready to use - no code changes needed.
+#
+# This covers the plain Newznab-API shape shared by NZBGeek, NZBPlanet, and
+# NZB.su: query-param API key auth, standard newznab category numbers, and a
+# POST submission that expects t=nzbadd. If your indexer matches that shape,
+# this file is all you need.
+#
+# NOTE: this file is inert on purpose - it ends in ".example.yaml" and is
+# never loaded as a live indexer (see IndexerRegistry._load_indexers). Only
+# the copy you rename to plain ".yaml" gets loaded.
+
+# Required: Unique identifier (lowercase, no spaces)
+id: my_newznab_indexer
+
+# Required: Display name shown in the UI
+name: My Newznab Indexer
+
+# Optional: Description for the UI
+description: A Newznab-API indexer
+
+# Optional: Website URL
+website: https://YOUR-HOST
+
+# Optional: Hardcoded favicon URL (used instead of automated discovery)
+favicon_url: https://YOUR-HOST/favicon.ico
+
+# Optional: Lucide icon name (see https://lucide.dev/icons)
+icon: globe
+
+# Optional: Indexer color (hex code used for logs and UI)
+color: '#808080'
+
+# Required: API endpoint URL. Newznab installs conventionally serve their
+# API at "/api" - replace YOUR-HOST with the indexer's API hostname.
+submit_url: https://YOUR-HOST/api
+
+# HTTP method: POST, PUT, or CURL (for curl-based submissions)
+method: POST
+
+# Explicit opt-in to the Newznab request shape: auto-populates the t,
+# apikey, cat, and name query params the same way the legacy submit_url
+# "/api"-suffix heuristic would, but without depending on the URL shape.
+# This is the one line that replaces hand-authoring the rest of the profile.
+profile: newznab
+
+# Authentication configuration
+auth:
+  # Method: query_param, header, form_field, curl_url, or none
+  method: query_param
+
+  # Parameter name for the API key
+  api_key_param: apikey
+
+# Category mapping (standard newznab category numbers, proven by
+# indexers/planet.yaml and indexers/su.yaml)
+categories:
+  tv: '5040' # TV/HD
+  movie: '2040' # Movies/HD
+  movie_sd: '2030' # Movies/SD
+  movie_hd: '2040' # Movies/HD
+  movie_uhd: '2045' # Movies/UHD
+  movie_dvd: '2070' # Movies/DVD
+  anime: '5070' # TV/Anime
+  music: '3010' # Audio/MP3
+  books: '7020' # Books/Ebook
+  apps: '' # Leave blank to reject app uploads until mapped
+  misc: '5000' # Misc/Other
+  default: '' # Leave blank; strict mode does not use fallback defaults
+
+# Parameter name for category
+category_param: cat
+
+# File upload field names
+files:
+  # Field name for NZB file
+  nzb: file
+
+  # Field name for NFO file (set to null to disable)
+  nfo: nfo
+
+  # MIME type for NZB file
+  nzb_mime: application/x-nzb
+
+# Parameter name for release name
+name_param: name
+
+# Extra static query parameters. "t: nzbadd" is the newznab add-post action;
+# profile: newznab above already sends this, so it is only needed here if
+# you want to override the value.
+extra_params: {}
+  # t: nzbadd
+
+# Success detection patterns
+success:
+  text_patterns:
+    - '<success'
+    - 'CODE="601"'
+  duplicate_patterns:
+    - 'duplicate'
+    - 'already exists'
+
+# Request timeout in seconds
+timeout: 30

@@ -16,6 +16,13 @@ Usage examples:
   python main.py --headless pending
   python main.py --headless history
   python main.py --headless indexers
+  python main.py --headless queue status
+  python main.py --headless queue pause
+  python main.py --headless queue job stop <job_id>
+  python main.py --headless logs --lines 50
+  python main.py --headless --version
+
+Most commands accept --json for machine-readable output.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
@@ -45,24 +52,38 @@ def cmd_upload(args: argparse.Namespace) -> int:
     valid = list(dict.fromkeys(active_cats + ["all", "both"]))
 
     if category not in valid:
-        print(f"Error: Unknown category '{category}'.")
-        print(f"Available categories: {', '.join(valid)}")
+        if args.json:
+            print(
+                json.dumps(
+                    {
+                        "status": "error",
+                        "message": f"Unknown category '{category}'.",
+                        "available_categories": valid,
+                    },
+                    indent=2,
+                    default=str,
+                )
+            )
+        else:
+            print(f"Error: Unknown category '{category}'.")
+            print(f"Available categories: {', '.join(valid)}")
         return 1
 
-    print("━" * 60)
-    print("  NZBPostarr — Headless Upload")
-    print("━" * 60)
-    print(f"  Category:    {category.upper()}")
-    print(f"  Limit:       {args.limit or 'All'}")
-    print(f"  Test Mode:   {args.test}")
-    print(f"  Force:       {args.force}")
-    if args.indexer:
-        print(f"  Indexer:     {args.indexer}")
-    if args.path:
-        print(f"  Path:        {args.path}")
-    print("━" * 60 + "\n")
+    if not args.json:
+        print("━" * 60)
+        print("  NZBPostarr - Headless Upload")
+        print("━" * 60)
+        print(f"  Category:    {category.upper()}")
+        print(f"  Limit:       {args.limit or 'All'}")
+        print(f"  Test Mode:   {args.test}")
+        print(f"  Force:       {args.force}")
+        if args.indexer:
+            print(f"  Indexer:     {args.indexer}")
+        if args.path:
+            print(f"  Path:        {args.path}")
+        print("━" * 60 + "\n")
 
-    # Handle Ctrl+C gracefully — UploadService sets the thread job for us,
+    # Handle Ctrl+C gracefully - UploadService sets the thread job for us,
     # so we hook SIGINT to set stop_requested on whatever job is active.
     service = get_upload_service()
     stop_event = threading.Event()
@@ -71,7 +92,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
         if stop_event.is_set():
             print("\nForce quitting...")
             sys.exit(1)
-        print("\nStop requested — finishing current item...")
+        print("\nStop requested - finishing current item...")
         stop_event.set()
         # Signal the job via the thread-local job dict
         from core.utils import get_thread_job
@@ -85,7 +106,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
 
     paths = [args.path] if args.path else None
 
-    # Delegate entirely to UploadService — single source of truth for
+    # Delegate entirely to UploadService - single source of truth for
     # job creation, force-flag resolution, processing, and history recording.
     try:
         job = service.run_job_sync(
@@ -109,26 +130,86 @@ def cmd_upload(args: argparse.Namespace) -> int:
     status = job.get("status", "completed")
     summary = job.get("summary", {})
 
-    print("\n" + "━" * 60)
-    print(f"  Result:      {status.upper()}")
-    print(f"  Duration:    {summary.get('duration', '—')}")
-    print(f"  Processed:   {summary.get('processed', '0/0')}")
-    print(f"  Skipped:     {summary.get('skipped', 0)}")
-    print("━" * 60)
+    if args.json:
+        payload = {
+            "status": status,
+            "category": category,
+            "job_id": job.get("job_id"),
+            "summary": {
+                "duration": summary.get("duration", "-"),
+                "processed": summary.get("processed", "0/0"),
+                "skipped": summary.get("skipped", 0),
+            },
+        }
+        print(json.dumps(payload, indent=2, default=str))
+    else:
+        print("\n" + "━" * 60)
+        print(f"  Result:      {status.upper()}")
+        print(f"  Duration:    {summary.get('duration', '-')}")
+        print(f"  Processed:   {summary.get('processed', '0/0')}")
+        print(f"  Skipped:     {summary.get('skipped', 0)}")
+        print("━" * 60)
 
     return 0 if status == "completed" else 1
 
 
 def cmd_status(args: argparse.Namespace) -> int:
-    """Show current configuration and system status."""
+    """Show current configuration and system status.
+
+    Exit codes: 0 when every required tool (rar, parpar, nyuu) is found on
+    PATH; 1 when any required tool is missing. mediainfo is optional and
+    does not affect the exit code.
+    """
     from core.config import get_config
-    from core.registry import get_registry
+    from core.registry import get_registry, resolve_indexer_enabled
 
     conf = get_config()
     registry = get_registry()
+    enabled = registry.enabled(conf)
+    all_idx = registry.all()
+
+    import shutil
+
+    required_tools = ["rar", "parpar", "nyuu"]
+    tool_paths = {tool: shutil.which(tool) for tool in required_tools + ["mediainfo"]}
+    missing_required = [tool for tool in required_tools if not tool_paths[tool]]
+
+    if args.json:
+        payload = {
+            "nntp_servers": [
+                {
+                    "name": srv.name,
+                    "host": srv.host,
+                    "port": srv.port,
+                    "enabled": bool(srv.enabled),
+                    "max_connections": srv.max_connections,
+                }
+                for srv in conf.nntp_servers
+            ],
+            "indexers": {
+                "enabled": len(enabled),
+                "total": len(all_idx),
+                "items": [
+                    {"id": idx.id, "name": idx.name, "enabled": resolve_indexer_enabled(idx, conf)}
+                    for idx in all_idx
+                ],
+            },
+            "folders": [
+                {
+                    "path": fp.get("path", "?"),
+                    "exists": Path(fp["path"]).exists() if fp.get("path") else False,
+                    "monitor": bool(fp.get("monitor")),
+                }
+                for fp in conf.folder_paths
+            ],
+            "tools": tool_paths,
+            "missing_required_tools": missing_required,
+        }
+        print(json.dumps(payload, indent=2, default=str))
+        return 1 if missing_required else 0
 
     print("━" * 60)
-    print("  NZBPostarr — System Status")
+    print("  NZBPostarr - System Status")
     print("━" * 60)
 
     # NNTP Servers
@@ -138,12 +219,8 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"    • {srv.name} ({srv.host}:{srv.port}) [{status}] [{srv.max_connections} conns]")
 
     # Indexers
-    enabled = registry.enabled(conf)
-    all_idx = registry.all()
     print(f"\n  Indexers: {len(enabled)}/{len(all_idx)} enabled")
     for idx in all_idx:
-        from core.registry import resolve_indexer_enabled
-
         is_on = resolve_indexer_enabled(idx, conf)
         mark = "✓" if is_on else "✗"
         print(f"    {mark} {idx.name} ({idx.id})")
@@ -158,16 +235,14 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(f"    {mark} {path}{monitor}")
 
     # Tools
-    import shutil
-
     print("\n  Required Tools:")
-    for tool in ["rar", "parpar", "nyuu", "mediainfo"]:
-        found = shutil.which(tool)
+    for tool in required_tools + ["mediainfo"]:
+        found = tool_paths[tool]
         mark = "✓" if found else "✗"
         print(f"    {mark} {tool}: {found or 'NOT FOUND'}")
 
     print()
-    return 0
+    return 1 if missing_required else 0
 
 
 def cmd_pending(args: argparse.Namespace) -> int:
@@ -186,7 +261,8 @@ def cmd_pending(args: argparse.Namespace) -> int:
     try:
         uploaded_names, _, _ = database.get_dashboard_data(active_ids)
     except database.DatabaseOperationalError as exc:
-        print(f"WARNING: proceeding with empty upload snapshot due to DB error: {exc}")
+        if not args.json:
+            print(f"WARNING: proceeding with empty upload snapshot due to DB error: {exc}")
         uploaded_names = set()
 
     # Determine which categories to show
@@ -197,7 +273,17 @@ def cmd_pending(args: argparse.Namespace) -> int:
         scanned_items = [item for item in scanned_items if item[0] == filter_cat]
 
     if not scanned_items:
-        print("No pending items matched the requested category.")
+        if args.json:
+            payload = {
+                "status": "empty",
+                "message": "No pending items matched the requested category.",
+                "categories": {},
+                "total": 0,
+                "pending": 0,
+            }
+            print(json.dumps(payload, indent=2, default=str))
+        else:
+            print("No pending items matched the requested category.")
         return 1
 
     grand_total = 0
@@ -208,6 +294,7 @@ def cmd_pending(args: argparse.Namespace) -> int:
         rel = relative_key(item, folder)
         grouped.setdefault(cat, []).append((folder, item, rel))
 
+    categories_payload: dict[str, Any] = {}
     for cat in sorted(grouped.keys()):
         items = grouped[cat]
         pending = [
@@ -219,14 +306,28 @@ def cmd_pending(args: argparse.Namespace) -> int:
         grand_total += len(items)
         grand_pending += len(pending)
 
-        print(f"\n  [{cat.upper()}] {len(pending)} pending / {len(items)} total")
-        if args.verbose and pending:
-            for folder, _item, rel in pending[:50]:
-                print(f"    • {folder.name}/{rel}")
-            if len(pending) > 50:
-                print(f"    ... and {len(pending) - 50} more")
+        if args.json:
+            entry: dict[str, Any] = {"pending": len(pending), "total": len(items)}
+            if args.verbose:
+                entry["items"] = [f"{folder.name}/{rel}" for folder, _item, rel in pending]
+            categories_payload[cat] = entry
+        else:
+            print(f"\n  [{cat.upper()}] {len(pending)} pending / {len(items)} total")
+            if args.verbose and pending:
+                for folder, _item, rel in pending[:50]:
+                    print(f"    • {folder.name}/{rel}")
+                if len(pending) > 50:
+                    print(f"    ... and {len(pending) - 50} more")
 
-    print(f"\n  Total: {grand_pending} pending / {grand_total} items")
+    if args.json:
+        payload = {
+            "categories": categories_payload,
+            "total": grand_total,
+            "pending": grand_pending,
+        }
+        print(json.dumps(payload, indent=2, default=str))
+    else:
+        print(f"\n  Total: {grand_pending} pending / {grand_total} items")
     return 0
 
 
@@ -235,6 +336,10 @@ def cmd_history(args: argparse.Namespace) -> int:
     from core import database
 
     jobs = database.get_job_history(limit=args.limit)
+
+    if args.json:
+        print(json.dumps({"jobs": jobs}, indent=2, default=str))
+        return 0
 
     if not jobs:
         print("No job history found.")
@@ -255,7 +360,7 @@ def cmd_history(args: argparse.Namespace) -> int:
 
             dur_str = format_seconds(dur)
         else:
-            dur_str = "—"
+            dur_str = "-"
         started = j.get("started_at", "?")
         if isinstance(started, str) and len(started) > 19:
             started = started[:19]
@@ -267,7 +372,10 @@ def cmd_history(args: argparse.Namespace) -> int:
 
 
 def cmd_indexers(args: argparse.Namespace) -> int:
-    """Show detailed indexer information."""
+    """Show detailed indexer information.
+
+    Exit codes: 0 when at least one indexer is enabled, 1 when none are.
+    """
     from core import database
     from core.config import get_config
     from core.registry import get_registry, resolve_indexer_enabled
@@ -277,26 +385,46 @@ def cmd_indexers(args: argparse.Namespace) -> int:
     stats = database.get_detailed_stats()
     by_dest = stats.get("uploads", {}).get("by_destination", {})
 
-    print("━" * 60)
-    print("  NZBPostarr — Indexer Details")
-    print("━" * 60)
-
+    rows = []
+    enabled_count = 0
     for idx in registry.all():
         is_on = resolve_indexer_enabled(idx, conf)
-        status = "ENABLED" if is_on else "DISABLED"
+        if is_on:
+            enabled_count += 1
         dest_stats = by_dest.get(idx.id, {})
-        success = dest_stats.get("success", 0)
-        failed = dest_stats.get("failed", 0)
-
-        print(f"\n  {idx.name} ({idx.id}) — {status}")
-        print(f"    Website:    {idx.website or '—'}")
-        print(f"    Submit URL: {idx.submit_url or '—'}")
-        print(f"    Uploads:    {success} success, {failed} failed")
         cats = idx.categories.supported_categories() if idx.categories else []
-        print(f"    Categories: {', '.join(cats) if cats else '—'}")
+        rows.append(
+            {
+                "id": idx.id,
+                "name": idx.name,
+                "enabled": is_on,
+                "website": idx.website or None,
+                "submit_url": idx.submit_url or None,
+                "success": dest_stats.get("success", 0),
+                "failed": dest_stats.get("failed", 0),
+                "categories": cats,
+            }
+        )
+
+    if args.json:
+        payload = {"indexers": rows, "enabled_count": enabled_count}
+        print(json.dumps(payload, indent=2, default=str))
+        return 1 if enabled_count == 0 else 0
+
+    print("━" * 60)
+    print("  NZBPostarr - Indexer Details")
+    print("━" * 60)
+
+    for row in rows:
+        status = "ENABLED" if row["enabled"] else "DISABLED"
+        print(f"\n  {row['name']} ({row['id']}) - {status}")
+        print(f"    Website:    {row['website'] or '-'}")
+        print(f"    Submit URL: {row['submit_url'] or '-'}")
+        print(f"    Uploads:    {row['success']} success, {row['failed']} failed")
+        print(f"    Categories: {', '.join(row['categories']) if row['categories'] else '-'}")
 
     print()
-    return 0
+    return 1 if enabled_count == 0 else 0
 
 
 def cmd_stream(args: argparse.Namespace) -> int:
@@ -328,10 +456,10 @@ def cmd_stream(args: argparse.Namespace) -> int:
                 print(json.dumps(payload, indent=2, default=str))
             else:
                 print("━" * 60)
-                print("  NZBPostarr — Stream Monitor Saved")
+                print("  NZBPostarr - Stream Monitor Saved")
                 print("━" * 60)
-                print(f"  ID:            {monitor.get('id', '—')}")
-                print(f"  Folder:        {monitor.get('folder_path', '—')}")
+                print(f"  ID:            {monitor.get('id', '-')}")
+                print(f"  Folder:        {monitor.get('folder_path', '-')}")
                 print(f"  Category:      {monitor.get('category', 'misc')}")
                 print(f"  Posting:       {monitor.get('posting_server_name') or 'default'}")
                 print(f"  Submit Mode:   {monitor.get('submit_mode', 'post_and_submit')}")
@@ -378,7 +506,7 @@ def cmd_stream(args: argparse.Namespace) -> int:
             print(json.dumps(payload, indent=2, default=str))
         else:
             print("━" * 60)
-            print("  NZBPostarr — Stream Jobs Queued")
+            print("  NZBPostarr - Stream Jobs Queued")
             print("━" * 60)
             print(f"  Source:        {source}")
             print(f"  Category:      {args.category}")
@@ -421,12 +549,12 @@ def cmd_stream_monitors(args: argparse.Namespace) -> int:
         return 0
 
     print("━" * 80)
-    print("  NZBPostarr — Stream Monitors")
+    print("  NZBPostarr - Stream Monitors")
     print("━" * 80)
     for monitor in monitors:
         last_job = monitor.get("last_job") or {}
-        print(f"  ID:            {monitor.get('id', '—')}")
-        print(f"  Folder:        {monitor.get('folder_path', '—')}")
+        print(f"  ID:            {monitor.get('id', '-')}")
+        print(f"  Folder:        {monitor.get('folder_path', '-')}")
         print(f"  Category:      {monitor.get('category', 'misc')}")
         print(f"  Posting:       {monitor.get('posting_server_name') or 'default'}")
         print(f"  Submit Mode:   {monitor.get('submit_mode', 'post_and_submit')}")
@@ -434,8 +562,250 @@ def cmd_stream_monitors(args: argparse.Namespace) -> int:
         print(f"  Test Mode:     {bool(monitor.get('test_mode', False))}")
         print(f"  Dup Check:     {bool(monitor.get('enable_duplicate_check', True))}")
         if last_job:
-            print(f"  Last Job:      {last_job.get('job_id', '—')} [{last_job.get('status', 'unknown')}]")
+            print(f"  Last Job:      {last_job.get('job_id', '-')} [{last_job.get('status', 'unknown')}]")
         print("─" * 80)
+    return 0
+
+
+def _emit_result(args: argparse.Namespace, payload: dict[str, Any], human: str | None = None, rc: int = 0) -> int:
+    """Print a queue/job command result as JSON or a short human summary."""
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, default=str))
+        return rc
+
+    if human is not None:
+        print(human)
+    else:
+        print(payload.get("message") or payload.get("status", "done"))
+        control = payload.get("control")
+        if isinstance(control, dict):
+            print(f"  Queue paused: {bool(control.get('paused'))}")
+            active = control.get("active")
+            if active:
+                print(f"  Active job:   {active.get('job_id')} [{active.get('status')}] ({active.get('category')})")
+    return rc
+
+
+def _cmd_queue_status(args: argparse.Namespace, service: Any) -> int:
+    """Show running/queued/finished jobs and the queue-pause state.
+
+    Shares build_queue_snapshot with GET /queue so the CLI and the WebUI can
+    never disagree about how a job is classified.
+    """
+    from logic.services import build_queue_snapshot
+
+    payload = build_queue_snapshot(service)
+    running = payload["running"]
+    queued = payload["queued"]
+    finished = payload["finished"]
+    control = payload["control"]
+
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, default=str))
+        return 0
+
+    print("━" * 60)
+    print("  NZBPostarr - Queue Status")
+    print("━" * 60)
+    print(f"  Queue paused: {bool(control.get('paused'))}")
+    active = control.get("active")
+    if active:
+        print(f"  Active job:   {active.get('job_id')} [{active.get('status')}] ({active.get('category')})")
+
+    for label, jobs in (("Running", running), ("Queued", queued), ("Finished", finished)):
+        print(f"\n  {label}: {len(jobs)}")
+        for job in jobs:
+            print(f"    - {job.get('job_id')} [{job.get('status')}] {job.get('category')} - {job.get('progress') or ''}")
+
+    print("━" * 60)
+    return 0
+
+
+def cmd_queue_job(args: argparse.Namespace, service: Any) -> int:
+    """Control a single job by ID. Mirrors the per-job /jobs/{job_id}/* routes."""
+    job_command = getattr(args, "job_command", None)
+    job_id = getattr(args, "job_id", None)
+
+    if job_command == "pause":
+        if not service.pause_job(job_id):
+            return _emit_result(
+                args,
+                {"status": "error", "message": "Job not found or not running"},
+                human="Error: job not found or not running",
+                rc=1,
+            )
+        job = service.get_job(job_id) or {}
+        pause_pending = bool(job.get("pause_requested")) and job.get("status") == "running"
+        return _emit_result(
+            args,
+            {
+                "status": job.get("status", "paused"),
+                "job_id": job_id,
+                "message": (
+                    "Pause requested; waiting for the current safe checkpoint."
+                    if pause_pending
+                    else "Job paused; the scheduler lane is available."
+                ),
+            },
+        )
+
+    if job_command == "resume":
+        if not service.resume_job(job_id):
+            return _emit_result(
+                args,
+                {"status": "error", "message": "Job not found or not paused"},
+                human="Error: job not found or not paused",
+                rc=1,
+            )
+        job = service.get_job(job_id) or {}
+        queued = bool(job.get("resume_requested"))
+        return _emit_result(
+            args,
+            {
+                "status": job.get("status", "running"),
+                "job_id": job_id,
+                "message": "Job queued to resume when the scheduler lane is available." if queued else "Job resumed.",
+            },
+        )
+
+    if job_command == "stop":
+        clear = getattr(args, "clear", False)
+        ok = service.stop_and_clear_job(job_id) if clear else service.stop_job(job_id)
+        if not ok:
+            return _emit_result(
+                args,
+                {"status": "error", "message": "Job not found"},
+                human="Error: job not found",
+                rc=1,
+            )
+        return _emit_result(
+            args,
+            {
+                "status": "clearing" if clear else "stopping",
+                "job_id": job_id,
+                "message": "Job stopping and clearing from the queue." if clear else "Termination signal sent to job.",
+            },
+        )
+
+    if job_command == "retry":
+        ok, new_job_id, reason = service.retry_job(job_id)
+        if not ok:
+            message = "Job not found" if reason == "not-found" else "Job is not eligible for retry"
+            return _emit_result(
+                args,
+                {"status": "error", "message": message},
+                human=f"Error: {message}",
+                rc=1,
+            )
+        return _emit_result(
+            args,
+            {
+                "status": "queued",
+                "job_id": new_job_id,
+                "retry_of": job_id,
+                "message": f"Retry queued as {new_job_id}",
+            },
+        )
+
+    if job_command == "promote":
+        if not service.promote_job(job_id):
+            return _emit_result(
+                args,
+                {"status": "error", "message": "Job not found or not queued"},
+                human="Error: job not found or not queued",
+                rc=1,
+            )
+        return _emit_result(args, {"status": "promoted", "job_id": job_id})
+
+    print("Error: no per-job command given. Use '--headless queue job --help' to see available commands.")
+    return 1
+
+
+def cmd_queue(args: argparse.Namespace) -> int:
+    """Inspect or control the shared upload queue (mirrors the /queue routes).
+
+    Every action here calls the same UploadService/QueueServiceMixin methods
+    that app.py's /queue and /jobs routes call - no queue logic lives here.
+    """
+    from logic.services import get_upload_service
+
+    service = get_upload_service()
+    action = getattr(args, "queue_command", None) or "status"
+
+    if action == "status":
+        return _cmd_queue_status(args, service)
+
+    if action == "pause":
+        service.pause_queue(pause_active=True)
+        return _emit_result(
+            args,
+            {
+                "status": "paused",
+                "message": "Queue processing paused. New jobs remain queued until resumed.",
+                "control": service.get_queue_control_state(),
+            },
+        )
+
+    if action == "resume":
+        service.resume_queue()
+        return _emit_result(
+            args,
+            {
+                "status": "running",
+                "message": "Queue processing resumed.",
+                "control": service.get_queue_control_state(),
+            },
+        )
+
+    if action == "stop":
+        if getattr(args, "clear", False):
+            result = service.stop_queue_and_clear()
+            payload = {"status": "clearing", "message": "Active job stopping and queue clearing.", **result}
+        else:
+            service.stop_queue()
+            payload = {
+                "status": "stopped",
+                "message": "Active job stopping. Queue processing is paused.",
+                "control": service.get_queue_control_state(),
+            }
+        return _emit_result(args, payload)
+
+    if action == "clear":
+        cleared = service.clear_queued_jobs()
+        return _emit_result(args, {"cleared": cleared}, human=f"Cleared {cleared} queued job(s).")
+
+    if action == "revalidate":
+        result = service.revalidate_queued_jobs(include_paused=not getattr(args, "skip_paused", False))
+        payload = {"status": "success", **result}
+        human = f"Inspected {result['inspected']}, updated {result['updated']}, cancelled {result['cancelled']}."
+        return _emit_result(args, payload, human=human)
+
+    if action == "job":
+        return cmd_queue_job(args, service)
+
+    print("Error: no queue command given. Use '--headless queue --help' to see available commands.")
+    return 1
+
+
+def cmd_logs(args: argparse.Namespace) -> int:
+    """Show recent console log lines from the shared in-memory buffer."""
+    from logic.services import console
+
+    logs, last_seq = console.get_tail(args.lines)
+
+    if args.json:
+        print(json.dumps({"logs": logs, "last_seq": last_seq, "count": len(logs)}, indent=2, default=str))
+        return 0
+
+    if not logs:
+        print("No log entries yet.")
+        return 0
+
+    for entry in logs:
+        ts = entry.get("ts", "")
+        level = entry.get("level", "INFO")
+        msg = entry.get("msg", "")
+        print(f"[{ts}] {level:<8} {msg}")
     return 0
 
 
@@ -449,7 +819,7 @@ def _render_stats_summary(info: dict[str, Any]) -> str:
 
     lines = [
         "━" * 60,
-        "  NZBPostarr — Live Stats",
+        "  NZBPostarr - Live Stats",
         "━" * 60,
         f"  Host:        {info.get('hostname', '?')} ({info.get('platform', '?')})",
         f"  Uptime:      {format_seconds(info.get('uptime_seconds', 0) or 0)}",
@@ -512,7 +882,7 @@ def build_headless_parser() -> argparse.ArgumentParser:
     """Build the argument parser for headless mode."""
     parser = argparse.ArgumentParser(
         prog="nzbpostarr --headless",
-        description="NZBPostarr Headless CLI — Upload automation without the WebUI.",
+        description="NZBPostarr Headless CLI - Upload automation without the WebUI.",
     )
     sub = parser.add_subparsers(dest="command", help="Available commands")
 
@@ -533,7 +903,7 @@ def build_headless_parser() -> argparse.ArgumentParser:
         "--test",
         "-t",
         action="store_true",
-        help="Test mode — prepare and submit but skip actual NNTP upload",
+        help="Test mode - prepare and submit but skip actual NNTP upload",
     )
     p_upload.add_argument(
         "--force",
@@ -562,6 +932,11 @@ def build_headless_parser() -> argparse.ArgumentParser:
         "-p",
         default=None,
         help="Upload a specific file or folder path",
+    )
+    p_upload.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the job result as JSON",
     )
 
     # ── stream ──
@@ -618,7 +993,15 @@ def build_headless_parser() -> argparse.ArgumentParser:
     )
 
     # ── status ──
-    sub.add_parser("status", help="Show system status (config, tools, indexers)")
+    p_status = sub.add_parser(
+        "status",
+        help="Show system status (config, tools, indexers). Exit 1 if a required tool is missing",
+    )
+    p_status.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the status snapshot as JSON",
+    )
 
     # ── pending ──
     p_pending = sub.add_parser("pending", help="Show items pending upload")
@@ -634,6 +1017,11 @@ def build_headless_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="List individual pending items",
     )
+    p_pending.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the pending summary as JSON",
+    )
 
     # ── history ──
     p_history = sub.add_parser("history", help="Show recent job history")
@@ -644,9 +1032,22 @@ def build_headless_parser() -> argparse.ArgumentParser:
         default=20,
         help="Number of jobs to show (default: 20)",
     )
+    p_history.add_argument(
+        "--json",
+        action="store_true",
+        help="Output job history as JSON",
+    )
 
     # ── indexers ──
-    sub.add_parser("indexers", help="Show indexer details and stats")
+    p_indexers = sub.add_parser(
+        "indexers",
+        help="Show indexer details and stats. Exit 1 if no indexer is enabled",
+    )
+    p_indexers.add_argument(
+        "--json",
+        action="store_true",
+        help="Output indexer details as JSON",
+    )
 
     # ── stream monitors ──
     p_stream_monitors = sub.add_parser(
@@ -688,11 +1089,125 @@ def build_headless_parser() -> argparse.ArgumentParser:
         help="Sampling window used to estimate CPU/network/disk rates (default: 0.25)",
     )
 
+    # ── queue ──
+    p_queue = sub.add_parser(
+        "queue",
+        help="Inspect or control the shared upload queue (same actions as the WebUI)",
+    )
+    queue_sub = p_queue.add_subparsers(dest="queue_command", help="Queue commands")
+
+    p_queue_status = queue_sub.add_parser("status", help="Show running, queued, and finished jobs (default)")
+    p_queue_status.add_argument("--json", action="store_true", help="Output the queue snapshot as JSON")
+
+    p_queue_pause = queue_sub.add_parser("pause", help="Pause queue processing and the active job")
+    p_queue_pause.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_queue_resume = queue_sub.add_parser("resume", help="Resume queue processing")
+    p_queue_resume.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_queue_stop = queue_sub.add_parser("stop", help="Stop the active job and pause the queue")
+    p_queue_stop.add_argument(
+        "--clear",
+        action="store_true",
+        help="Also clear queued jobs and hide the active row while it stops",
+    )
+    p_queue_stop.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_queue_clear = queue_sub.add_parser("clear", help="Cancel all queued (not yet running) jobs")
+    p_queue_clear.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_queue_revalidate = queue_sub.add_parser(
+        "revalidate",
+        help="Re-scan queued/paused jobs against the current classification rules",
+    )
+    p_queue_revalidate.add_argument(
+        "--skip-paused",
+        action="store_true",
+        help="Only revalidate queued jobs; leave paused jobs untouched",
+    )
+    p_queue_revalidate.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_queue_job = queue_sub.add_parser(
+        "job",
+        help="Control a single job by ID (same actions as the per-job WebUI buttons)",
+    )
+    job_sub = p_queue_job.add_subparsers(dest="job_command", help="Per-job commands")
+
+    p_job_pause = job_sub.add_parser("pause", help="Pause a running job")
+    p_job_pause.add_argument("job_id", help="Job ID")
+    p_job_pause.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_job_resume = job_sub.add_parser("resume", help="Resume a paused job")
+    p_job_resume.add_argument("job_id", help="Job ID")
+    p_job_resume.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_job_stop = job_sub.add_parser("stop", help="Stop a job")
+    p_job_stop.add_argument("job_id", help="Job ID")
+    p_job_stop.add_argument(
+        "--clear",
+        action="store_true",
+        help="Also remove the job from the queue once stopped",
+    )
+    p_job_stop.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_job_retry = job_sub.add_parser("retry", help="Queue a new attempt from a failed job's saved request")
+    p_job_retry.add_argument("job_id", help="Job ID")
+    p_job_retry.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    p_job_promote = job_sub.add_parser("promote", help="Move a queued job to the front of the queue")
+    p_job_promote.add_argument("job_id", help="Job ID")
+    p_job_promote.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    # ── logs ──
+    p_logs = sub.add_parser("logs", help="Show recent console log lines from the shared in-memory buffer")
+    p_logs.add_argument(
+        "--lines",
+        "-n",
+        type=int,
+        default=100,
+        help="Number of recent lines to show (default: 100)",
+    )
+    p_logs.add_argument(
+        "--json",
+        action="store_true",
+        help="Output log entries as JSON",
+    )
+
+    # ── version ──
+    from version import __version__
+
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"NZBPostarr {__version__}",
+        help="Show the NZBPostarr version and exit",
+    )
+
     return parser
+
+
+def _ensure_utf8_console() -> None:
+    """Make the CLI's box-drawing and status glyphs safe on a legacy console.
+
+    Every human-readable command draws rules with U+2501/U+2500 and marks state
+    with checks and crosses. On a Windows console defaulting to cp1252 those are
+    unencodable, so printing them raised UnicodeEncodeError and killed the
+    command outright. Reconfiguring to UTF-8 fixes it; errors="replace" is a
+    backstop so an odd glyph can never crash a command again.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            pass
 
 
 def run_headless(argv: List[str]) -> int:
     """Entry point for headless mode. Called from main.py."""
+    _ensure_utf8_console()
     parser = build_headless_parser()
     args = parser.parse_args(argv)
 
@@ -714,6 +1229,8 @@ def run_headless(argv: List[str]) -> int:
         "indexers": cmd_indexers,
         "stream-monitors": cmd_stream_monitors,
         "stats": cmd_stats,
+        "queue": cmd_queue,
+        "logs": cmd_logs,
     }
 
     handler = dispatch.get(args.command)

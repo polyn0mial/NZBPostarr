@@ -6,7 +6,7 @@
 # Base folder paths (remote/server paths)
 base_folder: '/path/to/usenet'
 
-# Folder Paths — Each entry is scanned as an input folder.
+# Folder Paths - Each entry is scanned as an input folder.
 # Items are auto-categorized from their names and contents.
 folder_paths:
   - path: '${base_folder}/Movies'
@@ -93,6 +93,12 @@ medianfo: null
 
 # Indexer credentials (recommended)
 # You can store API keys here (or via env vars like NZBP_API_KEYS__GEEK=...)
+#
+# Adding a new Newznab-style indexer (NZBGeek/NZBPlanet/NZB.su shape) does not
+# need a hand-authored YAML: copy indexers/newznab.example.yaml to a plain
+# ".yaml" name, fill in submit_url/api key, and it is picked up automatically.
+# It sets 'profile: newznab' so the registry auto-populates the standard
+# t/apikey/cat/name request params without needing every field spelled out.
 # api_keys:
 #   geek: 'YOUR_NZBGEEK_API_KEY'
 #   planet: 'YOUR_NZBPLANET_API_KEY'

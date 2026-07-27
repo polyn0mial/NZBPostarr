@@ -16,17 +16,22 @@ self-titled `nzbpostarr/` source directory.
 
 ## Repository Map
 
-- `main.py` — bootstrapper and command-line entry point.
-- `app.py` — FastAPI application, routes, and runtime orchestration.
-- `setup.py` — interactive setup and optional Linux systemd installation.
-- `version.py` — canonical application version.
-- `core/` — configuration, database, registry, redaction, and shared utilities.
-- `logic/` — queue, processing, posting, monitoring, statistics, and updater logic.
-- `indexers/` — public YAML indexer definitions and the extension template.
-- `webui/` — Jinja templates, frontend source, build scripts, and built assets.
-- `tests/` — backend, integration, frontend, and release-safety tests.
-- `.github/release.py` — public-tree validation and release archive builder.
-- `.github/workflows/` — CI and tagged-release automation.
+- `main.py`: bootstrapper and command-line entry point.
+- `app.py`: FastAPI application, routes, and runtime orchestration.
+- `setup.py`: interactive setup and optional Linux systemd installation.
+- `version.py`: canonical application version.
+- `core/`: configuration, database, registry, redaction, and shared utilities.
+- `logic/`: queue, processing, posting, monitoring, statistics, and updater logic.
+- `logic/mcp_server.py`: optional Model Context Protocol endpoint mounted at
+  `/mcp`. Requires the optional `mcp` package, which is deliberately NOT in
+  `requirements.lock`; the endpoint stays unmounted without it.
+- `indexers/`: public YAML indexer definitions, the extension template, and the
+  generic `newznab.example.yaml` profile. Files named `*.example.yaml`,
+  `*.template.yaml`, or starting with `_` are never loaded as live indexers.
+- `webui/`: Jinja templates, frontend source, build scripts, and built assets.
+- `tests/`: backend, integration, frontend, and release-safety tests.
+- `.github/release.py`: public-tree validation and release archive builder.
+- `.github/workflows/`: CI and tagged-release automation.
 
 ## Files That Are Local Runtime State
 

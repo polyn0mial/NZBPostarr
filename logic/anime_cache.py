@@ -38,7 +38,7 @@ _MAX_PER_SECOND = 3
 _MAX_PER_MINUTE = 60
 
 # ── Module-level state (thread-safe via _lock) ──────────────────────────────
-# Bump this whenever the matching algorithm changes — existing caches with a
+# Bump this whenever the matching algorithm changes - existing caches with a
 # different (or missing) version will be discarded and rebuilt automatically.
 _CACHE_VERSION = 7
 
@@ -48,7 +48,7 @@ _CACHE_VERSION = 7
 # When the match came purely from an English or alt title with NO overlap on
 # the primary title (e.g. an anime whose English title happens to be
 # "Beauty and the Beast" but whose Japanese title is completely different),
-# we require a much higher bar — only genuinely famous franchise titles
+# we require a much higher bar - only genuinely famous franchise titles
 # like Demon Slayer (8.4) or Jujutsu Kaisen (8.7) should clear it.
 _MIN_SCORE_2WORD = 7.0  # primary title has word overlap with query
 _MIN_SCORE_2WORD_ENG_ONLY = 8.0  # match is only on english/alt title
@@ -61,8 +61,8 @@ _cache_loaded = False
 _cache_path: Optional[Path] = None
 
 # Token-bucket timestamps
-_second_window: deque = deque()  # timestamps of last N requests
-_minute_window: deque = deque()
+_second_window: deque[float] = deque()  # timestamps of last N requests
+_minute_window: deque[float] = deque()
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 _PUNC_RE = re.compile(r"[^\w\s]")
@@ -100,13 +100,13 @@ def _title_matches(query: str, candidate: str) -> bool:
 
     Rules (evaluated in order):
     1. Compute significant (non-stopword) words for the query.
-       a. 0 words  — no match.
-       b. 1 word   — exact string match only (safe for acronyms like "BNA").
-       c. 2 words  — no match.  These titles are too ambiguous after stopword
+       a. 0 words  - no match.
+       b. 1 word   - exact string match only (safe for acronyms like "BNA").
+       c. 2 words  - no match.  These titles are too ambiguous after stopword
           stripping (e.g. "Beauty and the Beast" → ["beauty","beast"]) and
           frequently share names with Western IP.
-       d. 3+ words — proceed to exact match then bidirectional word-overlap.
-    2. Exact string match (after punctuation strip) — only reached for 3+ words.
+       d. 3+ words - proceed to exact match then bidirectional word-overlap.
+    2. Exact string match (after punctuation strip) - only reached for 3+ words.
     3. Bidirectional content-word coverage ≥ 75 % in both directions.
     """
     q = _strip_punc(query.lower())
@@ -120,7 +120,7 @@ def _title_matches(query: str, candidate: str) -> bool:
     if not q_words or not c_words:
         return False
 
-    # 1-word query: acronym / single-word title — exact string match only.
+    # 1-word query: acronym / single-word title - exact string match only.
     if len(q_words) == 1:
         return q == c
 
@@ -245,7 +245,7 @@ def _load_cache() -> None:
                 if raw.get("__version__") != _CACHE_VERSION:
                     logger.info(
                         f"Anime cache version mismatch (got {raw.get('__version__')!r}, "
-                        f"need {_CACHE_VERSION}) — discarding stale cache at {load_path}"
+                        f"need {_CACHE_VERSION}) - discarding stale cache at {load_path}"
                     )
                     _cache = {}
                 else:
@@ -333,9 +333,10 @@ def _query_jikan(title: str) -> Optional[bool]:
     is_short = len(q_cwords) == 2
 
     try:
+        params: dict[str, str | int] = {"q": title, "limit": 5, "sfw": "true"}
         resp = requests.get(
             _JIKAN_SEARCH_URL,
-            params={"q": title, "limit": 5, "sfw": "true"},
+            params=params,
             timeout=_REQ_TIMEOUT,
         )
         if resp.status_code == 429:
@@ -368,7 +369,7 @@ def _query_jikan(title: str) -> Optional[bool]:
 
                 # Tiered score threshold: if the primary (romanized) title has
                 # at least one content word in common with our query, this is a
-                # genuine romaji-echoing title (e.g. "Trigun Stampede") — use
+                # genuine romaji-echoing title (e.g. "Trigun Stampede") - use
                 # the standard 7.0 bar.  If the match came only from a translated
                 # English or alt title with no overlap on the primary title (e.g.
                 # an anime whose English alt title is "Beauty and the Beast" but
@@ -395,7 +396,7 @@ def _query_jikan(title: str) -> Optional[bool]:
                         f"but score={score:.1f} < {score_threshold} "
                         f"(primary_overlap={has_primary_overlap}) → skipping"
                     )
-                    # Don't return False yet — another entry might score higher.
+                    # Don't return False yet - another entry might score higher.
                 else:
                     # No score yet (new/niche anime). Fall back to member count.
                     if members >= members_threshold:
@@ -498,10 +499,3 @@ def get_cached(raw_name: str) -> Optional[bool]:
         if not title:
             return None
         return _cache.get(_cache_key(title))
-
-
-def cache_size() -> int:
-    """Return the number of entries in the anime cache."""
-    with _lock:
-        _load_cache()
-        return len(_cache)

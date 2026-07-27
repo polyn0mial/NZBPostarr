@@ -101,6 +101,15 @@ def test_ordinary_api_secret_masking_and_save_merge() -> None:
     assert "api=%5BREDACTED%5D" in safe_curl_url
     assert "private-key" not in safe_text
 
+    # Credentials ride on non-http schemes too (NNTP is this app's whole point).
+    for raw, leaked in (
+        ("connect failed: nntps://bob:hunter2@news.example.test:563/", "hunter2"),
+        ("ftp://admin:p4ssw0rd@files.example.test/dump", "p4ssw0rd"),
+    ):
+        masked = redact_text(raw)
+        assert leaked not in masked, raw
+        assert "news.example.test" in masked or "files.example.test" in masked
+
 def test_indexer_ui_metadata_never_returns_configured_credentials() -> None:
     idx = IndexerDefinition(
         id="geek",

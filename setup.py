@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-NZBPostarr — First-Run Setup Wizard
+NZBPostarr - First-Run Setup Wizard
 ====================================
 Interactive guided installer for new server deployments.
 
@@ -12,7 +12,7 @@ Handles:
   3. External tool installation (nyuu, parpar, rar)
   4. Guided config.yaml generation
   5. Optional systemd service creation
-  6. Smoke test — verifies everything actually works
+  6. Smoke test - verifies everything actually works
 """
 
 from __future__ import annotations
@@ -203,7 +203,7 @@ def cmd_version(name: str) -> Optional[str]:
 
 
 # =====================================================================
-#  STEP 1 — System Checks
+#  STEP 1 - System Checks
 # =====================================================================
 def check_system(total: int) -> Dict[str, Any]:
     step(1, total, "System Check")
@@ -214,7 +214,7 @@ def check_system(total: int) -> Dict[str, Any]:
     if py_ver >= (3, 10):
         ok(f"Python {py_ver.major}.{py_ver.minor}.{py_ver.micro}")
     else:
-        fail(f"Python {py_ver.major}.{py_ver.minor} — need 3.10+")
+        fail(f"Python {py_ver.major}.{py_ver.minor} - need 3.10+")
         results["issues"].append("python")
 
     # OS
@@ -225,7 +225,7 @@ def check_system(total: int) -> Dict[str, Any]:
     elif os_name == "Darwin":
         ok("Platform: macOS")
     else:
-        warn("Platform: Windows — some features may require WSL")
+        warn("Platform: Windows - some features may require WSL")
 
     # RAM
     try:
@@ -249,7 +249,7 @@ def check_system(total: int) -> Dict[str, Any]:
         if free_gb >= 2:
             ok(f"Disk free: {free_gb} GB")
         else:
-            warn(f"Disk free: {free_gb} GB (low — 2 GB+ recommended)")
+            warn(f"Disk free: {free_gb} GB (low - 2 GB+ recommended)")
     except Exception:
         dim("Disk: could not detect")
 
@@ -257,7 +257,7 @@ def check_system(total: int) -> Dict[str, Any]:
 
 
 # =====================================================================
-#  STEP 2 — Virtual Environment & Python Deps
+#  STEP 2 - Virtual Environment & Python Deps
 # =====================================================================
 def setup_venv(total: int) -> None:
     step(2, total, "Python Environment")
@@ -283,7 +283,7 @@ def setup_venv(total: int) -> None:
 
 def _install_pip_deps() -> None:
     if not REQS_FILE.exists():
-        warn("requirements.lock not found — skipping pip install")
+        warn("requirements.lock not found - skipping pip install")
         return
 
     info(f"Installing Python packages from {REQS_FILE.name}...")
@@ -302,7 +302,7 @@ def _install_pip_deps() -> None:
 
 
 # =====================================================================
-#  STEP 3 — External Tools
+#  STEP 3 - External Tools
 # =====================================================================
 TOOLS_INFO = {
     "nyuu": {
@@ -380,11 +380,11 @@ def check_tools(total: int) -> Dict[str, bool]:
         required = name in REQUIRED_TOOLS
 
         if found:
-            ok(f"{name}{ver_str} — {t['desc']}")
+            ok(f"{name}{ver_str} - {t['desc']}")
         elif required:
-            fail(f"{name} — {C['red']}MISSING (required){C['reset']} — {t['desc']}")
+            fail(f"{name} - {C['red']}MISSING (required){C['reset']} - {t['desc']}")
         else:
-            warn(f"{name} — not found (optional) — {t['desc']}")
+            warn(f"{name} - not found (optional) - {t['desc']}")
 
     # Offer to install missing ones
     missing_required = [n for n in REQUIRED_TOOLS if not status[n]]
@@ -460,7 +460,7 @@ def _auto_install_tools(names: List[str], status: Dict[str, bool]) -> None:
 
 
 # =====================================================================
-#  STEP 4 — Configuration
+#  STEP 4 - Configuration
 # =====================================================================
 def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
     step(4, total, "Configuration")
@@ -511,7 +511,7 @@ def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
     print()
     header("Upload Identity")
     info("How your uploads appear on Usenet.")
-    dim("Use a pseudonym — this is public metadata.\n")
+    dim("Use a pseudonym - this is public metadata.\n")
     config["poster_name"] = ask("Poster name", "Anonymous")
     config["poster_email"] = ask("Poster email", "anon@example.com")
 
@@ -577,7 +577,7 @@ def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
     usernames: Dict[str, str] = {}
 
     for idx_id, idx_name, idx_url in indexers:
-        dim(f"  {idx_name} — {idx_url}")
+        dim(f"  {idx_name} - {idx_url}")
         key = ask(f"  {idx_name} API key (blank to skip)", "")
         if key:
             api_keys[idx_id] = key
@@ -673,7 +673,7 @@ def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
 
 
 # =====================================================================
-#  STEP 5 — Systemd Service (optional)
+#  STEP 5 - Systemd Service (optional)
 # =====================================================================
 SYSTEMD_UNIT = """\
 [Unit]
@@ -699,11 +699,11 @@ def setup_systemd(total: int) -> None:
     step(5, total, "System Service (optional)")
 
     if platform.system() != "Linux":
-        dim("Systemd is Linux-only — skipping")
+        dim("Systemd is Linux-only - skipping")
         return
 
     if not cmd_exists("systemctl"):
-        dim("systemctl not found — skipping systemd setup")
+        dim("systemctl not found - skipping systemd setup")
         return
 
     if not ask_yes("Create a systemd service? (auto-start on boot)", default=True):
@@ -763,7 +763,7 @@ def setup_systemd(total: int) -> None:
 
 
 # =====================================================================
-#  STEP 6 — Smoke Test
+#  STEP 6 - Smoke Test
 # =====================================================================
 def smoke_test(total: int) -> None:
     step(6, total, "Verification")
@@ -830,7 +830,7 @@ def smoke_test(total: int) -> None:
             ok(f"Tool: {tool_name} ✓")
             checks_passed += 1
         else:
-            warn(f"Tool: {tool_name} — not found (uploads will fail until installed)")
+            warn(f"Tool: {tool_name} - not found (uploads will fail until installed)")
 
     # 5. Folder paths exist
     if CONFIG_FILE.exists():
@@ -847,7 +847,7 @@ def smoke_test(total: int) -> None:
                     ok(f"Folder [{cat}]: {path}")
                     checks_passed += 1
                 elif path:
-                    warn(f"Folder [{cat}]: {path} — does not exist yet")
+                    warn(f"Folder [{cat}]: {path} - does not exist yet")
                     if ask_yes(f"  Create {path}?", default=True):
                         try:
                             Path(path).mkdir(parents=True, exist_ok=True)
@@ -864,13 +864,13 @@ def smoke_test(total: int) -> None:
     if pct == 100:
         ok(f"All {checks_total} checks passed!")
     elif pct >= 70:
-        warn(f"{checks_passed}/{checks_total} checks passed ({pct}%) — some issues to address")
+        warn(f"{checks_passed}/{checks_total} checks passed ({pct}%) - some issues to address")
     else:
-        fail(f"{checks_passed}/{checks_total} checks passed ({pct}%) — review errors above")
+        fail(f"{checks_passed}/{checks_total} checks passed ({pct}%) - review errors above")
 
 
 # =====================================================================
-#  STEP 7 — Done!
+#  STEP 7 - Done!
 # =====================================================================
 def show_summary() -> None:
     print()

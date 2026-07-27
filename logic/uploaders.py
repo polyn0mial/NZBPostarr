@@ -221,22 +221,23 @@ def build_nyuu_progress_parser(
             )
             return f"{action_label}: {pct}% | {stats.get('speed', '0 B/s')}"
 
-        pct = extract_percentage(clean_line)
-        if pct is not None:
+        # Distinct name from the integer `pct` above: this one is a float or None.
+        parsed_pct = extract_percentage(clean_line)
+        if parsed_pct is not None:
             try:
                 speed_text = extract_speed(clean_line)
-                stats = tracker.update(pct, speed_text)
-                message = f"[{server_name}] {int(pct)}% | {speed_text or 'Starting...'}"
+                stats = tracker.update(parsed_pct, speed_text)
+                message = f"[{server_name}] {int(parsed_pct)}% | {speed_text or 'Starting...'}"
                 if verbose:
                     logger.log("PROGRESS", message)
                 update_job_progress(
-                    item_percent=int(pct),
+                    item_percent=int(parsed_pct),
                     speed=stats.get("speed", speed_text or "0 B/s"),
                     eta=stats.get("eta", "--"),
                     key=progress_key,
                     msg=message,
                 )
-                return f"{action_label}: {int(pct)}% | {stats.get('speed', '0 B/s')}"
+                return f"{action_label}: {int(parsed_pct)}% | {stats.get('speed', '0 B/s')}"
             except (TypeError, ValueError) as exc:
                 logger.debug(f"Parser error on line '{clean_line}': {exc}")
                 return None
@@ -292,7 +293,7 @@ def _log_nzb_diagnostics(nzb_path: Path) -> None:
         if total_segments == 0 or total_segment_bytes == 0:
             logger.error(
                 f"NZB PROBLEM: NZB has {nzb_file_count} files but "
-                f"{total_segments} segments / {total_segment_bytes} bytes — "
+                f"{total_segments} segments / {total_segment_bytes} bytes - "
                 "this will show as 0.00 MB on indexers!"
             )
     except (OSError, TypeError, ValueError, ET.ParseError, DefusedXmlException) as exc:
@@ -420,7 +421,7 @@ def upload_item(
                 if not nzb.exists() or nzb.stat().st_size < 100:
                     actual_size = nzb.stat().st_size if nzb.exists() else 0
                     logger.error(f"Nyuu reported success but NZB is empty/invalid ({actual_size} bytes): {nzb}")
-                    # Don't retry — Nyuu returned success, something is fundamentally wrong
+                    # Don't retry - Nyuu returned success, something is fundamentally wrong
                     return None
 
                 _log_nzb_diagnostics(nzb)
@@ -434,7 +435,7 @@ def upload_item(
                 )
                 logger.success(f"Uploaded: {label}{name}")
 
-                # NOTE: Do NOT purge tmp data here — parallel upload threads
+                # NOTE: Do NOT purge tmp data here - parallel upload threads
                 # share the same tmp folder. Cleanup happens in the finally
                 # block of process_single() after ALL threads complete.
 
@@ -555,12 +556,12 @@ def submit_api(
             if success:
                 return SubmitResult(True, "success", reason)
 
-            # Permanent failure — no point retrying
+            # Permanent failure - no point retrying
             if status in _PERMANENT_FAILURE_STATUSES:
                 logger.warning(f"{indexer.log_name} Permanent failure ({status}): {reason}")
                 return SubmitResult(False, status, reason)
 
-            # Retryable failure — try again unless this was the last attempt
+            # Retryable failure - try again unless this was the last attempt
             if attempt < max_retries:
                 logger.warning(f"{indexer.log_name} Attempt {attempt}/{max_retries} failed ({status}): {reason}")
             else:

@@ -295,27 +295,27 @@
                     <div class="space-y-1">
                         <div class="flex justify-between items-center gap-4 py-1.5">
                             <dt class="text-sm text-notion-text-tertiary">Hostname</dt>
-                            <dd class="text-sm text-notion-text-primary font-mono transition-all truncate">{{ fullStats?.system?.hostname || "-" }}</dd>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.hostname || "-" }}</dd>
                         </div>
                         <div class="flex justify-between items-center gap-4 py-1.5">
                             <dt class="text-sm text-notion-text-tertiary">Platform</dt>
-                            <dd class="text-sm text-notion-text-primary font-mono transition-all truncate">{{ fullStats?.system?.platform || "-" }}</dd>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.platform || "-" }}</dd>
                         </div>
                         <div class="flex justify-between items-center gap-4 py-1.5">
                             <dt class="text-sm text-notion-text-tertiary">Kernel</dt>
-                            <dd class="text-sm text-notion-text-primary font-mono transition-all truncate">{{ fullStats?.system?.kernel || "-" }}</dd>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.kernel || "-" }}</dd>
                         </div>
                         <div class="flex justify-between items-center gap-4 py-1.5">
                             <dt class="text-sm text-notion-text-tertiary">Architecture</dt>
-                            <dd class="text-sm text-notion-text-primary font-mono transition-all truncate">{{ fullStats?.system?.architecture || "-" }}</dd>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.architecture || "-" }}</dd>
                         </div>
                         <div class="flex justify-between items-center gap-4 py-1.5">
                             <dt class="text-sm text-notion-text-tertiary">Python</dt>
-                            <dd class="text-sm text-notion-text-primary font-mono transition-all truncate">{{ fullStats?.system?.python_version || "-" }}</dd>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.python_version || "-" }}</dd>
                         </div>
                         <div class="flex justify-between items-center gap-4 py-1.5">
                             <dt class="text-sm text-notion-text-tertiary">CPU Model</dt>
-                            <dd v-text="fullStats?.cpu?.model || '-'" class="text-sm text-notion-text-primary font-mono transition-all text-right truncate max-w-50"></dd>
+                            <dd v-text="fullStats?.cpu?.model || '-'" class="text-sm text-notion-text-primary font-mono transition-colors text-right truncate max-w-50"></dd>
                         </div>
                     </div>
                 </div>
@@ -380,12 +380,12 @@
                         </thead>
                         <tbody>
                             <tr v-if="topDirs.length === 0">
-                                <td colspan="5" class="px-4 py-8 text-center text-notion-text-tertiary">
+                                <td colspan="5" class="empty-state py-8">
                                     <div v-if="loadingTopDirs">
                                         <lucide-icon name="loader-2" icon-class="size-5 animate-spin mx-auto mb-2"></lucide-icon>
                                         Loading directory stats...
                                     </div>
-                                    <div v-else>No directories found</div>
+                                    <div v-else class="empty-state-title">No directories found</div>
                                 </td>
                             </tr>
                             <tr v-for="(dir, index) in topDirs" :key="dir.path" class="hover:bg-notion-bg-hover">

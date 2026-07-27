@@ -1,12 +1,12 @@
 """
-🧹 NZBPostarr — Process Reaper & Scheduler
+🧹 NZBPostarr - Process Reaper & Scheduler
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Detects and kills runaway / hung / orphaned processes
 spawned by NZBPostarr (nyuu, rar, parpar, etc.).
 Also owns the singleton APScheduler instance used by
 all background tasks.
 
-Safe to call at any time — will NOT kill processes that
+Safe to call at any time - will NOT kill processes that
 belong to an active upload job.
 
 Usage:
@@ -319,7 +319,7 @@ def reap_orphans(force: bool = False, dry_run: bool = False) -> Dict[str, Any]:
         }
 
         if dry_run:
-            logger.info(f"[reaper] DRY RUN — would kill: {sp}")
+            logger.info(f"[reaper] DRY RUN - would kill: {sp}")
         else:
             logger.info(f"[reaper] Killing stale process: {sp}")
             if _kill_process(sp.pid, sp.name):

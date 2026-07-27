@@ -679,6 +679,98 @@ def test_atomic_config_replace_keeps_last_known_good_backup(monkeypatch, tmp_pat
     assert config_path.with_name("config.yaml.bak").read_text(encoding="utf-8") == "version: old\n"
     assert list(config_path.parent.glob("config.yaml.*.tmp")) == []
 
+def test_get_raw_config_masks_credentials(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "base_folder: /srv/usenet\n"
+        "nntp_servers:\n"
+        "  - name: Primary\n"
+        "    host: news.example.com\n"
+        "    user: real_nntp_user\n"
+        "    pass: real_nntp_password\n"
+        "api_keys:\n"
+        "  geek: real_geek_key\n"
+        "usernames:\n"
+        "  omg: real_omg_user\n"
+        "web_password: real_web_password\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_mod, "get_config_path", lambda: config_path)
+
+    result = _run_async(app_mod.get_raw_config())
+    content = result["content"]
+
+    assert result["masked"] is True
+    # The mask must render as bullets, not an escaped • sequence, or the
+    # raw editor shows gibberish where credentials used to be.
+    assert redaction.SECRET_MASK in content
+    assert "\\u2022" not in content
+    for secret in (
+        "real_nntp_user",
+        "real_nntp_password",
+        "real_geek_key",
+        "real_omg_user",
+        "real_web_password",
+    ):
+        assert secret not in content, secret
+    # Non-secret values must survive so the editor stays usable.
+    assert "news.example.com" in content
+    assert "/srv/usenet" in content
+
+def test_save_raw_config_restores_untouched_masks(monkeypatch, tmp_path) -> None:
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("placeholder: true\n", encoding="utf-8")
+    conf = SimpleNamespace(
+        web_password="",
+        api_keys={"geek": "real_geek_key"},
+        usernames={"omg": "real_omg_user"},
+        nntp_servers=[
+            SimpleNamespace(name="Primary", user="real_nntp_user", password="real_nntp_password")
+        ],
+    )
+    written: dict[str, str] = {}
+
+    def _replace(content: str) -> SimpleNamespace:
+        written["content"] = content
+        return SimpleNamespace(ok=True)
+
+    monkeypatch.setattr(app_mod, "get_config", lambda: conf)
+    monkeypatch.setattr(config_mod, "replace_config_content", _replace)
+
+    async def _sync(new_conf=None) -> None:
+        return None
+
+    monkeypatch.setattr(app_mod, "_sync_stats_collector_state", _sync)
+
+    submitted = (
+        "base_folder: /srv/usenet\n"
+        "nntp_servers:\n"
+        "  - name: Primary\n"
+        "    host: news.example.com\n"
+        f"    user: {redaction.SECRET_MASK}\n"
+        f"    pass: {redaction.SECRET_MASK}\n"
+        "api_keys:\n"
+        f"  geek: {redaction.SECRET_MASK}\n"
+        "usernames:\n"
+        f"  omg: {redaction.SECRET_MASK}\n"
+    )
+    result = _run_async(app_mod.save_raw_config({"content": submitted}))
+
+    assert result["status"] == "success"
+    saved = written["content"]
+    assert redaction.SECRET_MASK not in saved
+    for secret in ("real_nntp_user", "real_nntp_password", "real_geek_key", "real_omg_user"):
+        assert secret in saved, secret
+    assert "news.example.com" in saved
+
+def test_save_raw_config_rejects_invalid_yaml(monkeypatch) -> None:
+    monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(web_password=""))
+
+    with pytest.raises(HTTPException) as exc_info:
+        _run_async(app_mod.save_raw_config({"content": "key: [unclosed\n"}))
+
+    assert exc_info.value.status_code == 400
+
 def test_reset_settings_route_returns_404_when_defaults_missing(monkeypatch, tmp_path) -> None:
     missing_defaults = tmp_path / "missing.defaults.yaml"
     config_path = tmp_path / "config.yaml"

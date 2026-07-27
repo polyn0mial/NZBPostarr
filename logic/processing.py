@@ -1588,23 +1588,23 @@ def _validate_queue_item(
             if category in {"tv", "anime"}:
                 reason = (
                     f"⏩ Folder '{name}' ({item_size_gb:.1f} GB) exceeds {folder_limit} GB limit "
-                    "— pack skipped, episodes still queued"
+                    "- pack skipped, episodes still queued"
                 )
             else:
                 reason = (
                     f"⏩ Folder '{name}' ({item_size_gb:.1f} GB) exceeds {folder_limit} GB limit "
-                    "— folder upload skipped, contents queued"
+                    "- folder upload skipped, contents queued"
                 )
             return QueueItemValidation("skipped", path, category, db_type, message=reason, item_size_bytes=item_size_bytes)
 
     if path.is_file() and getattr(conf, "file_size_limit_enabled", True):
         file_limit = getattr(conf, "file_size_limit_gb", 0) or 0
         if file_limit and item_size_gb > file_limit:
-            reason = f"⏩ File '{name}' ({item_size_gb:.1f} GB) exceeds {file_limit} GB limit — skipped"
+            reason = f"⏩ File '{name}' ({item_size_gb:.1f} GB) exceeds {file_limit} GB limit - skipped"
             return QueueItemValidation("skipped", path, category, db_type, message=reason, item_size_bytes=item_size_bytes)
 
     if skip_enabled and skip_config and should_skip_file(name, category, cast(Dict[Any, Any], skip_config)):
-        reason = f"⏩ '{name}' matches skip pattern — skipped"
+        reason = f"⏩ '{name}' matches skip pattern - skipped"
         return QueueItemValidation("skipped", path, category, db_type, message=reason, item_size_bytes=item_size_bytes)
 
     source_root = prefetched_base_folder if prefetched_base_folder is not None else find_configured_root(path, configured_folders)
@@ -1631,7 +1631,7 @@ def _validate_queue_item(
             return QueueItemValidation("failed", path, category, db_type, message=reason, base_folder=source_root)
 
     if _should_skip_completed_item(all_indexers, conf, dest_status, force=force, name=name):
-        reason = f"⏩ '{name}' already exists on all selected destinations — skipped"
+        reason = f"⏩ '{name}' already exists on all selected destinations - skipped"
         return QueueItemValidation(
             "skipped",
             path,
@@ -2890,8 +2890,8 @@ def _validate_execution_item(
     prefetched_dest_status, prefetched_base_folder = _prefetched_validation_state(context, item)
 
     # Batch duplicate state is already available in the parent process. Avoid
-    # launching/importing an isolated Python worker—and avoid walking the item
-    # tree—when every selected destination is known to be complete.
+    # launching/importing an isolated Python worker-and avoid walking the item
+    # tree-when every selected destination is known to be complete.
     if prefetched_dest_status is not None:
         conf = get_config()
         selected_indexers = _selected_indexers(
@@ -2911,7 +2911,7 @@ def _validate_execution_item(
                 item,
                 category,
                 _processing_db_type(item, category),
-                message=f"⏩ '{item.name}' already exists on all selected destinations — skipped",
+                message=f"⏩ '{item.name}' already exists on all selected destinations - skipped",
                 base_folder=prefetched_base_folder,
                 prefetched_dest_status=prefetched_dest_status,
             )
@@ -3089,7 +3089,7 @@ def run_job(
         process_tv_episodes = False
 
     if not process_tv_episodes and "tv" in cats:
-        log_info("⏩ Skipping TV — episodes disabled in settings")
+        log_info("⏩ Skipping TV - episodes disabled in settings")
         cats.remove("tv")
 
     # If explicit paths were provided (e.g. from Pending -> Force Upload),
@@ -3097,7 +3097,7 @@ def run_job(
     if paths:
         if cat_lower not in cats and cat_lower not in {"all", "both", "mixed", "selected"}:
             # Respect the processing filters from settings even in targeted mode.
-            log_info(f"⏩ Skipping {cat_lower.upper()} — disabled in settings")
+            log_info(f"⏩ Skipping {cat_lower.upper()} - disabled in settings")
             return
 
         raw_items = _collect_targeted_job_items(

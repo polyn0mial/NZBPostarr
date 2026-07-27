@@ -111,7 +111,7 @@ const vm = createVuePage({
             return this.jobsList.length > 0 && this.jobsList.every(j => this.selectedJobIds.includes(j.job_id));
         },
 
-        // Table data length — unified for loading/empty state
+        // Table data length - unified for loading/empty state
         tableDataLength() {
             if (this.viewMode === 'jobs') return this.jobsList.length;
             if (this.viewMode === 'grouped') return this.serverGroups.length;
@@ -139,7 +139,7 @@ const vm = createVuePage({
                 : 'No uploads found';
         },
 
-        // Grouped uploads computed — processes server-side groups into season tree
+        // Grouped uploads computed - processes server-side groups into season tree
         groupedUploads() {
             if (!this.serverGroups || this.serverGroups.length === 0) return [];
 
@@ -206,7 +206,7 @@ const vm = createVuePage({
                 // Build season sub-groups (TV shows only)
                 for (const item of group.items) {
                     // Items individually classified as movies shouldn't be
-                    // jammed into Season 0 — keep them in a separate bucket.
+                    // jammed into Season 0 - keep them in a separate bucket.
                     if (isMovieType(item.media_type) && !item.season_number && !item.episode_number) {
                         group.movieItems.push(item);
                         continue;
@@ -255,7 +255,7 @@ const vm = createVuePage({
                     season.allEpMissing = false;
 
                     if (season.epNumbers.length === 0 && season.items.length > 0) {
-                        // Season 0 (specials) are inherently incomplete — never
+                        // Season 0 (specials) are inherently incomplete - never
                         // flag them as "All EP Missing".
                         if (season.num !== 0) {
                             season.allEpMissing = true;
@@ -286,7 +286,7 @@ const vm = createVuePage({
             return result;
         },
 
-        // Flattened row list for grouped view — handles expand/collapse state
+        // Flattened row list for grouped view - handles expand/collapse state
         groupedRows() {
             const rows = [];
             for (const group of this.groupedUploads) {
@@ -467,7 +467,7 @@ const vm = createVuePage({
         },
 
         async showJobUploads(job) {
-            this.jobModalTitle = `${job.category || ''} — ${job.job_id}`;
+            this.jobModalTitle = `${job.category || ''} - ${job.job_id}`;
             this.jobModalUploads = [];
             this.jobModalLoading = true;
             this.jobModalOpen = true;
@@ -539,7 +539,13 @@ const vm = createVuePage({
         },
 
         async deleteJobHistory(jobId) {
-            if (!confirm(`Delete job "${jobId}" from history?`)) return;
+            const ok = await this.confirmDialog(`Delete job "${jobId}" from history?`, {
+                title: 'Delete Job',
+                detail: 'This only removes the history record. Uploaded files are not touched.',
+                danger: true,
+                confirmLabel: 'Delete',
+            });
+            if (!ok) return;
             try {
                 await this.apiFetch('/api/uploads/history', {
                     method: 'DELETE',
@@ -558,7 +564,13 @@ const vm = createVuePage({
         async bulkDeleteJobs() {
             if (this.selectedJobIds.length === 0) return;
             const count = this.selectedJobIds.length;
-            if (!confirm(`Delete ${count} job${count !== 1 ? 's' : ''} from history?`)) return;
+            const ok = await this.confirmDialog(`Delete ${count} job${count !== 1 ? 's' : ''} from history?`, {
+                title: 'Delete Jobs',
+                detail: 'This only removes the history records. Uploaded files are not touched.',
+                danger: true,
+                confirmLabel: `Delete ${count} Job${count !== 1 ? 's' : ''}`,
+            });
+            if (!ok) return;
             try {
                 await this.apiFetch('/api/uploads/history', {
                     method: 'DELETE',
@@ -620,7 +632,7 @@ const vm = createVuePage({
 
             try {
                 if (this.viewMode === 'grouped') {
-                    // Grouped mode — fetch from server-side grouped endpoint
+                    // Grouped mode - fetch from server-side grouped endpoint
                     const params = new URLSearchParams({
                         page: this.currentPage,
                         per_page: this.pageSize,
@@ -640,7 +652,7 @@ const vm = createVuePage({
 
                     this.uploads = [];
                 } else {
-                    // Flat mode — unchanged
+                    // Flat mode - unchanged
                     const offset = (this.currentPage - 1) * this.pageSize;
                     const params = new URLSearchParams({
                         limit: this.pageSize,
@@ -765,9 +777,13 @@ const vm = createVuePage({
         //  Delete Operations
         // ============================================================
         async deleteUpload(itemName) {
-            if (!confirm(`Delete "${itemName}" from upload history?\n\nThis only removes the database record - the file itself is not deleted.`)) {
-                return;
-            }
+            const ok = await this.confirmDialog(`Delete "${itemName}" from upload history?`, {
+                title: 'Delete Upload Record',
+                detail: 'This only removes the database record. The file itself is not deleted.',
+                danger: true,
+                confirmLabel: 'Delete',
+            });
+            if (!ok) return;
             try {
                 await this.apiDelete(`/api/uploads/item/${encodeURIComponent(itemName)}`);
                 this.loadUploads(false);
@@ -783,9 +799,13 @@ const vm = createVuePage({
             const selected = Array.from(this.selectedItems);
             if (selected.length === 0) return;
 
-            if (!confirm(`Delete ${selected.length} items from upload history?\n\nThis only removes the database records - the files themselves are not deleted.`)) {
-                return;
-            }
+            const ok = await this.confirmDialog(`Delete ${selected.length} items from upload history?`, {
+                title: 'Delete Upload Records',
+                detail: 'This only removes the database records. The files themselves are not deleted.',
+                danger: true,
+                confirmLabel: `Delete ${selected.length} Items`,
+            });
+            if (!ok) return;
 
             try {
                 await this.apiPost('/api/uploads/item/bulk-delete', { item_names: selected });
@@ -820,7 +840,7 @@ const vm = createVuePage({
             if (!group || !Array.isArray(group.items) || !group.items.length) return false;
             const eps = group.items.filter(it => it.episode_number != null);
             if (eps.length === 0) {
-                // No individual episodes — check if ALL items are selected
+                // No individual episodes - check if ALL items are selected
                 return group.items.length > 0 && group.items.every(it => this.selectedItems.has(it.item_name));
             }
             // If eps exist, check if all EPISODES are selected (ignore packs)
@@ -1038,7 +1058,7 @@ const vm = createVuePage({
             if (this.searchQuery) return;
 
             if (this.viewMode === 'jobs') {
-                // Jobs complete infrequently — cap at 60s
+                // Jobs complete infrequently - cap at 60s
                 const now = Date.now();
                 if (now - this._lastHistoryFullRefresh > 60_000) {
                     this._lastHistoryFullRefresh = now;
@@ -1060,7 +1080,7 @@ const vm = createVuePage({
 
             if (uploadsChanged || fallbackDue) {
                 this._lastHistoryFullRefresh = now;
-                this.loadUploads(false, true); // silent — no spinner
+                this.loadUploads(false, true); // silent - no spinner
             }
         }, 5_000); // probe every 5s; DOM only refreshes on change or 60s fallback
     }

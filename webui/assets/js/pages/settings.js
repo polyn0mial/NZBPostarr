@@ -661,9 +661,16 @@ const vm = createVuePage({
             this.updateYamlPreview();
         },
 
-        closeYamlModal() {
+        async closeYamlModal() {
             if (this.rawYamlDirty) {
-                if (!confirm('You have unsaved changes. Close without saving?')) return;
+                const ok = await this.confirmDialog('You have unsaved changes. Close without saving?', {
+                    title: 'Discard Changes',
+                    detail: 'Your edits to the raw YAML will be lost.',
+                    danger: true,
+                    confirmLabel: 'Discard',
+                    cancelLabel: 'Keep Editing',
+                });
+                if (!ok) return;
             }
             this.showYamlModal = false;
             this.isEditingRawYaml = false;
@@ -687,9 +694,16 @@ const vm = createVuePage({
             this.showReadmeModal = true;
         },
 
-        closeReadmeModal() {
+        async closeReadmeModal() {
             if (this.readmeDirty) {
-                if (!confirm('You have unsaved changes. Close without saving?')) return;
+                const ok = await this.confirmDialog('You have unsaved changes. Close without saving?', {
+                    title: 'Discard Changes',
+                    detail: 'Your edits to readme.txt will be lost.',
+                    danger: true,
+                    confirmLabel: 'Discard',
+                    cancelLabel: 'Keep Editing',
+                });
+                if (!ok) return;
             }
             this.showReadmeModal = false;
         },
@@ -858,7 +872,13 @@ const vm = createVuePage({
         // ============================================================
         async stopAllJobs() {
             if (this.serviceControls.stopping) return;
-            if (!confirm('Stop all running uploads and clear the queue?\nThis will interrupt any active upload immediately.')) return;
+            const ok = await this.confirmDialog('Stop all running uploads and clear the queue?', {
+                title: 'Stop All Uploads',
+                detail: 'This will interrupt any active upload immediately.',
+                danger: true,
+                confirmLabel: 'Stop Everything',
+            });
+            if (!ok) return;
 
             this.serviceControls.stopping = true;
             try {
@@ -888,7 +908,13 @@ const vm = createVuePage({
 
         async restartService() {
             if (this.serviceControls.restarting) return;
-            if (!confirm('Restart the NZBPostarr service?\nThe page will reload automatically.')) return;
+            const ok = await this.confirmDialog('Restart the NZBPostarr service?', {
+                title: 'Restart Service',
+                detail: 'Active uploads are stopped first. The page will reload automatically.',
+                danger: true,
+                confirmLabel: 'Restart',
+            });
+            if (!ok) return;
 
             this.serviceControls.restarting = true;
             try {
@@ -1093,7 +1119,13 @@ const vm = createVuePage({
         },
 
         async saveRawSettings() {
-            if (!confirm('Save raw YAML configuration?\nThis will overwrite the config file immediately.')) return;
+            const ok = await this.confirmDialog('Save raw YAML configuration?', {
+                title: 'Overwrite Config',
+                detail: 'This overwrites the config file on disk immediately.',
+                danger: true,
+                confirmLabel: 'Overwrite',
+            });
+            if (!ok) return;
 
             try {
                 await this.apiPost('/api/settings/raw', { content: this.rawYaml });

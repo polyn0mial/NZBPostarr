@@ -54,6 +54,8 @@ from core import config as config_mod
 
 from core import database as db
 
+from core import redaction
+
 from core import registry as registry_mod
 
 from core.config import Config

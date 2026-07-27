@@ -55,7 +55,7 @@ class ConsoleBuffer:
     # ── loguru sink ──────────────────────────────────────────────────
 
     def sink(self, message: Any) -> None:
-        """Loguru sink callable — auto-filters based on verbose config."""
+        """Loguru sink callable - auto-filters based on verbose config."""
         level_name = message.record["level"].name
         level_no = message.record["level"].no
         log_message = message.record["message"]
@@ -526,3 +526,89 @@ class UploadService(QueueServiceMixin):
 def get_upload_service() -> UploadService:
     """Dependency provider for the UploadService singleton."""
     return UploadService()
+
+
+def _is_resumable_stopped(job: dict[str, Any]) -> bool:
+    """A stopped processing job with explicit paths can be resumed, so it is still queued."""
+    if job.get("status") != "stopped":
+        return False
+    if str(job.get("job_type") or "processing") != "processing":
+        return False
+    return bool(job.get("has_explicit_paths"))
+
+
+def build_queue_snapshot(service: "UploadService") -> dict[str, Any]:
+    """Bucket active jobs into running/queued/finished with the queue control state.
+
+    Single source of truth for this classification: both the GET /queue route and
+    the headless `queue status` command call it, so adding a job status cannot
+    make the WebUI and the CLI disagree.
+    """
+    all_jobs = service.get_active_jobs(compact=True)
+
+    running = [j for j in all_jobs if j.get("status") in ("running", "stopping", "paused")]
+    queued = sorted(
+        [j for j in all_jobs if j.get("status") == "queued" or _is_resumable_stopped(j)],
+        key=lambda j: (-int(j.get("priority") or 0), j.get("started_at", "")),
+    )
+    finished = [
+        j
+        for j in all_jobs
+        if j.get("status") in ("completed", "failed", "cancelled")
+        or (j.get("status") == "stopped" and not _is_resumable_stopped(j))
+    ]
+    return {
+        "running": running,
+        "queued": queued,
+        "finished": finished,
+        "control": service.get_queue_control_state(),
+        "counts": {
+            "running": len(running),
+            "queued": len(queued),
+            "finished": len(finished),
+        },
+    }
+
+
+def get_recent_errors(limit: int = 25) -> list[dict[str, Any]]:
+    """Recent failures, merging failed jobs and failed per-indexer uploads.
+
+    Kept here rather than in each caller so the CLI, the HTTP API and the MCP
+    endpoint all report the same thing.
+    """
+    capped = max(1, min(int(limit), 200))
+    errors: list[dict[str, Any]] = []
+
+    for job in database.get_job_history(limit=capped):
+        message = job.get("error_message")
+        if not message:
+            continue
+        errors.append(
+            {
+                "kind": "job",
+                "job_id": job.get("job_id"),
+                "category": job.get("category"),
+                "when": job.get("completed_at") or job.get("started_at"),
+                "error": str(message),
+            }
+        )
+
+    # get_recent_uploads returns a paginated envelope; each item carries one
+    # "destinations" entry per indexer, and that is where a failure is recorded.
+    page = database.get_recent_uploads(limit=capped)
+    for row in page.get("items", []) if isinstance(page, dict) else []:
+        for destination in row.get("destinations", []) or []:
+            if str(destination.get("status", "")).lower() not in {"failed", "error"}:
+                continue
+            errors.append(
+                {
+                    "kind": "upload",
+                    "item_name": row.get("item_name"),
+                    "indexer": destination.get("id"),
+                    "when": destination.get("uploaded_at"),
+                    "error": str(destination.get("error") or "").strip() or "unknown error",
+                }
+            )
+
+    errors.sort(key=lambda entry: str(entry.get("when") or ""), reverse=True)
+    return errors[:capped]

@@ -102,6 +102,22 @@
     box-sizing: border-box;
 }
 
+/* ---- Focus Visible (keyboard accessibility) ---- */
+/* Every interactive element gets a visible ring for keyboard users, even where a
+   component (toggle switches, custom buttons) suppresses :focus itself via
+   focus:outline-none - the !important guarantees the ring always wins for keyboard
+   navigation while leaving plain mouse-click :focus untouched. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible,
+[role='button']:focus-visible {
+    outline: 2px solid var(--notion-accent) !important;
+    outline-offset: 2px;
+}
+
 input {
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
@@ -748,6 +764,21 @@ table tbody tr:nth-child(odd) {
 @media (prefers-reduced-motion: no-preference) {
     html {
         scroll-behavior: smooth;
+    }
+}
+
+/* ---- Reduced Motion ----
+   Neutralize every transition/animation app-wide (modal scale/fade, toasts,
+   flyouts, section-expand, dots keyframe, etc.) for users who asked for less
+   motion, instead of only disabling smooth scrolling. */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        scroll-behavior: auto !important;
     }
 }
 

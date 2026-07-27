@@ -16,12 +16,12 @@
 
     <div class="pt-4 flex flex-col xs:flex-row items-center justify-center gap-3 sm:gap-4 px-4">
         {% if status_code == 500 %}
-        <button onclick="window.location.reload()" class="w-full xs:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-notion-bg-hover border border-notion-border text-notion-text-primary rounded-md font-semibold hover:bg-notion-bg-active transition-all">
+        <button onclick="window.location.reload()" class="btn-secondary w-full xs:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-md font-semibold">
             <lucide-icon name="refresh-cw" icon-class="size-4"></lucide-icon>
             Try Again
         </button>
         {% endif %}
-        <a href="/" class="w-full xs:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-notion-accent text-white rounded-md font-semibold hover:bg-notion-accent/90 transition-all">
+        <a href="/" class="btn-primary w-full xs:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-md font-semibold">
             <lucide-icon name="home" icon-class="size-4"></lucide-icon>
             Dashboard
         </a>

@@ -41,7 +41,7 @@ _AUTO_YEAR_TOKEN_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
 _AUTO_YEAR_RANGE_RE = re.compile(r"(?:19|20)\d{2}\s*[-/]\s*(?:19|20)\d{2}")
 _AUTO_SEASON_TOKEN_RE = re.compile(r"\b(?:season|series)\b", re.IGNORECASE)
 _AUTO_COMPLETE_SERIES_RANGE_RE = re.compile(
-    r"(?:19|20)\d{2}\s*[-/–—]\s*(?:19|20)\d{2}.*\b(?:complete|season|series|s\d{1,2}|dvd|remux)\b",
+    r"(?:19|20)\d{2}\s*[-/–-]\s*(?:19|20)\d{2}.*\b(?:complete|season|series|s\d{1,2}|dvd|remux)\b",
     re.IGNORECASE,
 )
 _TRAILING_RELEASE_GROUP_YEAR_RE = re.compile(r"[-._\s]+[A-Za-z][A-Za-z0-9]{1,20}(?:19|20)\d{2}$")

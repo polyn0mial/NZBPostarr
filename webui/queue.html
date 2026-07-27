@@ -595,16 +595,16 @@
             <!-- end overflow-x-auto -->
 
             <!-- Empty State -->
-            <div v-if="!loading && flatCategories.every(c => (items[c.id] || []).length === 0) && totalExternalItems === 0" class="px-3 py-12 text-center">
-                <lucide-icon name="check-circle" icon-class="w-8 h-8 text-notion-success mx-auto mb-3"></lucide-icon>
-                <p class="text-sm text-notion-text-secondary font-medium">All caught up!</p>
-                <p class="text-xs text-notion-text-tertiary mt-1">No pending items found{{ searchQuery ? ' matching "' + searchQuery + '"' : '' }}.</p>
+            <div v-if="!loading && flatCategories.every(c => (items[c.id] || []).length === 0) && totalExternalItems === 0" class="empty-state">
+                <lucide-icon name="check-circle" icon-class="empty-state-icon w-8 h-8 text-notion-success"></lucide-icon>
+                <p class="empty-state-title">All caught up!</p>
+                <p class="empty-state-subtitle">No pending items found{{ searchQuery ? ' matching "' + searchQuery + '"' : '' }}.</p>
             </div>
 
-            <div v-if="!loading && !hasVisiblePendingItems && (flatCategories.some(c => (items[c.id] || []).length > 0) || totalExternalItems > 0)" class="px-3 py-12 text-center">
-                <lucide-icon name="filter-x" icon-class="w-8 h-8 text-notion-text-placeholder mx-auto mb-3"></lucide-icon>
-                <p class="text-sm text-notion-text-secondary font-medium">No pending items match the current filters.</p>
-                <p class="text-xs text-notion-text-tertiary mt-1">Adjust search, categories, or filter options to show items again.</p>
+            <div v-if="!loading && !hasVisiblePendingItems && (flatCategories.some(c => (items[c.id] || []).length > 0) || totalExternalItems > 0)" class="empty-state">
+                <lucide-icon name="filter-x" icon-class="empty-state-icon w-8 h-8 text-notion-text-placeholder"></lucide-icon>
+                <p class="empty-state-title">No pending items match the current filters.</p>
+                <p class="empty-state-subtitle">Adjust search, categories, or filter options to show items again.</p>
             </div>
 
             <!-- Loading State -->
@@ -651,10 +651,10 @@
     <div :class="queueSectionClass('staging')">
         <div>
             <!-- Empty state -->
-            <div v-if="queueItems.length === 0" class="px-4 py-6 text-center text-notion-text-tertiary text-sm">
-                <lucide-icon name="inbox" icon-class="w-8 h-8 mx-auto mb-2 opacity-30"></lucide-icon>
-                <p class="font-medium text-xs">Staging area is empty</p>
-                <p class="text-[10px] mt-1">
+            <div v-if="queueItems.length === 0" class="empty-state py-6">
+                <lucide-icon name="inbox" icon-class="empty-state-icon w-8 h-8 opacity-30"></lucide-icon>
+                <p class="empty-state-title">Staging area is empty</p>
+                <p class="empty-state-subtitle">
                     Select items above and click
                     <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-notion-accent/10 text-notion-accent rounded text-[10px] font-medium">Add to Staging</span>
                 </p>
@@ -806,7 +806,7 @@
     <div :class="queueSectionClass('waiting')">
         <div>
             <transition-group name="job-list" tag="div" class="divide-y divide-notion-divider">
-                <div v-for="job in jobQueueEntries" :key="job.job_id" class="flex items-start gap-4 px-4 py-3 bg-notion-bg hover:bg-notion-bg-hover transition-all group cursor-pointer" @click="openJobQueueEntry(job)">
+                <div v-for="job in jobQueueEntries" :key="job.job_id" class="flex items-start gap-4 px-4 py-3 bg-notion-bg hover:bg-notion-bg-hover transition-colors group cursor-pointer" @click="openJobQueueEntry(job)">
                     <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" :class="isJobQueueActiveEntry(job) ? 'bg-notion-accent/10 text-notion-accent' : 'bg-notion-bg-hover text-notion-text-secondary'">
                         <span v-if="isJobQueueActiveEntry(job)" class="text-[10px] font-bold uppercase tracking-wider">Now</span>
                         <span v-else class="text-xs font-bold">#{{ job._queuePosition }}</span>
@@ -963,506 +963,448 @@
 </teleport>
 
 <!-- Active Job Viewer Modal -->
-<teleport to="body">
-    <Transition name="modal">
-        <div v-if="showActiveJobModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeActiveJobModal()">
-            <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-4xl mx-4 overflow-hidden max-h-[85vh] flex flex-col">
-                <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between flex-shrink-0 gap-3">
+<modal
+    :open="showActiveJobModal"
+    :title="`Active Job Items ${activeJobModalJob ? activeJobModalJob.job_id : ''}`"
+    icon="list"
+    :badge="jobHasExplicitPaths(activeJobModalJob) ? `${activeJobModalItems.length} remaining` : 'Scan job'"
+    max-width="max-w-4xl"
+    @close="closeActiveJobModal()">
+    <div class="px-4 py-3 border-b border-notion-divider bg-notion-bg space-y-2">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div class="text-xs text-notion-text-secondary">{{ activeJobModalInstruction }}</div>
+            <div v-if="activeJobModalJob && activeJobModalJob.current_item" class="px-2.5 py-1 rounded-md bg-notion-accent/10 text-notion-accent text-[11px] font-medium truncate max-w-full sm:max-w-[320px]" :title="activeJobModalJob.current_item">
+                Now processing: {{ activeJobModalJob.current_item }}
+            </div>
+        </div>
+
+        <div v-if="activeJobModalItems.length > 0" class="relative max-w-md">
+            <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+            <input
+                type="text"
+                v-model="activeJobModalSearch"
+                placeholder="Search active job paths..."
+                class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+        </div>
+        <div v-if="activeJobModalJob && recentJobEvents(activeJobModalJob).length" class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-notion-text-tertiary">
+            <span class="uppercase tracking-wider">Activity</span>
+            <span v-for="event in recentJobEvents(activeJobModalJob)" :key="event.at + ':' + event.type" :title="event.message">
+                {{ formatDate(event.at) }} &middot; {{ event.message }}
+            </span>
+        </div>
+    </div>
+
+    <div class="overflow-y-auto">
+        <div v-if="activeJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-circle" icon-class="w-6 h-6 mx-auto mb-2 animate-spin"></lucide-icon>
+            <span>Loading remaining job items...</span>
+        </div>
+        <div v-else>
+            <div v-if="activeJobModalJob && activeJobModalJob.current_item" class="flex items-center gap-3 px-4 py-2 border-b border-notion-divider bg-notion-accent/8">
+                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">Now</span>
+                <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 min-w-0">
-                        <lucide-icon name="list" icon-class="w-4 h-4 text-notion-accent"></lucide-icon>
-                        <h3 class="text-sm font-semibold text-notion-text-primary truncate">Active Job Items {{ activeJobModalJob ? activeJobModalJob.job_id : '' }}</h3>
-                        <span class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium">{{ jobHasExplicitPaths(activeJobModalJob) ? `${activeJobModalItems.length} remaining` : 'Scan job' }}</span>
+                        <p class="text-xs text-notion-text-primary truncate" :title="activeJobModalJob.current_item">{{ activeJobModalJob.current_item }}</p>
+                        <span class="px-1.5 py-0.5 rounded bg-notion-accent/15 text-notion-accent text-[10px] font-bold uppercase flex-shrink-0">Current</span>
                     </div>
-                    <button @click="closeActiveJobModal()" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors flex-shrink-0">
-                        <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
+                    <p class="text-[10px] text-notion-text-tertiary truncate">In progress and not draggable.</p>
+                </div>
+            </div>
+            <div v-if="activeJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
+                <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
+                <span>{{ activeJobModalEmptyMessage }}</span>
+            </div>
+            <div v-else ref="activeJobModalSortableContainer" class="divide-y divide-notion-divider">
+                <div v-for="(item, idx) in activeJobModalFilteredItems" :key="item.path" class="active-job-row flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors" :data-path="item.path">
+                    <span
+                        v-if="activeJobModalCanReorder"
+                        class="active-job-drag-handle p-1 rounded text-notion-text-tertiary hover:text-notion-accent cursor-grab active:cursor-grabbing"
+                        :class="(activeJobModalSaving || activeJobModalSearch) ? 'opacity-40 pointer-events-none' : ''"
+                        title="Drag to reorder remaining items">
+                        <lucide-icon name="grip-vertical" icon-class="w-3.5 h-3.5"></lucide-icon>
+                    </span>
+                    <span v-else class="p-1 rounded text-notion-text-tertiary/50">
+                        <lucide-icon name="list" icon-class="w-3.5 h-3.5"></lucide-icon>
+                    </span>
+                    <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
+                        <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
+                    </div>
+                    <button
+                        @click.stop="removeActiveJobModalItem(item.path)"
+                        :disabled="activeJobModalSaving"
+                        class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title="Remove this remaining item from the active job">
+                        <lucide-icon name="x" icon-class="w-3.5 h-3.5"></lucide-icon>
                     </button>
-                </div>
-
-                <div class="px-4 py-3 border-b border-notion-divider bg-notion-bg space-y-2">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                        <div class="text-xs text-notion-text-secondary">{{ activeJobModalInstruction }}</div>
-                        <div v-if="activeJobModalJob && activeJobModalJob.current_item" class="px-2.5 py-1 rounded-md bg-notion-accent/10 text-notion-accent text-[11px] font-medium truncate max-w-full sm:max-w-[320px]" :title="activeJobModalJob.current_item">
-                            Now processing: {{ activeJobModalJob.current_item }}
-                        </div>
-                    </div>
-
-                    <div v-if="activeJobModalItems.length > 0" class="relative max-w-md">
-                        <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
-                        <input
-                            type="text"
-                            v-model="activeJobModalSearch"
-                            placeholder="Search active job paths..."
-                            class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
-                    </div>
-                    <div v-if="activeJobModalJob && recentJobEvents(activeJobModalJob).length" class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-notion-text-tertiary">
-                        <span class="uppercase tracking-wider">Activity</span>
-                        <span v-for="event in recentJobEvents(activeJobModalJob)" :key="event.at + ':' + event.type" :title="event.message">
-                            {{ formatDate(event.at) }} &middot; {{ event.message }}
-                        </span>
-                    </div>
-                </div>
-
-                <div class="overflow-y-auto">
-                    <div v-if="activeJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
-                        <lucide-icon name="loader-circle" icon-class="w-6 h-6 mx-auto mb-2 animate-spin"></lucide-icon>
-                        <span>Loading remaining job items...</span>
-                    </div>
-                    <div v-else>
-                        <div v-if="activeJobModalJob && activeJobModalJob.current_item" class="flex items-center gap-3 px-4 py-2 border-b border-notion-divider bg-notion-accent/8">
-                            <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">Now</span>
-                            <div class="flex-1 min-w-0">
-                                <div class="flex items-center gap-2 min-w-0">
-                                    <p class="text-xs text-notion-text-primary truncate" :title="activeJobModalJob.current_item">{{ activeJobModalJob.current_item }}</p>
-                                    <span class="px-1.5 py-0.5 rounded bg-notion-accent/15 text-notion-accent text-[10px] font-bold uppercase flex-shrink-0">Current</span>
-                                </div>
-                                <p class="text-[10px] text-notion-text-tertiary truncate">In progress and not draggable.</p>
-                            </div>
-                        </div>
-                        <div v-if="activeJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
-                            <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
-                            <span>{{ activeJobModalEmptyMessage }}</span>
-                        </div>
-                        <div v-else ref="activeJobModalSortableContainer" class="divide-y divide-notion-divider">
-                            <div v-for="(item, idx) in activeJobModalFilteredItems" :key="item.path" class="active-job-row flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors" :data-path="item.path">
-                                <span
-                                    v-if="activeJobModalCanReorder"
-                                    class="active-job-drag-handle p-1 rounded text-notion-text-tertiary hover:text-notion-accent cursor-grab active:cursor-grabbing"
-                                    :class="(activeJobModalSaving || activeJobModalSearch) ? 'opacity-40 pointer-events-none' : ''"
-                                    title="Drag to reorder remaining items">
-                                    <lucide-icon name="grip-vertical" icon-class="w-3.5 h-3.5"></lucide-icon>
-                                </span>
-                                <span v-else class="p-1 rounded text-notion-text-tertiary/50">
-                                    <lucide-icon name="list" icon-class="w-3.5 h-3.5"></lucide-icon>
-                                </span>
-                                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
-                                <div class="flex-1 min-w-0">
-                                    <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
-                                    <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
-                                </div>
-                                <button
-                                    @click.stop="removeActiveJobModalItem(item.path)"
-                                    :disabled="activeJobModalSaving"
-                                    class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
-                                    title="Remove this remaining item from the active job">
-                                    <lucide-icon name="x" icon-class="w-3.5 h-3.5"></lucide-icon>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
-    </Transition>
-</teleport>
+    </div>
+</modal>
 
 <!-- Completed Job Items Modal -->
-<teleport to="body">
-    <Transition name="modal">
-        <div v-if="completedJobModalJob" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeCompletedJobModal()">
-            <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-4xl mx-4 overflow-hidden max-h-[85vh] flex flex-col">
-                <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between flex-shrink-0 gap-3">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <lucide-icon name="list" icon-class="w-4 h-4 text-notion-success"></lucide-icon>
-                        <h3 class="text-sm font-semibold text-notion-text-primary truncate">Job Items {{ completedJobModalJob ? completedJobModalJob.job_id : '' }}</h3>
-                        <span class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium">{{ completedJobModalItems.length }} items</span>
-                    </div>
-                    <button @click="closeCompletedJobModal()" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors flex-shrink-0">
-                        <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
-                    </button>
-                </div>
-                <div class="px-4 py-3 border-b border-notion-divider bg-notion-bg">
-                    <div v-if="completedJobModalItems.length > 0" class="relative max-w-md">
-                        <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
-                        <input type="text" v-model="completedJobModalSearch" placeholder="Search job paths..." class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent/50">
-                    </div>
-                    <div v-if="completedJobModalJob" class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-notion-text-tertiary mt-2">
-                        <span>{{ completedJobModalJob.items_processed || 0 }}/{{ completedJobModalJob.items_total || 0 }} processed</span>
-                        <template v-if="completedJobModalJob.items_skipped"><span class="opacity-60">&bull;</span><span>{{ completedJobModalJob.items_skipped }} skipped</span></template>
-                        <template v-if="completedJobModalJob.summary && completedJobModalJob.summary.duration"><span class="opacity-60">&bull;</span><span>{{ completedJobModalJob.summary.duration }}</span></template>
-                    </div>
-                </div>
-                <div class="overflow-y-auto">
-                    <div v-if="completedJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
-                        <lucide-icon name="loader-circle" icon-class="w-6 h-6 mx-auto mb-2 animate-spin"></lucide-icon>
-                        <span>Loading job items...</span>
-                    </div>
-                    <div v-else>
-                        <div v-if="completedJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
-                            <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
-                            <span v-if="completedJobModalItems.length === 0">No item list available. Item history is only retained in the current session.</span>
-                            <span v-else>No items match this search.</span>
-                        </div>
-                        <div v-else class="divide-y divide-notion-divider">
-                            <div v-for="(item, idx) in completedJobModalFilteredItems" :key="item.path" class="flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors">
-                                <span class="p-1 rounded text-notion-text-tertiary/50"><lucide-icon name="file" icon-class="w-3.5 h-3.5"></lucide-icon></span>
-                                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
-                                <div class="flex-1 min-w-0">
-                                    <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
-                                    <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
-                                </div>
-                            </div>
-                        </div>
+<modal
+    :open="!!completedJobModalJob"
+    :title="`Job Items ${completedJobModalJob ? completedJobModalJob.job_id : ''}`"
+    icon="list"
+    icon-class="text-notion-success"
+    :badge="`${completedJobModalItems.length} items`"
+    max-width="max-w-4xl"
+    @close="closeCompletedJobModal()">
+    <div class="px-4 py-3 border-b border-notion-divider bg-notion-bg">
+        <div v-if="completedJobModalItems.length > 0" class="relative max-w-md">
+            <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+            <input type="text" v-model="completedJobModalSearch" placeholder="Search job paths..." class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent/50">
+        </div>
+        <div v-if="completedJobModalJob" class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-notion-text-tertiary mt-2">
+            <span>{{ completedJobModalJob.items_processed || 0 }}/{{ completedJobModalJob.items_total || 0 }} processed</span>
+            <template v-if="completedJobModalJob.items_skipped"><span class="opacity-60">&bull;</span><span>{{ completedJobModalJob.items_skipped }} skipped</span></template>
+            <template v-if="completedJobModalJob.summary && completedJobModalJob.summary.duration"><span class="opacity-60">&bull;</span><span>{{ completedJobModalJob.summary.duration }}</span></template>
+        </div>
+    </div>
+    <div class="overflow-y-auto">
+        <div v-if="completedJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-circle" icon-class="w-6 h-6 mx-auto mb-2 animate-spin"></lucide-icon>
+            <span>Loading job items...</span>
+        </div>
+        <div v-else>
+            <div v-if="completedJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
+                <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
+                <span v-if="completedJobModalItems.length === 0">No item list available. Item history is only retained in the current session.</span>
+                <span v-else>No items match this search.</span>
+            </div>
+            <div v-else class="divide-y divide-notion-divider">
+                <div v-for="(item, idx) in completedJobModalFilteredItems" :key="item.path" class="flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors">
+                    <span class="p-1 rounded text-notion-text-tertiary/50"><lucide-icon name="file" icon-class="w-3.5 h-3.5"></lucide-icon></span>
+                    <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
+                        <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
                     </div>
                 </div>
             </div>
         </div>
-    </Transition>
-</teleport>
+    </div>
+</modal>
 
 <!-- Queued Job Editor Modal -->
-<teleport to="body">
-    <Transition name="modal">
-        <div v-if="showQueuedJobModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeQueuedJobModal()">
-            <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-4xl mx-4 overflow-hidden max-h-[85vh] flex flex-col">
-                <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between flex-shrink-0">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <lucide-icon name="list-ordered" icon-class="w-4 h-4 text-notion-accent"></lucide-icon>
-                        <h3 class="text-sm font-semibold text-notion-text-primary truncate">Edit Queued Job {{ queuedJobModalJob ? queuedJobModalJob.job_id : '' }}</h3>
-                        <span class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium">{{ queuedJobModalItems.length }} items</span>
-                    </div>
-                    <button @click="closeQueuedJobModal()" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
-                        <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
-                    </button>
-                </div>
-
-                <div class="px-4 py-2 border-b border-notion-divider bg-notion-bg">
-                    <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                        <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary flex-shrink-0">Job Name</div>
-                        <div class="flex items-center gap-1.5 flex-1 min-w-0">
-                            <input
-                                type="text"
-                                v-model="queuedJobModalName"
-                                @keydown.enter.prevent="saveQueuedJobName"
-                                placeholder="Optional custom name (e.g. Weekend TV batch)"
-                                class="px-2.5 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
-                            <button
-                                @click="saveQueuedJobName"
-                                :disabled="!queuedJobModalNameDirty || queuedJobModalRenaming"
-                                class="px-2.5 py-1.5 rounded-md text-xs font-medium bg-notion-accent text-white hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
-                                {{ queuedJobModalRenaming ? 'Saving...' : 'Save' }}
-                            </button>
-                            <button
-                                v-if="queuedJobModalName"
-                                @click="clearQueuedJobName"
-                                :disabled="queuedJobModalRenaming"
-                                class="px-2 py-1.5 rounded-md text-xs text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover disabled:opacity-50 transition-colors whitespace-nowrap">
-                                Clear
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-                        <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary flex-shrink-0">Deferred Start</div>
-                        <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
-                            <input type="date" v-model="queuedJobModalDate" class="px-2.5 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none" />
-                            <label class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-notion-border bg-notion-bg-secondary text-xs text-notion-text-secondary cursor-pointer">
-                                <input type="checkbox" v-model="queuedJobModalHasTime" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-primary text-notion-accent" />
-                                Set time
-                            </label>
-                            <input type="time" v-model="queuedJobModalTime" :disabled="!queuedJobModalHasTime" class="px-2.5 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none disabled:opacity-50" />
-                            <button
-                                @click="saveQueuedJobSchedule"
-                                :disabled="!queuedJobModalScheduleDirty || queuedJobModalScheduling"
-                                class="px-2.5 py-1.5 rounded-md text-xs font-medium bg-notion-warning/20 text-notion-warning hover:bg-notion-warning/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
-                                {{ queuedJobModalScheduling ? 'Saving...' : 'Save Date' }}
-                            </button>
-                            <button
-                                v-if="queuedJobModalJob && queuedJobModalJob.run_after"
-                                @click="clearQueuedJobSchedule"
-                                :disabled="queuedJobModalScheduling"
-                                class="px-2 py-1.5 rounded-md text-xs text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover disabled:opacity-50 transition-colors whitespace-nowrap">
-                                Immediate
-                            </button>
-                            <span class="text-[10px] text-notion-text-tertiary">If no time is set, default is 12:00 PM.</span>
-                        </div>
-                    </div>
-
-                    <div v-if="queuedJobModalJob && recentJobEvents(queuedJobModalJob).length" class="flex flex-wrap gap-x-3 gap-y-1 mb-2 text-[10px] text-notion-text-tertiary">
-                        <span class="uppercase tracking-wider">Activity</span>
-                        <span v-for="event in recentJobEvents(queuedJobModalJob)" :key="event.at + ':' + event.type" :title="event.message">
-                            {{ formatDate(event.at) }} &middot; {{ event.message }}
-                        </span>
-                    </div>
-
-                    <div class="relative max-w-md">
-                        <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
-                        <input
-                            type="text"
-                            v-model="queuedJobModalSearch"
-                            placeholder="Search queued paths..."
-                            class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
-                    </div>
-                    <p class="text-[10px] text-notion-text-tertiary mt-1">
-                        <template v-if="!queuedJobModalSearch">Drag rows by the grip icon to reorder.</template>
-                        <template v-else>Drag reorder is disabled while search filtering is active.</template>
-                    </p>
-                </div>
-
-                <div class="overflow-y-auto">
-                    <div v-if="queuedJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
-                        <lucide-icon name="loader-2" icon-class="w-5 h-5 animate-spin mx-auto mb-2"></lucide-icon>
-                        Loading queued items...
-                    </div>
-                    <div v-else-if="queuedJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
-                        <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
-                        <span v-if="queuedJobModalItems.length === 0">No items left in this queued job.</span>
-                        <span v-else>No queued items match this search.</span>
-                    </div>
-                    <div v-else ref="queuedJobModalSortableContainer" class="divide-y divide-notion-divider">
-                        <div v-for="(item, idx) in queuedJobModalFilteredItems" :key="item.path" class="queued-job-row flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors" :data-path="item.path">
-                            <span class="queued-job-drag-handle p-1 rounded text-notion-text-tertiary hover:text-notion-accent cursor-grab active:cursor-grabbing" :class="(queuedJobModalSaving || queuedJobModalSearch) ? 'opacity-40 pointer-events-none' : ''" title="Drag to reorder">
-                                <lucide-icon name="grip-vertical" icon-class="w-3.5 h-3.5"></lucide-icon>
-                            </span>
-                            <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
-                            <div class="flex-1 min-w-0">
-                                <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
-                                <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
-                            </div>
-                            <button @click.stop="removeQueuedJobModalItem(item.path)" :disabled="queuedJobModalSaving" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors disabled:opacity-40" title="Remove from queued job">
-                                <lucide-icon name="trash-2" icon-class="w-3.5 h-3.5"></lucide-icon>
-                            </button>
-                        </div>
-                    </div>
-                </div>
+<modal
+    :open="showQueuedJobModal"
+    :title="`Edit Queued Job ${queuedJobModalJob ? queuedJobModalJob.job_id : ''}`"
+    icon="list-ordered"
+    :badge="`${queuedJobModalItems.length} items`"
+    max-width="max-w-4xl"
+    @close="closeQueuedJobModal()">
+    <div class="px-4 py-2 border-b border-notion-divider bg-notion-bg">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary flex-shrink-0">Job Name</div>
+            <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                <input
+                    type="text"
+                    v-model="queuedJobModalName"
+                    @keydown.enter.prevent="saveQueuedJobName"
+                    placeholder="Optional custom name (e.g. Weekend TV batch)"
+                    class="px-2.5 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+                <button
+                    @click="saveQueuedJobName"
+                    :disabled="!queuedJobModalNameDirty || queuedJobModalRenaming"
+                    class="btn-primary px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap">
+                    {{ queuedJobModalRenaming ? 'Saving...' : 'Save' }}
+                </button>
+                <button
+                    v-if="queuedJobModalName"
+                    @click="clearQueuedJobName"
+                    :disabled="queuedJobModalRenaming"
+                    class="px-2 py-1.5 rounded-md text-xs text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover disabled:opacity-50 transition-colors whitespace-nowrap">
+                    Clear
+                </button>
             </div>
         </div>
-    </Transition>
-</teleport>
+
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary flex-shrink-0">Deferred Start</div>
+            <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                <input type="date" v-model="queuedJobModalDate" class="px-2.5 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none" />
+                <label class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-notion-border bg-notion-bg-secondary text-xs text-notion-text-secondary cursor-pointer">
+                    <input type="checkbox" v-model="queuedJobModalHasTime" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-primary text-notion-accent" />
+                    Set time
+                </label>
+                <input type="time" v-model="queuedJobModalTime" :disabled="!queuedJobModalHasTime" class="px-2.5 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none disabled:opacity-50" />
+                <button
+                    @click="saveQueuedJobSchedule"
+                    :disabled="!queuedJobModalScheduleDirty || queuedJobModalScheduling"
+                    class="px-2.5 py-1.5 rounded-md text-xs font-medium bg-notion-warning/20 text-notion-warning hover:bg-notion-warning/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+                    {{ queuedJobModalScheduling ? 'Saving...' : 'Save Date' }}
+                </button>
+                <button
+                    v-if="queuedJobModalJob && queuedJobModalJob.run_after"
+                    @click="clearQueuedJobSchedule"
+                    :disabled="queuedJobModalScheduling"
+                    class="px-2 py-1.5 rounded-md text-xs text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover disabled:opacity-50 transition-colors whitespace-nowrap">
+                    Immediate
+                </button>
+                <span class="text-[10px] text-notion-text-tertiary">If no time is set, default is 12:00 PM.</span>
+            </div>
+        </div>
+
+        <div v-if="queuedJobModalJob && recentJobEvents(queuedJobModalJob).length" class="flex flex-wrap gap-x-3 gap-y-1 mb-2 text-[10px] text-notion-text-tertiary">
+            <span class="uppercase tracking-wider">Activity</span>
+            <span v-for="event in recentJobEvents(queuedJobModalJob)" :key="event.at + ':' + event.type" :title="event.message">
+                {{ formatDate(event.at) }} &middot; {{ event.message }}
+            </span>
+        </div>
+
+        <div class="relative max-w-md">
+            <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+            <input
+                type="text"
+                v-model="queuedJobModalSearch"
+                placeholder="Search queued paths..."
+                class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+        </div>
+        <p class="text-[10px] text-notion-text-tertiary mt-1">
+            <template v-if="!queuedJobModalSearch">Drag rows by the grip icon to reorder.</template>
+            <template v-else>Drag reorder is disabled while search filtering is active.</template>
+        </p>
+    </div>
+
+    <div class="overflow-y-auto">
+        <div v-if="queuedJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-2" icon-class="w-5 h-5 animate-spin mx-auto mb-2"></lucide-icon>
+            Loading queued items...
+        </div>
+        <div v-else-if="queuedJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
+            <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
+            <span v-if="queuedJobModalItems.length === 0">No items left in this queued job.</span>
+            <span v-else>No queued items match this search.</span>
+        </div>
+        <div v-else ref="queuedJobModalSortableContainer" class="divide-y divide-notion-divider">
+            <div v-for="(item, idx) in queuedJobModalFilteredItems" :key="item.path" class="queued-job-row flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors" :data-path="item.path">
+                <span class="queued-job-drag-handle p-1 rounded text-notion-text-tertiary hover:text-notion-accent cursor-grab active:cursor-grabbing" :class="(queuedJobModalSaving || queuedJobModalSearch) ? 'opacity-40 pointer-events-none' : ''" title="Drag to reorder">
+                    <lucide-icon name="grip-vertical" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </span>
+                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
+                    <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
+                </div>
+                <button @click.stop="removeQueuedJobModalItem(item.path)" :disabled="queuedJobModalSaving" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors disabled:opacity-40" title="Remove from queued job">
+                    <lucide-icon name="trash-2" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+            </div>
+        </div>
+    </div>
+</modal>
 
 <!-- Bulk Upload Preview Modal -->
-<teleport to="body">
-    <Transition name="modal">
-        <div v-if="showBulkPreviewModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="closeBulkPreviewModal">
-            <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-4xl mx-4 overflow-hidden max-h-[88vh] flex flex-col">
-                <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between flex-shrink-0">
-                    <div class="flex items-center gap-2 min-w-0">
-                        <lucide-icon name="list-checks" icon-class="w-4 h-4 text-notion-accent flex-shrink-0"></lucide-icon>
+<modal
+    :open="showBulkPreviewModal"
+    :title="bulkPreviewMode === 'staging' ? 'Review Staged Queue Plan' : 'Review Bulk Upload Plan'"
+    :subtitle="`Destination: ${bulkPreviewIndexerName || 'all indexers'}`"
+    icon="list-checks"
+    max-width="max-w-4xl"
+    panel-class="bg-notion-bg-secondary max-h-[88vh]"
+    :close-disabled="bulkPreviewStarting"
+    @close="closeBulkPreviewModal()">
+    <div v-if="bulkPreviewLoading" class="px-4 py-16 text-center text-notion-text-tertiary">
+        <lucide-icon name="loader-2" icon-class="w-6 h-6 animate-spin mx-auto mb-3 text-notion-accent"></lucide-icon>
+        <p class="text-sm text-notion-text-secondary">Checking paths, limits, duplicates, and destinations...</p>
+    </div>
+
+    <template v-else-if="bulkPreview">
+        <div class="p-4 space-y-4 overflow-y-auto">
+            <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+                <div class="rounded-md border border-notion-border bg-notion-bg p-2.5">
+                    <p class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Selected</p>
+                    <p class="text-lg font-semibold text-notion-text-primary">{{ bulkPreview.selection?.matched || bulkPreviewSummary.selected || 0 }}</p>
+                </div>
+                <div class="rounded-md border border-notion-success/30 bg-notion-success/5 p-2.5">
+                    <p class="text-[10px] uppercase tracking-wider text-notion-success">Ready</p>
+                    <p class="text-lg font-semibold text-notion-success">{{ bulkPreviewSummary.ready || 0 }}</p>
+                </div>
+                <div class="rounded-md border border-notion-info/30 bg-notion-info/5 p-2.5">
+                    <p class="text-[10px] uppercase tracking-wider text-notion-info">Duplicates</p>
+                    <p class="text-lg font-semibold text-notion-info">{{ bulkPreviewSummary.duplicate || 0 }}</p>
+                </div>
+                <div class="rounded-md border border-notion-border bg-notion-bg p-2.5">
+                    <p class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Excluded</p>
+                    <p class="text-lg font-semibold text-notion-text-secondary">{{ (bulkPreviewSummary.excluded || 0) + (bulkPreview.selection?.bulk_excluded || 0) }}</p>
+                </div>
+                <div class="rounded-md border border-notion-warning/30 bg-notion-warning/5 p-2.5">
+                    <p class="text-[10px] uppercase tracking-wider text-notion-warning">Invalid</p>
+                    <p class="text-lg font-semibold text-notion-warning">{{ bulkPreviewSummary.invalid || 0 }}</p>
+                </div>
+                <div class="rounded-md border border-notion-error/30 bg-notion-error/5 p-2.5">
+                    <p class="text-[10px] uppercase tracking-wider text-notion-error">Blocked</p>
+                    <p class="text-lg font-semibold text-notion-error">{{ bulkPreviewSummary.blocked || 0 }}</p>
+                </div>
+                <div class="rounded-md border border-notion-border bg-notion-bg p-2.5">
+                    <p class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Ready Size</p>
+                    <p class="text-sm font-semibold text-notion-text-primary mt-1">{{ formatBytes(bulkPreviewSummary.ready_bytes || 0) }}</p>
+                </div>
+            </div>
+
+            <div v-if="bulkPreview.duplicate_check_bypassed" class="flex items-start gap-2 rounded-md border border-notion-warning/30 bg-notion-warning/5 px-3 py-2 text-xs text-notion-warning">
+                <lucide-icon name="triangle-alert" icon-class="w-4 h-4 mt-0.5 flex-shrink-0"></lucide-icon>
+                Duplicate checking is bypassed for this run; previously uploaded destinations are included in the ready count.
+            </div>
+
+            <div v-if="(bulkPreview.selection?.bulk_excluded || 0) > 0 || (bulkPreview.selection?.overlapping_paths || 0) > 0" class="rounded-md border border-notion-border bg-notion-bg px-3 py-2 text-xs text-notion-text-secondary">
+                <span v-if="(bulkPreview.selection?.bulk_excluded || 0) > 0">{{ bulkPreview.selection.bulk_excluded }} item(s) were removed by mass-selection exclusions.</span>
+                <span v-if="(bulkPreview.selection?.bulk_excluded || 0) > 0 && (bulkPreview.selection?.overlapping_paths || 0) > 0"> </span>
+                <span v-if="(bulkPreview.selection?.overlapping_paths || 0) > 0">{{ bulkPreview.selection.overlapping_paths }} overlapping parent path(s) were consolidated.</span>
+            </div>
+
+            <div v-if="bulkPreviewDestinations.length > 0">
+                <h4 class="text-[10px] uppercase tracking-wider text-notion-text-tertiary mb-1.5">Destination Coverage</h4>
+                <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    <div v-for="destination in bulkPreviewDestinations" :key="destination.id" class="rounded-md border border-notion-border bg-notion-bg px-3 py-2 flex items-center justify-between gap-3">
+                        <span class="text-xs text-notion-text-primary truncate">{{ destination.name }}</span>
+                        <span class="text-[10px] text-notion-text-tertiary whitespace-nowrap">{{ destination.pending }} pending / {{ destination.uploaded }} uploaded</span>
+                    </div>
+                </div>
+            </div>
+
+            <div v-if="bulkPreviewNonReadyItems.length > 0">
+                <div class="flex items-center justify-between gap-3 mb-1.5">
+                    <h4 class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Items Not Ready</h4>
+                    <span class="text-[10px] text-notion-text-tertiary">First {{ bulkPreviewNonReadyItems.length }}</span>
+                </div>
+                <div class="rounded-md border border-notion-border divide-y divide-notion-divider max-h-64 overflow-y-auto">
+                    <div v-for="item in bulkPreviewNonReadyItems" :key="item.path + ':' + item.outcome" class="px-3 py-2 flex items-start gap-3 bg-notion-bg">
+                        <span
+                            class="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex-shrink-0"
+                            :class="item.outcome === 'duplicate' ? 'bg-notion-info/15 text-notion-info' : (item.outcome === 'blocked' ? 'bg-notion-error/15 text-notion-error' : (item.outcome === 'invalid' ? 'bg-notion-warning/15 text-notion-warning' : 'bg-notion-bg-hover text-notion-text-secondary'))">
+                            {{ item.outcome }}
+                        </span>
                         <div class="min-w-0">
-                            <h3 class="text-sm font-semibold text-notion-text-primary">{{ bulkPreviewMode === 'staging' ? 'Review Staged Queue Plan' : 'Review Bulk Upload Plan' }}</h3>
-                            <p class="text-[10px] text-notion-text-tertiary truncate">Destination: {{ bulkPreviewIndexerName || 'all indexers' }}</p>
+                            <p class="text-xs text-notion-text-primary truncate" :title="item.path">{{ item.name || item.path || 'Unknown item' }}</p>
+                            <p class="text-[10px] text-notion-text-tertiary">{{ item.reason || 'Excluded by upload rules' }}</p>
                         </div>
                     </div>
-                    <button @click="closeBulkPreviewModal" :disabled="bulkPreviewStarting" class="text-notion-text-tertiary hover:text-notion-text-primary disabled:opacity-40 transition-colors">
-                        <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
-                    </button>
                 </div>
-
-                <div v-if="bulkPreviewLoading" class="px-4 py-16 text-center text-notion-text-tertiary">
-                    <lucide-icon name="loader-2" icon-class="w-6 h-6 animate-spin mx-auto mb-3 text-notion-accent"></lucide-icon>
-                    <p class="text-sm text-notion-text-secondary">Checking paths, limits, duplicates, and destinations...</p>
-                </div>
-
-                <template v-else-if="bulkPreview">
-                    <div class="p-4 space-y-4 overflow-y-auto">
-                        <div class="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                            <div class="rounded-md border border-notion-border bg-notion-bg p-2.5">
-                                <p class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Selected</p>
-                                <p class="text-lg font-semibold text-notion-text-primary">{{ bulkPreview.selection?.matched || bulkPreviewSummary.selected || 0 }}</p>
-                            </div>
-                            <div class="rounded-md border border-notion-success/30 bg-notion-success/5 p-2.5">
-                                <p class="text-[10px] uppercase tracking-wider text-notion-success">Ready</p>
-                                <p class="text-lg font-semibold text-notion-success">{{ bulkPreviewSummary.ready || 0 }}</p>
-                            </div>
-                            <div class="rounded-md border border-notion-info/30 bg-notion-info/5 p-2.5">
-                                <p class="text-[10px] uppercase tracking-wider text-notion-info">Duplicates</p>
-                                <p class="text-lg font-semibold text-notion-info">{{ bulkPreviewSummary.duplicate || 0 }}</p>
-                            </div>
-                            <div class="rounded-md border border-notion-border bg-notion-bg p-2.5">
-                                <p class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Excluded</p>
-                                <p class="text-lg font-semibold text-notion-text-secondary">{{ (bulkPreviewSummary.excluded || 0) + (bulkPreview.selection?.bulk_excluded || 0) }}</p>
-                            </div>
-                            <div class="rounded-md border border-notion-warning/30 bg-notion-warning/5 p-2.5">
-                                <p class="text-[10px] uppercase tracking-wider text-notion-warning">Invalid</p>
-                                <p class="text-lg font-semibold text-notion-warning">{{ bulkPreviewSummary.invalid || 0 }}</p>
-                            </div>
-                            <div class="rounded-md border border-notion-error/30 bg-notion-error/5 p-2.5">
-                                <p class="text-[10px] uppercase tracking-wider text-notion-error">Blocked</p>
-                                <p class="text-lg font-semibold text-notion-error">{{ bulkPreviewSummary.blocked || 0 }}</p>
-                            </div>
-                            <div class="rounded-md border border-notion-border bg-notion-bg p-2.5">
-                                <p class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Ready Size</p>
-                                <p class="text-sm font-semibold text-notion-text-primary mt-1">{{ formatBytes(bulkPreviewSummary.ready_bytes || 0) }}</p>
-                            </div>
-                        </div>
-
-                        <div v-if="bulkPreview.duplicate_check_bypassed" class="flex items-start gap-2 rounded-md border border-notion-warning/30 bg-notion-warning/5 px-3 py-2 text-xs text-notion-warning">
-                            <lucide-icon name="triangle-alert" icon-class="w-4 h-4 mt-0.5 flex-shrink-0"></lucide-icon>
-                            Duplicate checking is bypassed for this run; previously uploaded destinations are included in the ready count.
-                        </div>
-
-                        <div v-if="(bulkPreview.selection?.bulk_excluded || 0) > 0 || (bulkPreview.selection?.overlapping_paths || 0) > 0" class="rounded-md border border-notion-border bg-notion-bg px-3 py-2 text-xs text-notion-text-secondary">
-                            <span v-if="(bulkPreview.selection?.bulk_excluded || 0) > 0">{{ bulkPreview.selection.bulk_excluded }} item(s) were removed by mass-selection exclusions.</span>
-                            <span v-if="(bulkPreview.selection?.bulk_excluded || 0) > 0 && (bulkPreview.selection?.overlapping_paths || 0) > 0"> </span>
-                            <span v-if="(bulkPreview.selection?.overlapping_paths || 0) > 0">{{ bulkPreview.selection.overlapping_paths }} overlapping parent path(s) were consolidated.</span>
-                        </div>
-
-                        <div v-if="bulkPreviewDestinations.length > 0">
-                            <h4 class="text-[10px] uppercase tracking-wider text-notion-text-tertiary mb-1.5">Destination Coverage</h4>
-                            <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                <div v-for="destination in bulkPreviewDestinations" :key="destination.id" class="rounded-md border border-notion-border bg-notion-bg px-3 py-2 flex items-center justify-between gap-3">
-                                    <span class="text-xs text-notion-text-primary truncate">{{ destination.name }}</span>
-                                    <span class="text-[10px] text-notion-text-tertiary whitespace-nowrap">{{ destination.pending }} pending / {{ destination.uploaded }} uploaded</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div v-if="bulkPreviewNonReadyItems.length > 0">
-                            <div class="flex items-center justify-between gap-3 mb-1.5">
-                                <h4 class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Items Not Ready</h4>
-                                <span class="text-[10px] text-notion-text-tertiary">First {{ bulkPreviewNonReadyItems.length }}</span>
-                            </div>
-                            <div class="rounded-md border border-notion-border divide-y divide-notion-divider max-h-64 overflow-y-auto">
-                                <div v-for="item in bulkPreviewNonReadyItems" :key="item.path + ':' + item.outcome" class="px-3 py-2 flex items-start gap-3 bg-notion-bg">
-                                    <span
-                                        class="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex-shrink-0"
-                                        :class="item.outcome === 'duplicate' ? 'bg-notion-info/15 text-notion-info' : (item.outcome === 'blocked' ? 'bg-notion-error/15 text-notion-error' : (item.outcome === 'invalid' ? 'bg-notion-warning/15 text-notion-warning' : 'bg-notion-bg-hover text-notion-text-secondary'))">
-                                        {{ item.outcome }}
-                                    </span>
-                                    <div class="min-w-0">
-                                        <p class="text-xs text-notion-text-primary truncate" :title="item.path">{{ item.name || item.path || 'Unknown item' }}</p>
-                                        <p class="text-[10px] text-notion-text-tertiary">{{ item.reason || 'Excluded by upload rules' }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                            <p v-if="bulkPreview.details_truncated" class="text-[10px] text-notion-text-tertiary mt-1">The full plan is larger than the preview detail limit.</p>
-                        </div>
-                    </div>
-
-                    <div class="px-4 py-3 border-t border-notion-divider flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 flex-shrink-0">
-                        <p class="text-[10px] text-notion-text-tertiary">
-                            {{ bulkPreviewMode === 'staging' ? 'Starting removes runnable items from staging after the job is created.' : 'Starting creates one job; upload rules are rechecked when each item runs.' }}
-                        </p>
-                        <div class="flex items-center justify-end gap-2">
-                            <button @click="closeBulkPreviewModal" :disabled="bulkPreviewStarting" class="px-4 py-1.5 text-xs text-notion-text-secondary hover:text-notion-text-primary disabled:opacity-40 transition-colors">Cancel</button>
-                            <button
-                                @click="confirmBulkPreviewUpload"
-                                :disabled="!bulkPreviewCanStart || bulkPreviewStarting"
-                                class="px-4 py-1.5 bg-notion-accent text-white rounded-md text-xs font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5">
-                                <lucide-icon :name="bulkPreviewStarting ? 'loader-2' : 'play'" :icon-class="'w-3.5 h-3.5 ' + (bulkPreviewStarting ? 'animate-spin' : '')"></lucide-icon>
-                                {{ bulkPreviewStarting ? 'Starting...' : `Start ${bulkPreviewSummary.ready || 0} Ready Item(s)` }}
-                            </button>
-                        </div>
-                    </div>
-                </template>
+                <p v-if="bulkPreview.details_truncated" class="text-[10px] text-notion-text-tertiary mt-1">The full plan is larger than the preview detail limit.</p>
             </div>
         </div>
-    </Transition>
-</teleport>
+
+        <div class="px-4 py-3 border-t border-notion-divider flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 flex-shrink-0">
+            <p class="text-[10px] text-notion-text-tertiary">
+                {{ bulkPreviewMode === 'staging' ? 'Starting removes runnable items from staging after the job is created.' : 'Starting creates one job; upload rules are rechecked when each item runs.' }}
+            </p>
+            <div class="flex items-center justify-end gap-2">
+                <button @click="closeBulkPreviewModal" :disabled="bulkPreviewStarting" class="px-4 py-1.5 text-xs text-notion-text-secondary hover:text-notion-text-primary disabled:opacity-40 transition-colors">Cancel</button>
+                <button
+                    @click="confirmBulkPreviewUpload"
+                    :disabled="!bulkPreviewCanStart || bulkPreviewStarting"
+                    class="btn-primary px-4 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5">
+                    <lucide-icon :name="bulkPreviewStarting ? 'loader-2' : 'play'" :icon-class="'w-3.5 h-3.5 ' + (bulkPreviewStarting ? 'animate-spin' : '')"></lucide-icon>
+                    {{ bulkPreviewStarting ? 'Starting...' : `Start ${bulkPreviewSummary.ready || 0} Ready Item(s)` }}
+                </button>
+            </div>
+        </div>
+    </template>
+</modal>
 
 <!-- Mark Uploaded Modal -->
-<teleport to="body">
-    <Transition name="modal">
-        <div v-if="showMarkModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="showMarkModal = false">
-            <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-md mx-4 overflow-hidden">
-                <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <lucide-icon name="check-circle" icon-class="w-4 h-4 text-notion-success"></lucide-icon>
-                        <h3 class="text-sm font-semibold text-notion-text-primary">Mark as Uploaded</h3>
-                    </div>
-                    <button @click="showMarkModal = false" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
-                        <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
-                    </button>
+<modal
+    :open="showMarkModal"
+    title="Mark as Uploaded"
+    icon="check-circle"
+    icon-class="text-notion-success"
+    max-width="max-w-md"
+    panel-class="bg-notion-bg-secondary"
+    @close="showMarkModal = false">
+    <div class="p-4 space-y-3">
+        <p class="text-xs text-notion-text-secondary">
+            Select which indexers to mark
+            <strong>{{ selectedCount }}</strong>
+            item(s) as uploaded to:
+        </p>
+        <label class="flex items-center gap-2 px-3 py-2 bg-notion-bg border border-notion-border rounded-md cursor-pointer hover:bg-notion-bg-hover transition-colors">
+            <input type="checkbox" v-model="markAllIndexers" @change="toggleMarkAll" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+            <span class="text-xs font-medium text-notion-text-primary">All Indexers</span>
+        </label>
+        <div class="space-y-1">
+            <label v-for="idx in activeIndexers" :key="idx.id" class="flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer hover:bg-notion-bg-hover transition-colors">
+                <input type="checkbox" v-model="markIndexerSelection[idx.id]" class="w-3 h-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                <div class="flex items-center gap-1.5">
+                    <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-3.5 h-3.5 object-contain" />
+                    <lucide-icon v-else :name="idx.icon || 'database'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary"></lucide-icon>
+                    <span class="text-xs text-notion-text-primary">{{ idx.name }}</span>
                 </div>
-                <div class="p-4 space-y-3">
-                    <p class="text-xs text-notion-text-secondary">
-                        Select which indexers to mark
-                        <strong>{{ selectedCount }}</strong>
-                        item(s) as uploaded to:
-                    </p>
-                    <label class="flex items-center gap-2 px-3 py-2 bg-notion-bg border border-notion-border rounded-md cursor-pointer hover:bg-notion-bg-hover transition-colors">
-                        <input type="checkbox" v-model="markAllIndexers" @change="toggleMarkAll" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
-                        <span class="text-xs font-medium text-notion-text-primary">All Indexers</span>
-                    </label>
-                    <div class="space-y-1">
-                        <label v-for="idx in activeIndexers" :key="idx.id" class="flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer hover:bg-notion-bg-hover transition-colors">
-                            <input type="checkbox" v-model="markIndexerSelection[idx.id]" class="w-3 h-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
-                            <div class="flex items-center gap-1.5">
-                                <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-3.5 h-3.5 object-contain" />
-                                <lucide-icon v-else :name="idx.icon || 'database'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary"></lucide-icon>
-                                <span class="text-xs text-notion-text-primary">{{ idx.name }}</span>
-                            </div>
-                        </label>
-                    </div>
-                </div>
-                <div class="px-4 py-3 border-t border-notion-divider flex items-center justify-end gap-2">
-                    <button @click="showMarkModal = false" class="px-4 py-1.5 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors">Cancel</button>
-                    <button @click="confirmMarkUploaded" class="px-4 py-1.5 bg-notion-success text-white rounded-md text-xs hover:opacity-90 transition-colors flex items-center gap-1.5">
-                        <lucide-icon name="check" icon-class="w-3.5 h-3.5"></lucide-icon>
-                        Confirm
-                    </button>
-                </div>
-            </div>
+            </label>
         </div>
-    </Transition>
-</teleport>
+    </div>
+    <div class="px-4 py-3 border-t border-notion-divider flex items-center justify-end gap-2">
+        <button @click="showMarkModal = false" class="px-4 py-1.5 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors">Cancel</button>
+        <button @click="confirmMarkUploaded" class="px-4 py-1.5 bg-notion-success text-white rounded-md text-xs hover:opacity-90 transition-colors flex items-center gap-1.5">
+            <lucide-icon name="check" icon-class="w-3.5 h-3.5"></lucide-icon>
+            Confirm
+        </button>
+    </div>
+</modal>
 
 <!-- Finished Jobs Modal (Show All) -->
-<teleport to="body">
-    <Transition name="modal">
-        <div v-if="showFinishedModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm" @click.self="showFinishedModal = false">
-            <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-2xl mx-4 overflow-hidden max-h-[80vh] flex flex-col">
-                <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between flex-shrink-0">
-                    <div class="flex items-center gap-2">
-                        <lucide-icon name="check-circle" icon-class="w-4 h-4 text-notion-success"></lucide-icon>
-                        <h3 class="text-sm font-semibold text-notion-text-primary">All Finished Jobs</h3>
-                        <span class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium">{{ finished.length }}</span>
-                    </div>
-                    <div class="flex items-center gap-3">
-                        <button @click="clearFinished()" class="text-xs text-notion-text-tertiary hover:text-notion-error transition-colors">Clear All</button>
-                        <button @click="showFinishedModal = false" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
-                            <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
-                        </button>
-                    </div>
-                </div>
-                <div class="overflow-y-auto divide-y divide-notion-divider">
-                    <div v-for="job in finished" :key="job.job_id" class="flex items-center gap-4 px-4 py-2 bg-notion-bg hover:bg-notion-bg-hover transition-colors group">
-                        <div :class="finishedStatusBg(job)" class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0">
-                            <lucide-icon :name="getStatusConfig(job.status).icon" :icon-class="'w-3.5 h-3.5 ' + getStatusConfig(job.status).color"></lucide-icon>
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm font-medium text-notion-text-primary truncate">{{ jobDisplayName(job) }}</span>
-                                <span :class="finishedStatusBadge(job)" class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded">{{ job.status }}</span>
-                                <span v-if="job.test_mode" class="bg-notion-warning/20 text-notion-warning rounded font-bold px-1.5 py-0.5 text-[10px]">TEST</span>
-                            </div>
-                            <div class="flex items-center gap-2 text-[10px] text-notion-text-tertiary mt-0.5">
-                                <span class="font-mono">{{ job.job_id }}</span>
-                                <span class="opacity-60">&bull;</span>
-                                <span>{{ job.items_processed || 0 }}/{{ job.items_total || 0 }} items</span>
-                                <template v-if="job.summary && job.summary.duration">
-                                    <span class="opacity-60">&bull;</span>
-                                    <span>{{ job.summary.duration }}</span>
-                                </template>
-                                <template v-if="job.total_bytes > 0">
-                                    <span class="opacity-60">&bull;</span>
-                                    <span>{{ formatBytes(job.total_bytes) }}</span>
-                                </template>
-                                <template v-if="job.attempt_count > 1">
-                                    <span class="opacity-60">&bull;</span>
-                                    <span>attempt {{ job.attempt_count }}</span>
-                                </template>
-                                <template v-if="job.finished_at">
-                                    <span class="opacity-60">&bull;</span>
-                                    <span>{{ formatDate(job.finished_at) }}</span>
-                                </template>
-                            </div>
-                            <div v-if="job.last_error" class="text-[10px] text-notion-error truncate mt-0.5" :title="job.last_error">{{ job.last_error }}</div>
-                        </div>
-                        <button v-if="job.retry_eligible" @click="retryJob(job)" :disabled="isJobActionPending(job.job_id)" class="p-1.5 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors disabled:opacity-40 flex-shrink-0" title="Retry Failed Job">
-                            <lucide-icon name="rotate-ccw" icon-class="w-4 h-4"></lucide-icon>
-                        </button>
-                        <button @click="renameJobInline(job)" class="p-1.5 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Rename Job">
-                            <lucide-icon name="pencil" icon-class="w-4 h-4"></lucide-icon>
-                        </button>
-                        <button @click="deleteJob(job.job_id)" class="p-1.5 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Dismiss">
-                            <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
-                        </button>
-                    </div>
-                </div>
+<modal
+    :open="showFinishedModal"
+    title="All Finished Jobs"
+    icon="check-circle"
+    icon-class="text-notion-success"
+    :badge="finished.length"
+    max-width="max-w-2xl"
+    panel-class="bg-notion-bg-secondary max-h-[80vh]"
+    @close="showFinishedModal = false">
+    <template #header-actions>
+        <button @click="clearFinished()" class="text-xs text-notion-text-tertiary hover:text-notion-error transition-colors">Clear All</button>
+    </template>
+    <div class="overflow-y-auto divide-y divide-notion-divider">
+        <div v-for="job in finished" :key="job.job_id" class="flex items-center gap-4 px-4 py-2 bg-notion-bg hover:bg-notion-bg-hover transition-colors group">
+            <div :class="finishedStatusBg(job)" class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0">
+                <lucide-icon :name="getStatusConfig(job.status).icon" :icon-class="'w-3.5 h-3.5 ' + getStatusConfig(job.status).color"></lucide-icon>
             </div>
+            <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium text-notion-text-primary truncate">{{ jobDisplayName(job) }}</span>
+                    <span :class="finishedStatusBadge(job)" class="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded">{{ job.status }}</span>
+                    <span v-if="job.test_mode" class="bg-notion-warning/20 text-notion-warning rounded font-bold px-1.5 py-0.5 text-[10px]">TEST</span>
+                </div>
+                <div class="flex items-center gap-2 text-[10px] text-notion-text-tertiary mt-0.5">
+                    <span class="font-mono">{{ job.job_id }}</span>
+                    <span class="opacity-60">&bull;</span>
+                    <span>{{ job.items_processed || 0 }}/{{ job.items_total || 0 }} items</span>
+                    <template v-if="job.summary && job.summary.duration">
+                        <span class="opacity-60">&bull;</span>
+                        <span>{{ job.summary.duration }}</span>
+                    </template>
+                    <template v-if="job.total_bytes > 0">
+                        <span class="opacity-60">&bull;</span>
+                        <span>{{ formatBytes(job.total_bytes) }}</span>
+                    </template>
+                    <template v-if="job.attempt_count > 1">
+                        <span class="opacity-60">&bull;</span>
+                        <span>attempt {{ job.attempt_count }}</span>
+                    </template>
+                    <template v-if="job.finished_at">
+                        <span class="opacity-60">&bull;</span>
+                        <span>{{ formatDate(job.finished_at) }}</span>
+                    </template>
+                </div>
+                <div v-if="job.last_error" class="text-[10px] text-notion-error truncate mt-0.5" :title="job.last_error">{{ job.last_error }}</div>
+            </div>
+            <button v-if="job.retry_eligible" @click="retryJob(job)" :disabled="isJobActionPending(job.job_id)" class="p-1.5 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors disabled:opacity-40 flex-shrink-0" title="Retry Failed Job">
+                <lucide-icon name="rotate-ccw" icon-class="w-4 h-4"></lucide-icon>
+            </button>
+            <button @click="renameJobInline(job)" class="p-1.5 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Rename Job">
+                <lucide-icon name="pencil" icon-class="w-4 h-4"></lucide-icon>
+            </button>
+            <button @click="deleteJob(job.job_id)" class="p-1.5 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Dismiss">
+                <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
+            </button>
         </div>
-    </Transition>
-</teleport>
+    </div>
+</modal>
 
 <!-- Mobile FAB: scroll to Job Staging Area / back to top -->
 <button id="scroll-fab-btn" class="scroll-fab" data-mode="queue" aria-label="Jump to Job Staging Area" title="Jump to Job Staging Area">

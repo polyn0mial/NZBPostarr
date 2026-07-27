@@ -56,11 +56,11 @@ _BATT_CACHE_TS: float = 0.0
 _IFACE_IP_CACHE: Dict[str, str] = {}
 _IFACE_IP_CACHE_TS: float = 0.0
 
-# DB flush task — single async task handles all periodic DB writes
+# DB flush task - single async task handles all periodic DB writes
 _DB_RECORD_TASK: Optional[asyncio.Task[None]] = None
 
 # ---------------------------------------------------------------------------
-#  IN-MEMORY RING BUFFERS — serve sparkline data without touching SQLite
+#  IN-MEMORY RING BUFFERS - serve sparkline data without touching SQLite
 # ---------------------------------------------------------------------------
 _MAX_RING = 60  # ~50 min at one sample every 50 s
 _STATS_RING: Deque[Dict[str, Any]] = deque(maxlen=_MAX_RING)
@@ -129,7 +129,7 @@ def get_stats_history(limit: int = 60) -> Dict[str, List[Any]]:
     """
     ring = list(_STATS_RING)
     if not ring:
-        # Ring not yet populated — fallback to DB
+        # Ring not yet populated - fallback to DB
         return database.get_system_stats_history(limit)
     if limit and len(ring) > limit:
         ring = ring[-limit:]
@@ -497,7 +497,7 @@ async def _stats_collector() -> None:
                                 for s in recent
                             ],
                         )
-                        # Interface stats — just the latest snapshot
+                        # Interface stats - just the latest snapshot
                         iface_data = [
                             {
                                 "name": n,

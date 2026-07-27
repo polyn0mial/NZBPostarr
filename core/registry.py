@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple
 import requests
 import yaml
 from loguru import logger
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from core.redaction import redact_mapping, redact_text, redact_url
 from core.utils import log_success, log_verbose, normalize_submission_category
@@ -29,6 +29,13 @@ SubmitStatus = Literal["success", "duplicate", "misconfigured", "rejected", "net
 SubmitResult = Tuple[bool, SubmitStatus, str]
 _FileSource = Path | bytes
 _FileSpec = Tuple[str, str, _FileSource, str]
+
+# Closed sets documented in indexers/_template.yaml. Kept here so both the
+# submission HTTP method and the auth method fail fast at load time (naming
+# the offending YAML file) instead of silently falling through to a no-op
+# branch on a typo.
+_VALID_SUBMIT_METHODS: Tuple[str, ...] = ("POST", "PUT", "CURL")
+_VALID_AUTH_METHODS: Tuple[str, ...] = ("query_param", "header", "form_field", "curl_url", "none")
 
 
 @dataclass(frozen=True, slots=True)
@@ -133,11 +140,18 @@ class CategoryMapping(BaseModel):
 class AuthConfig(BaseModel):
     """Authentication configuration for an indexer."""
 
-    method: str = "query_param"  # query_param, header, form_field, curl_url
+    method: str = "query_param"  # query_param, header, form_field, curl_url, or none
     api_key_param: str = "apikey"  # Parameter name for API key
     username_param: Optional[str] = None  # For indexers requiring username
     header_name: Optional[str] = None  # For header-based auth
     header_template: Optional[str] = None  # e.g., "Bearer {api_key}"
+
+    @field_validator("method")
+    @classmethod
+    def _validate_auth_method(cls, value: str) -> str:
+        if value not in _VALID_AUTH_METHODS:
+            raise ValueError(f"auth.method must be one of {_VALID_AUTH_METHODS}, got {value!r}")
+        return value
 
 
 class FileFields(BaseModel):
@@ -174,6 +188,13 @@ class IndexerDefinition(BaseModel):
     method: str = "POST"  # POST, PUT, or special "CURL" for curl-based
     curl_template: Optional[str] = None  # For curl-based indexers like OMG
 
+    # Optional opt-in shortcut for well-known request shapes. Currently only
+    # "newznab" is supported: it explicitly requests the same auto-populated
+    # t/apikey/category/name query params that the URL-suffix/extra_params
+    # heuristic below already infers for plain Newznab-API sites (NZBGeek,
+    # NZBPlanet, NZB.su). Leave unset to keep relying on that heuristic.
+    profile: Optional[Literal["newznab"]] = None
+
     # Authentication
     auth: AuthConfig = Field(default_factory=AuthConfig)
 
@@ -202,6 +223,17 @@ class IndexerDefinition(BaseModel):
     # UI Configuration
     icon: Optional[str] = None  # Lucide icon name
     color: Optional[str] = "#808080"  # Hex color code (e.g. #FF0000)
+
+    @field_validator("method")
+    @classmethod
+    def _validate_method(cls, value: str) -> str:
+        # Consuming code always compares indexer.method.upper(), so accept any
+        # case but canonicalize to the uppercase form here; a genuinely
+        # unrecognized value (a typo, not just wrong case) fails at load.
+        normalized = str(value).strip().upper()
+        if normalized not in _VALID_SUBMIT_METHODS:
+            raise ValueError(f"method must be one of {_VALID_SUBMIT_METHODS} (case-insensitive), got {value!r}")
+        return normalized
 
     @property
     def log_name(self) -> str:
@@ -370,8 +402,9 @@ class IndexerRegistry:
         self._indexer_files.clear()
 
         for yaml_file in sorted(self.indexers_dir.glob("*.yaml"), key=lambda path: path.name.lower()):
-            if yaml_file.name.startswith("_"):
-                continue  # Skip files starting with underscore
+            stem_lower = yaml_file.stem.lower()
+            if yaml_file.name.startswith("_") or stem_lower.endswith(".example") or stem_lower.endswith(".template"):
+                continue  # Skip files starting with underscore, or *.example.yaml/*.template.yaml
 
             try:
                 with open(yaml_file, "r", encoding="utf-8") as f:
@@ -692,7 +725,7 @@ def _check_success(indexer: IndexerDefinition, response: requests.Response) -> t
         except (TypeError, ValueError):
             pass
 
-    # Check text patterns — use word-boundary matching for short patterns
+    # Check text patterns - use word-boundary matching for short patterns
     # to avoid false positives (e.g. "OK" matching inside "TOKEN" or "BROKEN").
     for pattern in indexer.success.text_patterns:
         pat_upper = pattern.upper()
@@ -741,7 +774,11 @@ def _build_submission_fields(
             data["catid"] = category
         data.update(upload="upload", rlsname=rls_name.replace(",", "."))
     else:
-        is_newznab = "t" in indexer.extra_params or indexer.submit_url.endswith("/api")
+        is_newznab = (
+            indexer.profile == "newznab"
+            or "t" in indexer.extra_params
+            or indexer.submit_url.endswith("/api")
+        )
         if is_newznab:
             params["t"] = indexer.extra_params.get("t", "nzbadd")
             if api_key:

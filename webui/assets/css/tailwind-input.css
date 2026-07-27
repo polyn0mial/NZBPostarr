@@ -10,7 +10,7 @@
         font-size: var(--text-sm);
         line-height: var(--text-sm--line-height);
         color: var(--notion-text-secondary);
-        transition-property: all;
+        transition-property: color, background-color;
         transition-timing-function: var(--default-transition-timing-function);
         transition-duration: var(--default-transition-duration);
         &:hover {
@@ -37,13 +37,95 @@
         padding: 0.375rem;
         border-radius: var(--radius-md);
         color: var(--notion-text-tertiary);
-        transition-property: all;
+        transition-property: color, background-color;
         transition-timing-function: var(--default-transition-timing-function);
         transition-duration: var(--default-transition-duration);
         &:hover {
             color: var(--notion-text-primary);
             background-color: var(--notion-bg-hover);
         }
+    }
+    /* Canonical accent action button. Layout (padding/height/gap/font-weight) stays
+       per call site; this supplies the color + hover + disabled treatment so every
+       primary button in the app fades the same way instead of three different hovers. */
+    .btn-primary {
+        background-color: var(--notion-accent);
+        color: #ffffff;
+        transition-property: filter, background-color, opacity;
+        transition-timing-function: var(--default-transition-timing-function);
+        transition-duration: var(--default-transition-duration);
+        &:hover:not(:disabled) {
+            filter: brightness(0.95);
+        }
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    }
+    /* Canonical bordered/neutral action button (Cancel, secondary confirm, etc). */
+    .btn-secondary {
+        background-color: var(--notion-bg-hover);
+        border: 1px solid var(--notion-border);
+        color: var(--notion-text-primary);
+        transition-property: background-color, color;
+        transition-timing-function: var(--default-transition-timing-function);
+        transition-duration: var(--default-transition-duration);
+        &:hover:not(:disabled) {
+            background-color: var(--notion-bg-active);
+        }
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    }
+    /* Canonical destructive action button. Same shape contract as .btn-primary
+       (layout stays per call site); this supplies the error color + hover +
+       disabled treatment so every "yes, delete it" button matches. */
+    .btn-danger {
+        background-color: var(--notion-error);
+        color: #ffffff;
+        transition-property: filter, background-color, opacity;
+        transition-timing-function: var(--default-transition-timing-function);
+        transition-duration: var(--default-transition-duration);
+        &:hover:not(:disabled) {
+            filter: brightness(0.95);
+        }
+        &:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    }
+    /* Shared empty-state shape: icon + primary title + tertiary subtext, centered. */
+    .empty-state {
+        padding: 3rem 0.75rem;
+        text-align: center;
+        color: var(--notion-text-tertiary);
+    }
+    .empty-state-icon {
+        display: block;
+        margin: 0 auto 0.75rem;
+    }
+    .empty-state-title {
+        font-size: var(--text-sm);
+        line-height: var(--text-sm--line-height);
+        font-weight: var(--font-weight-medium);
+        color: var(--notion-text-secondary);
+    }
+    .empty-state-subtitle {
+        margin-top: 0.25rem;
+        font-size: var(--text-xs);
+        line-height: var(--text-xs--line-height);
+        color: var(--notion-text-tertiary);
+    }
+    /* Badge container shape only (no color) - pair with a color lookup like
+       colorClassMap/badgeClass() from page-base.js for the bg/text tint. */
+    .badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.125rem 0.5rem;
+        border-radius: var(--radius-sm, 0.25rem);
+        font-size: 10px;
+        line-height: var(--leading-normal);
     }
     /* Ensure table rows pop up for tooltips */
     tr {

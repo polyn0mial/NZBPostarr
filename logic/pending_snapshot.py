@@ -654,7 +654,7 @@ def _sort_external_groups(groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 def stamp_exclusion_flags(_result: Dict[str, Any]) -> None:
-    """No-op — legacy TV exclusion logic removed (all folders are external now)."""
+    """No-op - legacy TV exclusion logic removed (all folders are external now)."""
 
 
 def collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
@@ -788,7 +788,7 @@ def detect_content_itype(name: str, entry_path: Path, folder_category: str) -> s
 def _classify_standalone_file_category(entry: Path) -> str:
     """Classify a loose file by filename + extension only, without parent-path hints."""
     # DISC has absolute priority over ebook/music/audiobook extension detection.
-    # A Blu-ray or DVD folder may contain companion PDFs — it is still disc, not ebooks.
+    # A Blu-ray or DVD folder may contain companion PDFs - it is still disc, not ebooks.
     if _directory_disc_bubble_up(entry):
         return "disc"
     if _has_disc_structure_signature(entry):
@@ -1015,13 +1015,13 @@ def _propagate_pack_completion_down(node: Dict[str, Any], inherited_indexers: Op
     Runs after _rollup_external_completion (bottom-up) to fill in children whose rel_path
     was never individually recorded in the DB (e.g. files inside a pack uploaded as a unit).
     Only updates nodes with no direct record; nodes with their own DB entries keep their values.
-    Skipped/ignored items are excluded — they carry their own (False) completion state.
+    Skipped/ignored items are excluded - they carry their own (False) completion state.
     """
     children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
 
     if inherited_indexers is not None:
         direct = node.get("_direct_indexers") or {}
-        # Don't overwrite skipped items — they were explicitly excluded from upload selection
+        # Don't overwrite skipped items - they were explicitly excluded from upload selection
         if not any(direct.values()) and not node.get("skipped"):
             node["indexers"] = dict(inherited_indexers)
             node["completed"] = all(inherited_indexers.values())
@@ -1036,7 +1036,7 @@ def _enforce_child_source_requirement(node: Dict[str, Any]) -> None:
     """Mark child video files as ignored when they lack a quality source token in their filename.
 
     A child file without WEB-DL/BluRay/HDTV/DVD/etc. in its own name cannot be auto-selected
-    for individual upload — the parent pack (which carries the source token) is the upload unit.
+    for individual upload - the parent pack (which carries the source token) is the upload unit.
     Episode numbers like S03E01 are NOT sufficient on their own.
 
     Must run after _stamp_tree_selection_state (which grants leaf-fallback eligibility) and after
@@ -1059,7 +1059,7 @@ def _enforce_child_source_requirement(node: Dict[str, Any]) -> None:
         if category in {"disc", "books", "ebooks", "audiobooks", "music"}:
             continue
 
-        # Check only the file's own name — parent folder tokens do not count
+        # Check only the file's own name - parent folder tokens do not count
         if _SOURCE_TAG_PATTERN.search(name):
             continue
 

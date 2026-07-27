@@ -8,16 +8,16 @@
 <button
     @click="toggleTheme()"
     :title="theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'"
-    class="size-8 flex items-center justify-center rounded border border-notion-border bg-notion-bg hover:bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary transition-all">
+    class="size-8 flex items-center justify-center rounded border border-notion-border bg-notion-bg hover:bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary transition-colors">
     <lucide-icon :name="theme === 'dark' ? 'sun' : 'moon'" icon-class="size-3.5"></lucide-icon>
 </button>
 <button
     @click="openYamlModal()"
     title="Edit Raw YAML Configuration"
-    :class="['size-8 flex items-center justify-center rounded border transition-all', rawYamlDirty ? 'border-amber-500/60 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'border-notion-border bg-notion-bg hover:bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary']">
+    :class="['size-8 flex items-center justify-center rounded border transition-colors', rawYamlDirty ? 'border-amber-500/60 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'border-notion-border bg-notion-bg hover:bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary']">
     <lucide-icon name="file-code" icon-class="size-3.5"></lucide-icon>
 </button>
-<button @click="saveAllSettings" class="px-4 h-9 sm:h-8 bg-notion-accent text-white rounded text-xs font-semibold hover:bg-notion-accent/90 transition-all flex items-center gap-2">
+<button @click="saveAllSettings" class="btn-primary px-4 h-9 sm:h-8 rounded text-xs font-semibold flex items-center gap-2">
     <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
     <span class="hidden xs:inline">Save</span>
     <span class="xs:hidden">Save</span>
@@ -209,7 +209,7 @@
                     <div
                         class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
                         v-show="matchesSearch('skip files patterns filtering bypass enable')"
-                        title="Enable skip-file rules — when off, the Skip Files section is hidden"
+                        title="Enable skip-file rules - when off, the Skip Files section is hidden"
                         data-search="skip files patterns filtering bypass enable">
                         <div class="flex items-center gap-3">
                             <lucide-icon name="file-x" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
@@ -379,11 +379,11 @@
                     <button
                         @click="settings.skip_files.display_mode = 'disabled'"
                         :class="settings.skip_files.display_mode === 'disabled' ? 'bg-notion-accent text-white' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
-                        class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-all">
+                        class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors">
                         <lucide-icon name="eye-off" icon-class="size-3.5"></lucide-icon>
                         <span class="text-[10px] font-bold uppercase tracking-tight">Greyed Out</span>
                     </button>
-                    <button @click="settings.skip_files.display_mode = 'hidden'" :class="settings.skip_files.display_mode === 'hidden' ? 'bg-notion-accent text-white' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'" class="flex items-center gap-1.5 px-3 h-full transition-all">
+                    <button @click="settings.skip_files.display_mode = 'hidden'" :class="settings.skip_files.display_mode === 'hidden' ? 'bg-notion-accent text-white' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'" class="flex items-center gap-1.5 px-3 h-full transition-colors">
                         <lucide-icon name="eye" icon-class="size-3.5"></lucide-icon>
                         <span class="text-[10px] font-bold uppercase tracking-tight">Hidden</span>
                     </button>
@@ -403,9 +403,9 @@
                 </div>
 
                 <!-- Empty state -->
-                <div v-if="settings.skip_files.patterns.length === 0" class="py-6 text-center border border-dashed border-notion-border rounded-lg">
-                    <lucide-icon name="file-x-2" icon-class="size-6 text-notion-text-placeholder mx-auto mb-2"></lucide-icon>
-                    <p class="text-xs text-notion-text-tertiary">No skip patterns yet</p>
+                <div v-if="settings.skip_files.patterns.length === 0" class="empty-state py-6 border border-dashed border-notion-border rounded-lg">
+                    <lucide-icon name="file-x-2" icon-class="empty-state-icon size-6 text-notion-text-placeholder"></lucide-icon>
+                    <p class="empty-state-title">No skip patterns yet</p>
                     <button @click="addSkipPattern()" class="mt-2 text-[10px] text-notion-accent hover:underline">Add your first pattern</button>
                 </div>
 
@@ -447,7 +447,7 @@
                             :key="cat.value"
                             @click="toggleSkipCategory(rule, cat.value)"
                             :class="[
-                                'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-all',
+                                'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
                                 rule.categories.length === 0 || rule.categories.includes(cat.value)
                                     ? 'bg-notion-accent/10 border-notion-accent/30 text-notion-accent'
                                     : 'bg-notion-bg border-notion-border text-notion-text-tertiary hover:border-notion-text-tertiary'
@@ -557,14 +557,14 @@
                         v-if="updater.status && updater.status.update_available"
                         @click="installLatestFromGithub"
                         :disabled="updater.installing || updater.uploading || updater.rollingBack"
-                        class="px-3 h-8 rounded bg-notion-accent text-white text-xs font-semibold hover:bg-notion-accent/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                        class="btn-primary px-3 h-8 rounded text-xs font-semibold">
                         {{ updater.installing ? 'Installing...' : 'Install Update' }}
                     </button>
                     <span v-if="updater.status && !updater.status.update_available && updater.status.current_version" class="text-xs text-notion-success flex items-center gap-1">
                         <lucide-icon name="check-circle" icon-class="size-3.5"></lucide-icon>
                         Up to date
                     </span>
-                    <button @click="updater.showManualUpdate = !updater.showManualUpdate" class="ml-auto px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium transition-all flex items-center gap-1.5">
+                    <button @click="updater.showManualUpdate = !updater.showManualUpdate" class="ml-auto px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium transition-colors flex items-center gap-1.5">
                         <lucide-icon :name="updater.showManualUpdate ? 'chevron-up' : 'chevron-down'" icon-class="size-3.5"></lucide-icon>
                         Manual Update
                     </button>
@@ -574,7 +574,7 @@
                     <!-- ZIP upload -->
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-xs text-notion-text-tertiary w-24 shrink-0">Install from ZIP</span>
-                        <label class="inline-flex items-center gap-2 px-3 h-8 rounded border border-notion-border bg-notion-bg text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium cursor-pointer transition-all">
+                        <label class="inline-flex items-center gap-2 px-3 h-8 rounded border border-notion-border bg-notion-bg text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium cursor-pointer transition-colors">
                             <lucide-icon name="paperclip" icon-class="size-3.5"></lucide-icon>
                             <span>{{ updater.selectedUploadFile ? 'Change ZIP' : 'Choose ZIP' }}</span>
                             <input type="file" accept=".zip" @change="onUpdateZipChosen" class="hidden" />
@@ -650,7 +650,7 @@
                     <div
                         class="setting-item flex items-center justify-between p-2 -mx-2 hover:bg-notion-bg-hover/10 transition-colors rounded-md min-h-8"
                         v-show="matchesSearch('enable backfill global master switch')"
-                        title="Master switch — enable backfill uploads across all configured indexers"
+                        title="Master switch - enable backfill uploads across all configured indexers"
                         data-search="enable backfill global master switch">
                         <div class="flex items-center gap-3">
                             <lucide-icon name="zap" icon-class="size-3.5 text-notion-accent"></lucide-icon>
@@ -690,7 +690,7 @@
                     <div
                         v-for="indexer in leftColumnIndexers"
                         :key="indexer.id"
-                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-all group min-h-8 gap-y-1"
+                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-[color,background-color,opacity] group min-h-8 gap-y-1"
                         v-show="matchesSearch((indexer.name || '') + ' ' + (indexer.id || '') + ' indexer api')"
                         :style="{ opacity: settings.destinations['enable_' + indexer.id] ? 1 : 0.4 }"
                         :data-search="indexer.name.toLowerCase() + ' ' + indexer.id + ' indexer api'">
@@ -712,7 +712,7 @@
                                 <button
                                     @click="toggleSetting('enable_' + indexer.id, 'destinations')"
                                     :class="settings.destinations['enable_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
-                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-all"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
                                     title="Toggle Indexer">
                                     <lucide-icon name="power" icon-class="size-3.5"></lucide-icon>
                                     <span class="text-[10px] font-bold uppercase tracking-tight">On</span>
@@ -727,7 +727,7 @@
                                         settings.destinations['backfill_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
                                         !canBackfill(indexer.id) ? 'cursor-not-allowed' : ''
                                     ]"
-                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-all"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
                                     title="Enable Backfill uploads for this indexer">
                                     <lucide-icon name="history" icon-class="size-3.5"></lucide-icon>
                                     <span class="text-[10px] uppercase tracking-tight">Backfill</span>
@@ -741,7 +741,7 @@
                                         settings.destinations['priority_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
                                         !settings.destinations['enable_' + indexer.id] ? 'cursor-not-allowed' : ''
                                     ]"
-                                    class="flex items-center gap-1.5 px-3 h-full transition-all"
+                                    class="flex items-center gap-1.5 px-3 h-full transition-colors"
                                     title="Check to include this indexer in the first (priority) upload set">
                                     <lucide-icon name="zap" icon-class="size-3.5"></lucide-icon>
                                     <span class="text-[10px] uppercase tracking-tight">Priority</span>
@@ -754,7 +754,7 @@
                     <div
                         v-for="indexer in rightColumnIndexers"
                         :key="indexer.id"
-                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-all group min-h-8 gap-y-1"
+                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-[color,background-color,opacity] group min-h-8 gap-y-1"
                         v-show="matchesSearch((indexer.name || '') + ' ' + (indexer.id || '') + ' indexer api')"
                         :style="{ opacity: settings.destinations['enable_' + indexer.id] ? 1 : 0.4 }"
                         :data-search="indexer.name.toLowerCase() + ' ' + indexer.id + ' indexer api'">
@@ -776,7 +776,7 @@
                                 <button
                                     @click="toggleSetting('enable_' + indexer.id, 'destinations')"
                                     :class="settings.destinations['enable_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
-                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-all"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
                                     title="Toggle Indexer">
                                     <lucide-icon name="power" icon-class="size-3.5"></lucide-icon>
                                     <span class="text-[10px] font-bold uppercase tracking-tight">On</span>
@@ -791,7 +791,7 @@
                                         settings.destinations['backfill_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
                                         !canBackfill(indexer.id) ? 'cursor-not-allowed' : ''
                                     ]"
-                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-all"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
                                     title="Enable Backfill uploads for this indexer">
                                     <lucide-icon name="history" icon-class="size-3.5"></lucide-icon>
                                     <span class="text-[10px] uppercase tracking-tight">Backfill</span>
@@ -805,7 +805,7 @@
                                         settings.destinations['priority_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
                                         !settings.destinations['enable_' + indexer.id] ? 'cursor-not-allowed' : ''
                                     ]"
-                                    class="flex items-center gap-1.5 px-3 h-full transition-all"
+                                    class="flex items-center gap-1.5 px-3 h-full transition-colors"
                                     title="Check to include this indexer in the first (priority) upload set">
                                     <lucide-icon name="zap" icon-class="size-3.5"></lucide-icon>
                                     <span class="text-[10px] uppercase tracking-tight">Priority</span>
@@ -890,7 +890,7 @@
             <h2 class="text-sm font-semibold text-notion-text-primary">Usenet Servers</h2>
         </div>
         <!-- Subtle Add Server Button -->
-        <button v-if="expandedSections.nntp" @click.stop="addServer" class="px-2 py-1 hover:bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent rounded font-medium transition-all flex items-center border border-notion-border text-[11px] gap-1.5">
+        <button v-if="expandedSections.nntp" @click.stop="addServer" class="px-2 py-1 hover:bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent rounded font-medium transition-colors flex items-center border border-notion-border text-[11px] gap-1.5">
             <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
             Add Server
         </button>
@@ -919,13 +919,13 @@
                             </div>
                         </td>
                         <td class="py-2 px-1">
-                            <input type="text" v-model="server.name" class="w-full bg-transparent border-0 text-notion-text-primary focus:outline-none focus:bg-notion-bg-elevated rounded transition-all text-[11px] px-1" />
+                            <input type="text" v-model="server.name" class="w-full bg-transparent border-0 text-notion-text-primary focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
                         </td>
                         <td class="py-2 px-1">
-                            <input type="text" v-model="server.host" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono focus:outline-none focus:bg-notion-bg-elevated rounded transition-all text-[11px] px-1" />
+                            <input type="text" v-model="server.host" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
                         </td>
                         <td class="py-2 px-1 text-center">
-                            <input type="number" v-model.number="server.port" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-all text-[11px]" />
+                            <input type="number" v-model.number="server.port" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px]" />
                         </td>
                         <td class="py-2 px-1 text-center">
                             <div class="flex items-center justify-center">
@@ -933,10 +933,10 @@
                             </div>
                         </td>
                         <td class="py-2 px-1 text-center">
-                            <input type="number" v-model.number="server.max_connections" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-all text-[11px]" />
+                            <input type="number" v-model.number="server.max_connections" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px]" />
                         </td>
                         <td class="py-2 px-1">
-                            <input type="text" v-model="server.user" class="w-full bg-transparent border-0 text-notion-text-secondary focus:outline-none focus:bg-notion-bg-elevated rounded transition-all text-[11px] px-1" />
+                            <input type="text" v-model="server.user" class="w-full bg-transparent border-0 text-notion-text-secondary focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
                         </td>
                         <td class="py-2 px-1">
                             <div class="relative group/pass">
@@ -1005,7 +1005,7 @@
                                 class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]" />
                         </td>
                         <td class="py-2 px-1 text-right pr-4">
-                            <button @click="addServer" class="w-6.5 h-6.5 inline-flex items-center justify-center shrink-0 bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-bg-active rounded transition-all" title="Add server">
+                            <button @click="addServer" class="w-6.5 h-6.5 inline-flex items-center justify-center shrink-0 bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-bg-active rounded transition-colors" title="Add server">
                                 <lucide-icon name="plus" icon-class="size-3.5"></lucide-icon>
                             </button>
                         </td>
@@ -1024,7 +1024,7 @@
             <h2 class="text-sm font-semibold text-notion-text-primary">Folder Paths</h2>
             <span class="text-xs text-notion-text-tertiary">(from config file)</span>
         </div>
-        <!-- Add Folder button in header — only visible when expanded -->
+        <!-- Add Folder button in header - only visible when expanded -->
         <button v-if="expandedSections.folders" @click.stop="addFolderPath()" class="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold text-notion-accent bg-notion-accent/10 hover:bg-notion-accent/20 rounded-md transition-colors">
             <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
             Add Folder
@@ -1043,7 +1043,7 @@
                         <input
                             type="text"
                             v-model="fp.path"
-                            class="w-full text-xs text-notion-text-secondary font-mono bg-notion-bg px-3 pr-11 h-9 rounded-md border border-notion-border focus:border-notion-accent/50 focus:outline-none focus:bg-notion-bg-elevated transition-all"
+                            class="w-full text-xs text-notion-text-secondary font-mono bg-notion-bg px-3 pr-11 h-9 rounded-md border border-notion-border focus:border-notion-accent/50 focus:outline-none focus:bg-notion-bg-elevated transition-colors"
                             placeholder="/path/to/folder" />
                         <button @click="openFolderBrowser(idx)" type="button" title="Browse folders" class="absolute inset-y-0 right-1 my-1 px-2 inline-flex items-center justify-center rounded-md text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-accent/15 transition-colors">
                             <lucide-icon name="folder-search" icon-class="size-3.5"></lucide-icon>
@@ -1054,7 +1054,7 @@
                     </div>
                     <div class="flex items-center gap-1 shrink-0 pl-1" :title="'Auto-monitor this folder for new content and upload automatically'">
                         <lucide-icon name="radar" icon-class="size-3" :class="fp.monitor ? 'text-notion-accent' : 'text-notion-text-tertiary'"></lucide-icon>
-                        <button @click="fp.monitor = !fp.monitor" :class="toggleBtnClassDirect(fp.monitor)" title="Monitor — auto-upload on changes (experimental)">
+                        <button @click="fp.monitor = !fp.monitor" :class="toggleBtnClassDirect(fp.monitor)" title="Monitor - auto-upload on changes (experimental)">
                             <span :class="toggleKnobClassDirect(fp.monitor)"></span>
                         </button>
                     </div>
@@ -1071,9 +1071,9 @@
                 </div>
             </div>
             <!-- Empty state -->
-            <div v-if="settings.folders.folder_paths.length === 0" class="text-center py-6 text-notion-text-tertiary">
-                <lucide-icon name="folder-plus" icon-class="size-8 mx-auto mb-2 opacity-40"></lucide-icon>
-                <p class="text-xs">
+            <div v-if="settings.folders.folder_paths.length === 0" class="empty-state py-6">
+                <lucide-icon name="folder-plus" icon-class="empty-state-icon size-8 opacity-40"></lucide-icon>
+                <p class="empty-state-title">
                     No folder paths configured. Click
                     <strong>Add Folder</strong>
                     above to get started.
@@ -1085,7 +1085,7 @@
                 <lucide-icon name="flask-conical" icon-class="size-3.5 text-amber-500 shrink-0 mt-0.5"></lucide-icon>
                 <p class="text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
                     <strong>Experimental:</strong>
-                    Folder monitoring watches for new content and automatically triggers uploads. Monitored folders are scanned periodically — new items are queued as upload jobs without manual intervention. This feature is under active development and may behave unexpectedly.
+                    Folder monitoring watches for new content and automatically triggers uploads. Monitored folders are scanned periodically - new items are queued as upload jobs without manual intervention. This feature is under active development and may behave unexpectedly.
                 </p>
             </div>
         </div>
@@ -1158,7 +1158,7 @@
                         <p class="text-[10px] text-notion-text-tertiary">Saved to config.yaml</p>
                     </div>
                 </div>
-                <button @click="showKeyModal = false" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
+                <button @click="showKeyModal = false" class="icon-btn">
                     <lucide-icon name="x" icon-class="size-4"></lucide-icon>
                 </button>
             </div>
@@ -1185,7 +1185,7 @@
             </div>
             <div class="px-6 py-4 border-t border-notion-border flex items-center justify-end gap-3 bg-notion-bg/30">
                 <button @click="showKeyModal = false" class="px-4 h-9 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
-                <button @click="saveIndexerKey" class="px-6 h-9 bg-notion-accent text-white rounded-md text-xs font-bold hover:brightness-95 transition-all flex items-center gap-2">
+                <button @click="saveIndexerKey" class="btn-primary px-6 h-9 rounded-md text-xs font-bold flex items-center gap-2">
                     <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
                     Save Key
                 </button>
@@ -1219,7 +1219,7 @@
                             <div class="w-1.5 h-1.5 rounded-full bg-notion-success animate-pulse"></div>
                             <span class="text-[10px] italic">Live Syncing</span>
                         </div>
-                        <button @click="closeYamlModal()" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
+                        <button @click="closeYamlModal()" class="icon-btn">
                             <lucide-icon name="x" icon-class="size-4"></lucide-icon>
                         </button>
                     </div>
@@ -1232,7 +1232,7 @@
                         <div ref="yamlHighlight" aria-hidden="true" class="absolute inset-0 p-4 font-mono text-xs leading-[1.45rem] overflow-hidden pointer-events-none select-none bg-notion-bg text-transparent" style="white-space: pre; word-break: normal; overflow-wrap: normal; tab-size: 2">
                             <div v-for="(line, idx) in rawYamlLines" :key="idx" :class="yamlDiffLines[idx] ? 'bg-amber-500/20' : ''" style="min-height: 1.45rem; line-height: 1.45rem">{{ line || '\u200b' }}</div>
                         </div>
-                        <!-- Editable textarea — bg transparent so highlights show through -->
+                        <!-- Editable textarea - bg transparent so highlights show through -->
                         <textarea
                             v-model="rawYaml"
                             ref="yamlEditor"
@@ -1290,7 +1290,7 @@
                             <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
                             <span class="text-[10px] font-medium">Unsaved changes</span>
                         </div>
-                        <button @click="closeReadmeModal()" class="text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
+                        <button @click="closeReadmeModal()" class="icon-btn">
                             <lucide-icon name="x" icon-class="size-4"></lucide-icon>
                         </button>
                     </div>
@@ -1315,7 +1315,7 @@
                         <lucide-icon name="rotate-ccw" icon-class="size-3.5"></lucide-icon>
                         Discard changes
                     </button>
-                    <span v-else class="text-[10px] text-notion-text-tertiary">Edit the readme.txt above — included in all uploads when enabled</span>
+                    <span v-else class="text-[10px] text-notion-text-tertiary">Edit the readme.txt above - included in all uploads when enabled</span>
                     <div class="flex items-center gap-3 ml-auto">
                         <button @click="closeReadmeModal()" class="px-4 h-9 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Close</button>
                         <button
@@ -1333,69 +1333,59 @@
 </teleport>
 
 <!-- Folder Browser Modal -->
-<Transition name="fade">
-    <div v-if="folderBrowser.open" class="fixed inset-0 bg-black/50 z-100 flex items-center justify-center" @click.self="closeFolderBrowser()">
-        <Transition name="modal">
-            <div v-if="folderBrowser.open" class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[70vh]">
-                <!-- Header -->
-                <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between shrink-0">
-                    <div class="flex items-center gap-2">
-                        <lucide-icon name="folder-open" icon-class="size-4 text-notion-accent"></lucide-icon>
-                        <h3 class="text-sm font-semibold text-notion-text-primary">Browse Folders</h3>
-                    </div>
-                    <button @click="closeFolderBrowser()" class="p-1 rounded hover:bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-text-primary transition-colors">
-                        <lucide-icon name="x" icon-class="size-4"></lucide-icon>
-                    </button>
-                </div>
-
-                <!-- Current Path -->
-                <div class="px-4 py-2 border-b border-notion-border bg-notion-bg flex items-center gap-2 shrink-0">
-                    <lucide-icon name="map-pin" icon-class="size-3 text-notion-text-tertiary shrink-0"></lucide-icon>
-                    <span class="text-xs font-mono text-notion-text-secondary truncate">{{ folderBrowser.currentPath }}</span>
-                </div>
-
-                <!-- Directory Listing -->
-                <div class="overflow-y-auto flex-1 min-h-0">
-                    <!-- Up / Parent -->
-                    <button v-if="folderBrowser.parentPath !== null" @click="browseTo(folderBrowser.parentPath)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left border-b border-notion-divider">
-                        <lucide-icon name="corner-left-up" icon-class="size-3.5 text-notion-accent"></lucide-icon>
-                        <span class="text-xs text-notion-accent font-medium">..</span>
-                    </button>
-
-                    <!-- Loading -->
-                    <div v-if="folderBrowser.loading" class="px-4 py-8 text-center text-notion-text-tertiary">
-                        <lucide-icon name="loader-2" icon-class="size-5 mx-auto mb-2 animate-spin opacity-50"></lucide-icon>
-                        <p class="text-xs">Loading...</p>
-                    </div>
-
-                    <!-- Empty -->
-                    <div v-else-if="folderBrowser.dirs.length === 0" class="px-4 py-8 text-center text-notion-text-tertiary">
-                        <lucide-icon name="folder-x" icon-class="size-6 mx-auto mb-2 opacity-40"></lucide-icon>
-                        <p class="text-xs">No subdirectories found</p>
-                    </div>
-
-                    <!-- Directories -->
-                    <button v-else v-for="dir in folderBrowser.dirs" :key="dir.path" @click="browseTo(dir.path)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left group">
-                        <lucide-icon name="folder" icon-class="size-3.5 text-notion-text-tertiary group-hover:text-notion-accent transition-colors"></lucide-icon>
-                        <span class="text-xs text-notion-text-primary truncate">{{ dir.name }}</span>
-                    </button>
-                </div>
-
-                <!-- Footer -->
-                <div class="px-4 py-3 border-t border-notion-border flex items-center justify-between shrink-0 bg-notion-bg">
-                    <span class="text-[10px] text-notion-text-tertiary">Navigate to the desired folder, then click Select</span>
-                    <div class="flex items-center gap-2">
-                        <button @click="closeFolderBrowser()" class="px-3 h-8 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
-                        <button @click="selectBrowsedFolder()" class="px-4 h-8 bg-notion-accent text-white rounded-md text-xs font-bold hover:brightness-95 transition-all flex items-center gap-2">
-                            <lucide-icon name="check" icon-class="size-3.5"></lucide-icon>
-                            Select
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </Transition>
+<modal
+    :open="folderBrowser.open"
+    title="Browse Folders"
+    icon="folder-open"
+    max-width="max-w-lg"
+    panel-class="bg-notion-bg-secondary max-h-[70vh]"
+    z-class="z-100"
+    @close="closeFolderBrowser()">
+    <!-- Current Path -->
+    <div class="px-4 py-2 border-b border-notion-border bg-notion-bg flex items-center gap-2 shrink-0">
+        <lucide-icon name="map-pin" icon-class="size-3 text-notion-text-tertiary shrink-0"></lucide-icon>
+        <span class="text-xs font-mono text-notion-text-secondary truncate">{{ folderBrowser.currentPath }}</span>
     </div>
-</Transition>
+
+    <!-- Directory Listing -->
+    <div class="overflow-y-auto flex-1 min-h-0">
+        <!-- Up / Parent -->
+        <button v-if="folderBrowser.parentPath !== null" @click="browseTo(folderBrowser.parentPath)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left border-b border-notion-divider">
+            <lucide-icon name="corner-left-up" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+            <span class="text-xs text-notion-accent font-medium">..</span>
+        </button>
+
+        <!-- Loading -->
+        <div v-if="folderBrowser.loading" class="px-4 py-8 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-2" icon-class="size-5 mx-auto mb-2 animate-spin opacity-50"></lucide-icon>
+            <p class="text-xs">Loading...</p>
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="folderBrowser.dirs.length === 0" class="empty-state py-8">
+            <lucide-icon name="folder-x" icon-class="empty-state-icon size-6 opacity-40"></lucide-icon>
+            <p class="empty-state-title">No subdirectories found</p>
+        </div>
+
+        <!-- Directories -->
+        <button v-else v-for="dir in folderBrowser.dirs" :key="dir.path" @click="browseTo(dir.path)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left group">
+            <lucide-icon name="folder" icon-class="size-3.5 text-notion-text-tertiary group-hover:text-notion-accent transition-colors"></lucide-icon>
+            <span class="text-xs text-notion-text-primary truncate">{{ dir.name }}</span>
+        </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-4 py-3 border-t border-notion-border flex items-center justify-between shrink-0 bg-notion-bg">
+        <span class="text-[10px] text-notion-text-tertiary">Navigate to the desired folder, then click Select</span>
+        <div class="flex items-center gap-2">
+            <button @click="closeFolderBrowser()" class="px-3 h-8 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
+            <button @click="selectBrowsedFolder()" class="btn-primary px-4 h-8 rounded-md text-xs font-bold flex items-center gap-2">
+                <lucide-icon name="check" icon-class="size-3.5"></lucide-icon>
+                Select
+            </button>
+        </div>
+    </div>
+</modal>
 
 {% endblock %} {% block scripts %}
 <script type="module" crossorigin src="/assets/js/dist/pages/settings.js?t=[[ cache_bust ]]"></script>

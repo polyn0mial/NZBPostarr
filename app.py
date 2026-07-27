@@ -16,7 +16,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Set
 
@@ -813,37 +813,9 @@ def get_queue(
     service: UploadService = Depends(get_upload_service),
 ) -> Dict[str, Any]:
     """Retrieve structured queue data: running, queued, and recently finished jobs."""
-    all_jobs = service.get_active_jobs(compact=True)
+    from logic.services import build_queue_snapshot
 
-    def is_resumable_stopped(job: Dict[str, Any]) -> bool:
-        if job.get("status") != "stopped":
-            return False
-        if str(job.get("job_type") or "processing") != "processing":
-            return False
-        return bool(job.get("has_explicit_paths"))
-
-    running = [j for j in all_jobs if j.get("status") in ("running", "stopping", "paused")]
-    queued = sorted(
-        [j for j in all_jobs if j.get("status") == "queued" or is_resumable_stopped(j)],
-        key=lambda j: (-int(j.get("priority") or 0), j.get("started_at", "")),
-    )
-    finished = [
-        j
-        for j in all_jobs
-        if j.get("status") in ("completed", "failed", "cancelled")
-        or (j.get("status") == "stopped" and not is_resumable_stopped(j))
-    ]
-    return {
-        "running": running,
-        "queued": queued,
-        "finished": finished,
-        "control": service.get_queue_control_state(),
-        "counts": {
-            "running": len(running),
-            "queued": len(queued),
-            "finished": len(finished),
-        },
-    }
+    return build_queue_snapshot(service)
 
 
 @uploads_router.post("/queue/pause")
@@ -1155,7 +1127,7 @@ async def reorder_queue_items(
         return {"status": "reordered"}
     raise HTTPException(
         status_code=400,
-        detail="Invalid item IDs — must include all current queue items",
+        detail="Invalid item IDs - must include all current queue items",
     )
 
 
@@ -1473,7 +1445,7 @@ async def get_top_directories(limit: int = 25) -> Dict[str, Any]:
 def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
     """Retrieve historical system performance data for the sparklines.
 
-    Reads from the in-memory ring buffer — zero DB hits.
+    Reads from the in-memory ring buffer - zero DB hits.
     """
     _require_stats_history_enabled()
     from logic.stats_engine import (
@@ -1834,13 +1806,32 @@ async def update_settings(_section: str, updates: Dict[str, Any]) -> Dict[str, A
 
 @settings_router.get("/raw")
 async def get_raw_config() -> Dict[str, Any]:
-    """Get the raw YAML content for direct editing."""
+    """Get the raw YAML content for direct editing, with secrets masked.
+
+    Credentials are replaced with ``SECRET_MASK`` exactly as the structured
+    settings endpoints do. ``save_raw_config`` restores any untouched mask from
+    the live config, so a round-trip through the raw editor preserves values the
+    operator did not edit.
+    """
+    import yaml
+
     from core.config import get_config_path
 
     path = get_config_path()
-    if path.exists():
-        return {"content": path.read_text(encoding="utf-8"), "path": str(path)}
-    raise HTTPException(status_code=404, detail="Config file not found")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Config file not found")
+
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        # Never fall back to echoing the file verbatim: that is the leak.
+        raise HTTPException(status_code=500, detail=f"Config file could not be read: {exc}") from exc
+
+    masked = _mask_config_secrets(data)
+    # allow_unicode keeps SECRET_MASK readable as bullets in the editor instead
+    # of an escaped "•..." sequence.
+    content = yaml.safe_dump(masked, default_flow_style=False, sort_keys=False, allow_unicode=True)
+    return {"content": content, "path": str(path), "masked": True}
 
 
 @settings_router.get("/readme")
@@ -1909,6 +1900,20 @@ async def save_raw_config(req: Dict[str, Any]) -> Dict[str, Any]:
     if expected:
         if password != expected:
             raise HTTPException(status_code=403, detail="Invalid password")
+
+    # get_raw_config masks credentials, so restore any mask the operator left
+    # untouched before writing; otherwise saving would overwrite real secrets
+    # with the mask string.
+    import yaml
+
+    try:
+        parsed = yaml.safe_load(content) or {}
+    except yaml.YAMLError as e:
+        raise HTTPException(status_code=400, detail=f"Invalid YAML: {str(e)}") from e
+
+    if isinstance(parsed, dict):
+        restored = _merge_masked_secret_updates(parsed, conf)
+        content = yaml.safe_dump(restored, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     try:
         new_config = replace_config_content(content)
@@ -2368,7 +2373,7 @@ def _filter_pending(
 def _background_anime_check(data: Dict[str, Any]) -> None:
     """Check candidate video titles against Jikan and refresh cache if needed.
 
-    Runs in a daemon thread.  Rate-limit-safe — ``check_titles_batch``
+    Runs in a daemon thread.  Rate-limit-safe - ``check_titles_batch``
     respects 3/sec and 60/min limits internally.
     """
     global _anime_check_inflight, _anime_check_thread, _anime_check_last_attempt
@@ -2383,7 +2388,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
     try:
         # Check if anime checking is enabled in config
         if not getattr(get_config(), "enable_anime_checking", False):
-            logger.debug("Anime check: disabled in settings — skipping Jikan lookups")
+            logger.debug("Anime check: disabled in settings - skipping Jikan lookups")
             return
 
         logger.debug(f"Anime check: querying Jikan for {len(names)} candidate title(s)")
@@ -2391,7 +2396,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
 
         found = [n for n, v in results.items() if v is True]
         if found:
-            logger.info(f"Anime cache: {len(found)} title(s) confirmed as anime — re-scanning pending list")
+            logger.info(f"Anime cache: {len(found)} title(s) confirmed as anime - re-scanning pending list")
             try:
                 fresh_data = _scan_pending_all()
                 _pending_index.set_snapshot(fresh_data)
@@ -2400,7 +2405,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
                 logger.debug(f"Anime check re-scan failed: {_exc}")
         else:
             _anime_check_last_attempt = time.time()
-            logger.debug("Anime check: no new anime found among candidate titles — next check in 1h")
+            logger.debug("Anime check: no new anime found among candidate titles - next check in 1h")
     finally:
         with _anime_check_lock:
             _anime_check_inflight = False
@@ -2861,6 +2866,12 @@ def _verify_auth_cookie(token: str) -> bool:
         return False
 
 
+# Populated by _mount_mcp_endpoint() after the app object exists; stays None
+# whenever the MCP endpoint is disabled, untokenized, or the optional package
+# is not installed.
+_MCP_ASGI_APP: Any = None
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     start = time.time()
@@ -2882,7 +2893,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         logger.debug(f"  [2/2] Stats Collector skipped ({time.time() - start:.3f}s)")
 
-    # Folder Monitor (experimental) — auto-upload on new content
+    # Folder Monitor (experimental) - auto-upload on new content
     from logic.folder_monitor import start_folder_monitor
 
     await start_folder_monitor()
@@ -2896,12 +2907,19 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _pending_index.start(_pending_watch_folders(conf))
     logger.debug(f"  [3.5/4] Pending index manager started ({time.time() - start:.3f}s)")
 
-    # Process reaper — periodic cleanup of hung/orphaned tool processes
+    # Process reaper - periodic cleanup of hung/orphaned tool processes
     _arm_process_reaper()
     logger.debug(f"  [4/4] Process Reaper armed ({time.time() - start:.3f}s)")
 
     logger.info(f"✨ Startup complete in {time.time() - start:.3f}s")
-    yield
+
+    # A mounted sub-app does not get its lifespan run by the parent, and the MCP
+    # streamable-HTTP handler needs its session manager task group started or
+    # every request fails with "Task group is not initialized".
+    async with AsyncExitStack() as _mcp_stack:
+        if _MCP_ASGI_APP is not None:
+            await _mcp_stack.enter_async_context(_MCP_ASGI_APP.router.lifespan_context(_MCP_ASGI_APP))
+        yield
 
     from core.database import checkpoint_wal
     from logic.folder_monitor import stop_folder_monitor
@@ -2946,6 +2964,20 @@ async def add_cache_control_header(request: Request, call_next: Callable[[Reques
 # Paths that skip authentication entirely
 _AUTH_PUBLIC_PREFIXES = ("/login", "/assets/", "/favicon", "/robots.txt")
 _AUTH_PUBLIC_PATHS = {"/api/system/revision"}
+_MCP_PATH = "/mcp"
+
+
+def _verify_mcp_token(request: Request) -> bool:
+    """Constant-time bearer-token check for the MCP endpoint."""
+    expected = str(getattr(get_config(), "mcp_token", "") or "").strip()
+    if not expected:
+        return False
+
+    header = request.headers.get("authorization", "")
+    scheme, _, presented = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return False
+    return hmac.compare_digest(presented.strip(), expected)
 
 
 @app.middleware("http")
@@ -2955,6 +2987,14 @@ async def session_auth_middleware(request: Request, call_next: Callable[[Request
 
     # Always allow public paths
     if path in _AUTH_PUBLIC_PATHS or any(path.startswith(p) for p in _AUTH_PUBLIC_PREFIXES):
+        return await call_next(request)
+
+    # The MCP endpoint is not a browser and will never carry the session cookie,
+    # so it authenticates with its own bearer token instead. It is never simply
+    # exempted: no valid token means no access, whether or not web login is on.
+    if path == _MCP_PATH or path.startswith(_MCP_PATH + "/"):
+        if not _verify_mcp_token(request):
+            return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
     conf = get_config()
@@ -2991,6 +3031,26 @@ app.include_router(tests_router)
 app.include_router(system_router)
 app.include_router(indexers_router)
 app.include_router(pending_router)
+
+
+def _mount_mcp_endpoint() -> bool:
+    """Mount the optional MCP endpoint. No-op unless enabled, tokenized and installed."""
+    global _MCP_ASGI_APP
+    from logic.mcp_server import MCP_PATH, build_mcp_asgi_app
+
+    try:
+        mcp_app = build_mcp_asgi_app(get_config())
+    except Exception as exc:  # never let an optional extra break startup
+        logger.warning(f"MCP endpoint could not be built: {exc}")
+        return False
+    if mcp_app is None:
+        return False
+    app.mount(MCP_PATH, mcp_app)
+    _MCP_ASGI_APP = mcp_app
+    return True
+
+
+_MCP_MOUNTED = _mount_mcp_endpoint()
 
 
 # ── Page Routes ──────────────────────────────────────────────
@@ -3064,7 +3124,7 @@ async def robots_txt() -> Response:
 
 @app.get("/login", response_class=HTMLResponse)
 async def get_login(request: Request) -> Response:
-    """Login page — only shown when auth is enabled; otherwise redirects home."""
+    """Login page - only shown when auth is enabled; otherwise redirects home."""
     if not (getattr(get_config(), "enable_password", False) and getattr(get_config(), "web_password", None)):
         return RedirectResponse(url="/", status_code=302)
     error = request.query_params.get("error", "")

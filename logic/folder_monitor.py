@@ -26,7 +26,7 @@ from logic.pending_scan import (
     infer_folder_category_hint,
 )
 
-# Settle time — wait this many seconds after the last modification before uploading
+# Settle time - wait this many seconds after the last modification before uploading
 SETTLE_SECONDS = 30
 # How often (seconds) the settle-checker evaluates pending items
 _SETTLE_CHECK_INTERVAL = 5
@@ -233,7 +233,7 @@ async def start_folder_monitor() -> None:
             logger.warning(f"📡 Monitor: Skipping non-existent folder {folder_path}")
             continue
 
-        # Record baseline — these items won't trigger uploads
+        # Record baseline - these items won't trigger uploads
         with _runtime.lock:
             _runtime.known_items[folder_path] = _scan_folder(folder_path)
             count = len(_runtime.known_items[folder_path])

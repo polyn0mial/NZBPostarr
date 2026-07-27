@@ -17,9 +17,31 @@ import sys
 from pathlib import Path
 
 
-def parse_early_args() -> argparse.Namespace:
-    """Parse launcher flags needed before the application imports."""
-    parser = argparse.ArgumentParser(add_help=False)
+def read_version() -> str:
+    """Read the canonical version without importing the application."""
+    try:
+        from version import __version__
+
+        return str(__version__)
+    except Exception:
+        return "unknown"
+
+
+def build_early_parser() -> argparse.ArgumentParser:
+    """Build the launcher argument parser."""
+    parser = argparse.ArgumentParser(
+        prog="nzbpostarr",
+        add_help=False,
+        description="NZBPostarr launcher. Starts the WebUI, or the headless CLI with --headless.",
+        epilog="Run 'python main.py --headless --help' for the full headless command reference.",
+    )
+    parser.add_argument("-h", "--help", action="store_true", help="Show this help message and exit")
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="store_true",
+        help="Show the NZBPostarr version and exit",
+    )
     parser.add_argument("--direct", action="store_true", help="Run in direct mode (skip tmux selection)")
     parser.add_argument(
         "--headless",
@@ -33,7 +55,37 @@ def parse_early_args() -> argparse.Namespace:
         action="store_true",
         help="Run the first-run setup wizard",
     )
-    args, _ = parser.parse_known_args()
+    return parser
+
+
+def parse_early_args() -> argparse.Namespace:
+    """Parse launcher flags needed before the application imports.
+
+    Unknown flags are only tolerated in headless mode, where everything after
+    ``--headless`` belongs to the headless subparser. Outside headless mode an
+    unrecognized flag is an error: silently ignoring it used to start the WebUI,
+    so a typo like ``--prot 9000`` bound the default port instead of failing.
+    """
+    parser = build_early_parser()
+    args, unknown = parser.parse_known_args()
+
+    if args.version:
+        print(f"NZBPostarr {read_version()}")
+        raise SystemExit(0)
+
+    if args.help and not args.headless:
+        parser.print_help()
+        raise SystemExit(0)
+
+    if unknown and not args.headless:
+        parser.print_usage(sys.stderr)
+        plural = "s" if len(unknown) > 1 else ""
+        print(
+            f"nzbpostarr: error: unrecognized argument{plural}: {' '.join(unknown)}",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
     return args
 
 
@@ -177,6 +229,49 @@ def tmux_session_exists() -> bool:
         return False
 
 
+def configured_port() -> int:
+    """Best-effort read of the configured WebUI port."""
+    if _early_args.port:
+        return int(_early_args.port)
+    try:
+        from core.config import get_config
+
+        return int(get_config().port)
+    except Exception:
+        return 8000
+
+
+def webui_is_listening() -> bool:
+    """Check whether something is actually serving the WebUI port.
+
+    A tmux session outliving a crashed app is the common case: create_tmux_session
+    parks the pane on a blocking `read` after a failure, so `tmux has-session`
+    keeps succeeding long after uvicorn died. Probing the port distinguishes a
+    live instance from an empty shell.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.4)
+            return sock.connect_ex(("127.0.0.1", configured_port())) == 0
+    except OSError:
+        return False
+
+
+def systemd_service_active() -> bool:
+    """Check whether a systemd unit already supervises the app."""
+    if not sys.platform.startswith("linux") or shutil.which("systemctl") is None:
+        return False
+    try:
+        result = subprocess.run(
+            ["systemctl", "is-active", "--quiet", "nzbpostarr"],
+            capture_output=True,
+            check=False,
+        )
+        return result.returncode == 0
+    except (subprocess.SubprocessError, OSError):
+        return False
+
+
 _SERVER_IP = None
 
 
@@ -242,17 +337,25 @@ def create_tmux_session() -> None:
 def _handle_existing_session() -> str:
     """Handle case when tmux session already exists."""
     url = get_webui_url()
+    alive = webui_is_listening()
     print(f"  [*] Found existing session: {TMUX_SESSION_NAME}")
-    print(f"  🌐 WebUI: {url}")
+    if alive:
+        print(f"  🌐 WebUI: {url}")
+    else:
+        print("  [!] The session exists but the WebUI is NOT responding.")
+        print("      The app inside it has most likely exited or crashed.")
     print("=" * 60)
-    print("\n  [A] Attach to existing session")
+    print("\n  [A] Attach to existing session" + ("" if alive else " (inspect the crash output)"))
     print("  [X] Terminate session (stop server)")
-    print("  [K] Kill & restart fresh")
+    print("  [K] Kill & restart fresh" + (" (recommended)" if not alive else ""))
     print("  [D] Run direct (no tmux)")
     print("  [Q] Quit\n")
 
+    default_choice = "a" if alive else "k"
+    prompt = "  Choice [A/x/k/d/q]: " if alive else "  Choice [a/x/K/d/q]: "
+
     while True:
-        choice = input("  Choice [A/x/k/d/q]: ").strip().lower() or "a"
+        choice = input(prompt).strip().lower() or default_choice
         if choice == "a":
             attach_tmux_session()
         if choice == "x":
@@ -294,8 +397,21 @@ def ask_run_mode() -> str:
     print(f"  {PROJECT_NAME} - Launch Mode")
     print("=" * 60)
 
+    if systemd_service_active():
+        # systemd already provides persistence, restart-on-crash and start-on-boot.
+        # Launching a second copy here would only trip the single-instance guard.
+        print("  [!] A systemd service 'nzbpostarr' is already running.")
+        print("      Manage it with: systemctl status|stop|restart nzbpostarr")
+        print("      Starting another instance would fail the single-instance guard.\n")
+        sys.exit(0)
+
     if not tmux_available():
-        print("  [!] tmux not found - running direct mode\n")
+        print("  [!] tmux not found - running in the foreground.")
+        if sys.platform.startswith("linux"):
+            print("      For a persistent service, re-run: python main.py --setup")
+        else:
+            print("      Closing this terminal will stop the app.")
+        print()
         return "direct"
 
     if in_tmux():
@@ -416,7 +532,7 @@ def main() -> None:
     config_file = get_config_path()
     if _early_args.setup or (not config_file.exists() and is_interactive() and "--headless" not in sys.argv):
         if not _early_args.setup:
-            print("\n  No config.yaml found — looks like a first run!")
+            print("\n  No config.yaml found - looks like a first run!")
             print("  Launching setup wizard...\n")
         from setup import main as setup_main
 

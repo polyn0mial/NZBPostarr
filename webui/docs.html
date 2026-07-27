@@ -12,7 +12,7 @@
     <div v-if="searchFocused && searchQuery.length >= 2 && searchResults.length" class="absolute top-full mt-1 left-0 right-0 bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl z-50 max-h-64 overflow-y-auto">
         <button v-for="r in searchResults" :key="r.id" @mousedown.prevent="goToSection(r.tab, r.id)" class="w-full text-left px-3 py-2 text-xs hover:bg-notion-bg-hover transition-colors border-b border-notion-border/50 last:border-0">
             <span class="text-notion-text-primary font-medium" v-text="r.title"></span>
-            <span class="text-notion-text-tertiary ml-2" v-text="'— ' + r.tabLabel"></span>
+            <span class="text-notion-text-tertiary ml-2" v-text="'- ' + r.tabLabel"></span>
         </button>
     </div>
 </div>
@@ -341,7 +341,7 @@
             </div>
             <p>
                 <strong class="text-notion-text-primary">NZBPostarr</strong>
-                is a self-hosted, automated Usenet upload manager. It takes media files from your filesystem, packages them with RAR + PAR2 parity, posts them to Usenet via NNTP, generates NZB files, and submits those NZBs to one or more indexer sites — all from a single command or a clean web
+                is a self-hosted, automated Usenet upload manager. It takes media files from your filesystem, packages them with RAR + PAR2 parity, posts them to Usenet via NNTP, generates NZB files, and submits those NZBs to one or more indexer sites - all from a single command or a clean web
                 dashboard.
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -453,51 +453,51 @@
             <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-[11px]">
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>FastAPI</strong>
-                    — Web framework
+                    - Web framework
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>Uvicorn</strong>
-                    — ASGI server
+                    - ASGI server
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>Pydantic v2</strong>
-                    — Config &amp; validation
+                    - Config &amp; validation
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>SQLAlchemy</strong>
-                    — Database ORM
+                    - Database ORM
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>Loguru</strong>
-                    — Structured logging
+                    - Structured logging
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>Watchdog</strong>
-                    — Filesystem events
+                    - Filesystem events
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>APScheduler</strong>
-                    — Background tasks
+                    - Background tasks
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>psutil</strong>
-                    — System stats
+                    - System stats
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>GuessIt</strong>
-                    — Title parsing
+                    - Title parsing
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>MediaInfo CLI</strong>
-                    — Media analysis
+                    - Media analysis
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>Rich</strong>
-                    — Terminal formatting
+                    - Terminal formatting
                 </div>
                 <div class="bg-notion-bg rounded border border-notion-border px-2.5 py-1.5">
                     <strong>PyYAML</strong>
-                    — Config files
+                    - Config files
                 </div>
             </div>
         </div>
@@ -508,7 +508,7 @@
                 <lucide-icon name="zap" icon-class="w-4.5 h-4.5 text-amber-400"></lucide-icon>
                 Quick Start (Interactive Setup)
             </div>
-            <p>The recommended way to install NZBPostarr is to use the built-in interactive setup wizard. It automates almost everything — environment creation, dependency installation, and configuration.</p>
+            <p>The recommended way to install NZBPostarr is to use the built-in interactive setup wizard. It automates almost everything - environment creation, dependency installation, and configuration.</p>
 
             <div class="doc-h3">
                 <lucide-icon name="command" icon-class="size-3.5 text-notion-accent"></lucide-icon>
@@ -1024,7 +1024,7 @@ python main.py --direct --host 0.0.0.0 --port 9000</pre
                 tmux Mode (Background)
             </div>
             <pre class="doc-pre">
-# Launch — auto-creates/reattaches tmux session 'nzbpostarr'
+# Launch - auto-creates/reattaches tmux session 'nzbpostarr'
 python main.py
 
 # Interactive menu: [A]ttach, [X]terminate, [K]ill+restart, [D]irect, [Q]uit</pre
@@ -1466,7 +1466,7 @@ apt install rar   # or your OS equivalent</pre
                 </div>
                 <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
                     <h4 class="text-xs font-semibold text-red-400 mb-1">Uploads stuck at 90-99%</h4>
-                    <p>Normal — Nyuu blends read (70%) + posted (30%) progress. The last percent is server acknowledgment. Caps at 99% until fully complete.</p>
+                    <p>Normal - Nyuu blends read (70%) + posted (30%) progress. The last percent is server acknowledgment. Caps at 99% until fully complete.</p>
                 </div>
                 <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
                     <h4 class="text-xs font-semibold text-red-400 mb-1">Orphaned nyuu/rar processes</h4>
@@ -1485,7 +1485,7 @@ apt install rar   # or your OS equivalent</pre
                 <div class="bg-notion-bg rounded-lg border border-notion-border p-3">
                     <h4 class="text-xs font-semibold text-amber-400 mb-1">Can I run without the WebUI?</h4>
                     <p>
-                        Yes —
+                        Yes -
                         <code class="doc-code">--headless</code>
                         mode. Delete
                         <code class="doc-code">webui/</code>
@@ -1601,7 +1601,7 @@ apt install rar   # or your OS equivalent</pre
             <div class="mt-4 p-3 bg-notion-bg rounded-lg border border-notion-border">
                 <div class="doc-h3 mt-0">
                     <lucide-icon name="play" icon-class="size-3.5 text-green-400"></lucide-icon>
-                    POST /api/uploads/start — Request Body
+                    POST /api/uploads/start - Request Body
                 </div>
                 <table class="doc-table">
                     <tr>
@@ -2009,7 +2009,7 @@ apt install rar   # or your OS equivalent</pre
             async downloadMarkdown() {
                 const origSection = this.activeSection;
                 const tabSections = this.currentTab.sections;
-                let md = `# NZBPostarr — ${this.currentTab.label}\n\n`;
+                let md = `# NZBPostarr - ${this.currentTab.label}\n\n`;
 
                 for (const s of tabSections) {
                     this.activeSection = s.id;

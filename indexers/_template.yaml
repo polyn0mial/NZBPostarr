@@ -1,6 +1,10 @@
 # Indexer Template
 # Copy this file and rename it to your_indexer.yaml
 # Then fill in the configuration for your indexer
+#
+# Shortcut: if your indexer is a plain Newznab-API site (the same shape as
+# NZBGeek, NZBPlanet, or NZB.su), copy indexers/newznab.example.yaml instead -
+# it only needs a host and an API key, no need to hand tune every field below.
 
 # Required: Unique identifier (lowercase, no spaces)
 id: my_indexer
@@ -31,6 +35,11 @@ method: POST
 
 # For CURL method only:
 # curl_template: "https://example.com/api?user={username}&api={api_key}"
+
+# Optional: opt in to a well-known request shape instead of relying on the
+# submit_url "/api"-suffix auto-detection. Currently only "newznab" is
+# supported (see indexers/newznab.example.yaml).
+# profile: newznab
 
 # Authentication configuration
 auth:

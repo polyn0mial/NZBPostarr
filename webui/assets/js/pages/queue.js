@@ -37,7 +37,7 @@ function deepFreezePendingTree(items) {
   if (Array.isArray(items.external)) {
     for (const group of items.external) {
       if (Array.isArray(group.items)) {
-        // Don't freeze individual external items — their .children must stay
+        // Don't freeze individual external items - their .children must stay
         // mutable so ensureExtChildrenLoaded can write lazy-loaded children back.
         Object.freeze(group.items);
       }
@@ -346,7 +346,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     },
     _groupSelectableItems() {
       // Precomputes selectable nodes per group. Does NOT read selectedItems,
-      // so it only recomputes when items/filters change — not on every click.
+      // so it only recomputes when items/filters change - not on every click.
       const map = /* @__PURE__ */ new Map();
       (this.items.external || []).forEach((group) => {
         const gKey = this.externalGroupKey(group);
@@ -975,10 +975,16 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       this.selectedMeta = /* @__PURE__ */ new Map();
       this.showToast("success", "Ignored", `${count} item(s) added to ignored list`);
     },
-    clearIgnoredItems() {
+    async clearIgnoredItems() {
       const count = this.ignoredCount;
       if (count === 0) return;
-      if (!confirm(`Clear ${count} ignored item(s)?`)) return;
+      const ok = await this.confirmDialog(`Clear ${count} ignored item(s)?`, {
+        title: "Clear Ignored List",
+        detail: "Those items will show up in the pending list again.",
+        danger: true,
+        confirmLabel: "Clear List"
+      });
+      if (!ok) return;
       this.ignoredPaths = [];
       this.showToast("success", "Cleared", "Ignored list cleared");
     },
@@ -1089,7 +1095,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     },
     async ensureExtChildrenLoaded(itemOrKey) {
       const key = typeof itemOrKey === "string" ? itemOrKey : (itemOrKey && itemOrKey.key);
-      // Already loaded into reactive store — skip the API call.
+      // Already loaded into reactive store - skip the API call.
       if (key && this.extLoadedChildren[key] && this.extLoadedChildren[key].length > 0) return;
       const node = typeof itemOrKey === "string" ? this.findExternalNodeByKey(itemOrKey) : itemOrKey;
       if (!node || typeof node !== "object") return;
@@ -1362,7 +1368,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
               clearInterval(this._animeWatcher);
               this._animeWatcher = null;
               if (wasDetecting) {
-                this.showToast("success", "Anime Check Complete", "Titles identified — badges updated");
+                this.showToast("success", "Anime Check Complete", "Titles identified - badges updated");
               }
             }
             return;
@@ -2683,7 +2689,12 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         this.showToast("warning", "Warning", "No visible items are available for marking");
         return;
       }
-      if (!confirm(`Mark "${item.name}" as uploaded to all indexers?`)) return;
+      const ok = await this.confirmDialog(`Mark "${item.name}" as uploaded to all indexers?`, {
+        title: "Mark As Uploaded",
+        detail: `${keys.length} item(s) will be recorded as uploaded without actually uploading them.`,
+        confirmLabel: "Mark Uploaded"
+      });
+      if (!ok) return;
       const indexerIds = this.activeIndexers.map((idx) => idx.id);
       try {
         await this.apiPost("/api/pending/mark-uploaded", {
@@ -3419,7 +3430,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     jobQueueControlOptionLabel(job) {
       if (!job) return "Job";
       const prefix = this.isJobQueueActiveEntry(job) ? "Now" : `#${job._queuePosition}`;
-      return `${prefix} — ${this.jobDisplayName(job)}`;
+      return `${prefix} - ${this.jobDisplayName(job)}`;
     },
     destroyActiveJobModalSortable() {
       if (this._activeJobModalSortable) {
@@ -3741,7 +3752,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       }
     },
     // ============================================================
-    //  SortableJS — Drag-to-Reorder
+    //  SortableJS - Drag-to-Reorder
     // ============================================================
     initSortable() {
       if (this._sortable) {
@@ -3806,9 +3817,13 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       }
     },
     async clearQueueItems() {
-      if (!confirm(`Remove all ${this.queueItems.length} staged item(s)?
-
-This only clears the staging area. Existing jobs are NOT removed.`)) return;
+      const ok = await this.confirmDialog(`Remove all ${this.queueItems.length} staged item(s)?`, {
+        title: "Clear Staging Area",
+        detail: "This only clears the staging area. Existing jobs are NOT removed.",
+        danger: true,
+        confirmLabel: "Clear Staging"
+      });
+      if (!ok) return;
       try {
         const res = await this.apiFetch("/api/uploads/queue/items/clear", { method: "POST" });
         this.queueItems = [];
@@ -3963,7 +3978,12 @@ Leave blank for Immediate.`,
       const date = dateText.trim();
       let runAfter = null;
       if (date) {
-        const useTime = window.confirm("Set a specific time?\nClick Cancel to use the default 12:00 PM.");
+        const useTime = await this.confirmDialog("Set a specific time for this job?", {
+          title: "Schedule Time",
+          detail: `Choose "Use 12:00 PM" to run at noon on ${date || "the chosen date"}.`,
+          confirmLabel: "Pick a Time",
+          cancelLabel: "Use 12:00 PM"
+        });
         let time = "12:00";
         if (useTime) {
           const timeText = window.prompt("Time (HH:MM, 24-hour format)", currentTime);
@@ -4103,7 +4123,13 @@ Leave blank for Immediate.`,
     },
     async stopAndClearJob(jobId) {
       if (this.isJobActionPending(jobId)) return;
-      if (!confirm("Stop this active job and remove it from the queue view?\n\nThe backend will still kill any active tool processes and clean temp files.")) return;
+      const ok = await this.confirmDialog("Stop this active job and remove it from the queue view?", {
+        title: "Stop And Clear Job",
+        detail: "The backend will still kill any active tool processes and clean temp files.",
+        danger: true,
+        confirmLabel: "Stop And Clear"
+      });
+      if (!ok) return;
       this.setJobActionPending(jobId, true);
       try {
         const res = await this.apiFetch(`/api/uploads/jobs/${jobId}/stop-clear`, { method: "POST" });
@@ -4138,7 +4164,13 @@ Leave blank for Immediate.`,
       }
     },
     async stopQueueProcessing() {
-      if (!confirm("Stop the active job and pause queue processing?\n\nQueued jobs will remain in the job queue.")) return;
+      const ok = await this.confirmDialog("Stop the active job and pause queue processing?", {
+        title: "Stop Queue Processing",
+        detail: "Queued jobs will remain in the job queue.",
+        danger: true,
+        confirmLabel: "Stop Queue"
+      });
+      if (!ok) return;
       try {
         const res = await this.apiFetch("/api/uploads/queue/stop", { method: "POST" });
         this.showToast("warning", "Queue Stopping", res.message || "Queue processing stopping");
@@ -4148,7 +4180,13 @@ Leave blank for Immediate.`,
       }
     },
     async stopQueueAndClearProcessing() {
-      if (!confirm("Stop the active job, clear waiting jobs, and hide the active row while it shuts down?")) return;
+      const ok = await this.confirmDialog("Stop the active job and clear all waiting jobs?", {
+        title: "Stop And Clear Queue",
+        detail: "The active row is hidden while the job shuts down in the background.",
+        danger: true,
+        confirmLabel: "Stop And Clear"
+      });
+      if (!ok) return;
       try {
         const res = await this.apiFetch("/api/uploads/queue/stop-clear", { method: "POST" });
         this.running = [];
@@ -4190,9 +4228,14 @@ Leave blank for Immediate.`,
       }
     },
     async clearJobQueue() {
-      if (!confirm(`Cancel all ${this.counts.queued} waiting job(s)?
-
-This does NOT clear staged items.`)) return;
+      const ok = await this.confirmDialog(`Cancel all ${this.counts.queued} waiting job(s)?`, {
+        title: "Clear Waiting Jobs",
+        detail: "This does NOT clear staged items.",
+        danger: true,
+        confirmLabel: "Cancel Jobs",
+        cancelLabel: "Keep Jobs"
+      });
+      if (!ok) return;
       try {
         const res = await this.apiFetch("/api/uploads/queue/clear", { method: "POST" });
         this.closeQueuedJobModal();

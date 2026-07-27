@@ -86,7 +86,7 @@ def _retry_on_lock(max_retries: int = 3, base_delay: float = 0.25) -> Callable[[
                         delay = base_delay * (2**attempt)
                         logger.debug(f"DB locked on {func.__name__}, retry {attempt + 1}/{max_retries} in {delay:.2f}s")
                         time.sleep(delay)
-            # All retries exhausted — raise last exception
+            # All retries exhausted - raise last exception
             raise last_exc  # type: ignore[misc]
 
         return wrapper  # type: ignore[return-value]
@@ -129,7 +129,7 @@ class Upload(Base):
     item_name: Mapped[str] = mapped_column(unique=True, nullable=False, index=True)
     itype: Mapped[Optional[str]] = mapped_column(String)
     filesize: Mapped[Optional[int]] = mapped_column(Integer)
-    # Parsed metadata — populated automatically on insert, indexed for grouped queries
+    # Parsed metadata - populated automatically on insert, indexed for grouped queries
     parsed_title: Mapped[Optional[str]] = mapped_column(String, index=True)
     media_type: Mapped[Optional[str]] = mapped_column(String, index=True)  # tv, movie, other
     season_number: Mapped[Optional[int]] = mapped_column(Integer)
@@ -441,11 +441,11 @@ def get_engine() -> Engine:
 def _set_sqlite_pragmas(dbapi_connection: Any, _connection_record: Any) -> None:
     """Apply critical PRAGMAs to every new physical SQLite connection.
 
-    * journal_mode=WAL   — allows concurrent readers + one writer
-    * busy_timeout=60000  — wait up to 60 s for a write lock (ms)
-    * synchronous=NORMAL  — safe for WAL; avoids full fsync per commit
-    * foreign_keys=ON     — enforce FK constraints
-    * wal_autocheckpoint=100 — checkpoint every 100 pages (≈400 KB)
+    * journal_mode=WAL   - allows concurrent readers + one writer
+    * busy_timeout=60000  - wait up to 60 s for a write lock (ms)
+    * synchronous=NORMAL  - safe for WAL; avoids full fsync per commit
+    * foreign_keys=ON     - enforce FK constraints
+    * wal_autocheckpoint=100 - checkpoint every 100 pages (≈400 KB)
     """
     cursor = dbapi_connection.cursor()
     cursor.execute("PRAGMA busy_timeout=60000")
@@ -472,7 +472,7 @@ def checkpoint_wal() -> None:
             if result:
                 busy, log, checkpointed = result
                 if busy:
-                    logger.debug(f"[db] WAL checkpoint: blocked by active reader — {checkpointed}/{log} pages flushed")
+                    logger.debug(f"[db] WAL checkpoint: blocked by active reader - {checkpointed}/{log} pages flushed")
                 else:
                     logger.debug(f"[db] WAL checkpoint: {checkpointed}/{log} pages flushed, WAL truncated")
     except Exception as exc:
@@ -1949,7 +1949,7 @@ def get_hourly_upload_stats() -> Dict[str, Any]:
                 .scalar()
             ) or 0
 
-            # Latest upload activity — catches any status change (success, fail, retry).
+            # Latest upload activity - catches any status change (success, fail, retry).
             latest_ts_val = (
                 session.query(func.max(Upload.updated_at))
                 .filter(Upload.updated_at >= cutoff_24h)

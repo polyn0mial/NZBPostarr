@@ -2,6 +2,11 @@
 cache_dir = ".local/cache/mypy"
 files = [
   "core/redaction.py",
+  "core/utils.py",
+  "logic/anime_cache.py",
+  "logic/mcp_server.py",
+  "logic/pending_index.py",
+  "logic/process_reaper.py",
   "logic/process_stats.py",
   "logic/queue_metrics.py",
   "logic/uploaders.py",
@@ -14,6 +19,13 @@ strict = true
 # This explicit file list is the checked type frontier. New or remediated
 # modules should be added here; existing untyped orchestration remains outside
 # the release gate until its contracts have been narrowed.
+
+[[tool.mypy.overrides]]
+# The MCP SDK is an optional extra and is deliberately absent from
+# requirements.lock, so it is never installed in the CI type-check environment.
+# APScheduler ships no py.typed marker.
+module = ["mcp.*", "apscheduler.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 cache_dir = ".local/cache/pytest"

@@ -44,7 +44,7 @@ extra_params:
 name_param: name
 
 # File Upload Fields
-# NOTE: NZBPlanet does NOT support NFO uploads — sending an 'nfo' multipart
+# NOTE: NZBPlanet does NOT support NFO uploads - sending an 'nfo' multipart
 # field causes "Missing parameter" (error 200). Only the NZB file is accepted.
 files:
   nzb: file
