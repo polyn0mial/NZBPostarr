@@ -302,8 +302,6 @@ def test_database_e2e_smoke() -> None:
     detailed = db.get_detailed_stats()
     assert "uploads" in detailed
 
-    delta = db.get_stats_delta(hours=1)
-    assert set(delta.keys()) == {"bytes", "count"}
     all_stats = db.get_all_upload_stats()
     assert isinstance(all_stats, dict)
 

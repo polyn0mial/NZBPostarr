@@ -64,6 +64,7 @@ categories:
   movie_dvd: '2070' # Movies/DVD
   anime: '5070' # TV/Anime
   music: '3010' # Audio/MP3
+  audiobooks: '' # Optional dedicated audiobook category; falls back to books
   books: '7020' # Books/Ebook
   apps: '' # Leave blank to reject app uploads until mapped
   misc: '5000' # Misc/Other

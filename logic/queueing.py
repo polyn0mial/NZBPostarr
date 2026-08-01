@@ -152,60 +152,34 @@ class QueueServiceMixin:
 
     @classmethod
     def _derive_queue_item_category(cls, item: dict[str, Any]) -> tuple[str, str]:
-        explicit_category = cls._normalize_queue_category(item.get("category"))
-        detected_category = cls._normalize_queue_category(item.get("detected_category"))
-        itype_category = cls._queue_item_category_from_itype(item.get("itype"))
-
+        manual_category = cls._normalize_queue_category(item.get("manual_category"))
         path_text = str(item.get("path") or "").strip()
         if path_text:
-            name = Path(path_text).name
-            from logic.pending_scan import has_clear_movie_year, looks_like_tv_name
-
-            # Correct stale TV values produced by the former broad numeric classifier.
-            if has_clear_movie_year(name) and not looks_like_tv_name(name):
-                return "movies", "name:movie-year"
-
-        for candidate, source in (
-            (explicit_category, "category"),
-            (detected_category, "detected_category"),
-            (itype_category, "itype"),
-        ):
-            if candidate and candidate not in cls._QUEUE_INVALID_CATEGORY_VALUES and candidate != "misc":
-                return candidate, source
-
-        # Fast name-based rescue before the expensive filesystem scan.
-        path_text = str(item.get("path") or "").strip()
-        if path_text:
-            name = Path(path_text).name
-            from logic.pending_scan import (
-                has_clear_movie_year,
-                looks_like_generic_tv_season_folder,
-                looks_like_tv_name,
-            )
-
-            if looks_like_tv_name(name) and not looks_like_generic_tv_season_folder(name):
-                return "tv", "name:tv-pattern"
-            if has_clear_movie_year(name):
-                return "movies", "name:movie-year"
-
             try:
                 from logic.pending_scan import resolve_explicit_path
 
                 resolved = resolve_explicit_path(
                     Path(path_text),
-                    category_hint=explicit_category or detected_category,
-                    itype_hint=str(item.get("itype") or ""),
+                    category_hint=manual_category,
+                    itype_hint=str(item.get("itype") or "") if manual_category else "",
+                    respect_explicit_hint=bool(manual_category),
                 )
                 resolved_category = cls._normalize_queue_category(resolved.category)
                 if resolved_category and resolved_category not in cls._QUEUE_INVALID_CATEGORY_VALUES:
-                    return resolved_category, f"path:{resolved.detection_method}"
+                    source = "manual_category" if manual_category else f"path:{resolved.detection_method}"
+                    return resolved_category, source
             except Exception as exc:  # pylint: disable=broad-exception-caught
                 logger.debug(f"Queue item category recovery failed for {path_text}: {exc}")
+            return "", ""
 
+        detected_category = cls._normalize_queue_category(item.get("detected_category"))
+        itype_category = cls._queue_item_category_from_itype(item.get("itype"))
+        explicit_category = cls._normalize_queue_category(item.get("category"))
         for candidate, source in (
-            (explicit_category, "category"),
+            (manual_category, "manual_category"),
             (detected_category, "detected_category"),
             (itype_category, "itype"),
+            (explicit_category, "category"),
         ):
             if candidate and candidate not in cls._QUEUE_INVALID_CATEGORY_VALUES:
                 return candidate, source
@@ -656,6 +630,22 @@ class QueueServiceMixin:
         )
 
     @classmethod
+    def _request_path_category(cls, path: Path, hint: dict[str, Any]) -> str:
+        """Resolve rewrite eligibility from the path, allowing a manual override only."""
+        manual_category = cls._normalize_queue_category(hint.get("manual_category"))
+        if manual_category and manual_category not in cls._QUEUE_INVALID_CATEGORY_VALUES:
+            return manual_category
+
+        try:
+            from logic.pending_scan import resolve_explicit_path
+
+            resolved = resolve_explicit_path(path)
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.debug(f"Queue path category resolution failed for {path}: {exc}")
+            return ""
+        return cls._normalize_queue_category(resolved.category)
+
+    @classmethod
     def _with_inferred_tv_pack_request_paths(cls, request: ProcessingJobRequest) -> ProcessingJobRequest:
         """Insert season-folder paths into explicit TV episode-only job requests."""
         paths = list(request.paths)
@@ -673,9 +663,7 @@ class QueueServiceMixin:
         for path_text in paths:
             path = Path(str(path_text))
             hint = hints_by_path.get(str(path_text), {})
-            category = cls._normalize_queue_category(hint.get("category") or hint.get("detected_category") or request.category)
-            itype = str(hint.get("itype") or "").strip().lower()
-            if category != "tv" and "tv" not in itype and "episode" not in itype:
+            if cls._request_path_category(path, hint) != "tv":
                 continue
             if path.is_file():
                 episodes_by_parent.setdefault(path.parent, []).append(path)
@@ -789,11 +777,7 @@ class QueueServiceMixin:
                 continue
 
             hint = hints_by_path.get(path_text, {})
-            category = cls._normalize_queue_category(
-                hint.get("category") or hint.get("detected_category") or request.category
-            )
-            itype = str(hint.get("itype") or "").strip().lower()
-            if category != "tv" and "tv" not in itype and "episode" not in itype and "season" not in itype:
+            if cls._request_path_category(path, hint) != "tv":
                 continue
             tv_dir_entries.append((idx, path))
 

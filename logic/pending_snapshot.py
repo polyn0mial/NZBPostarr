@@ -22,11 +22,15 @@ from core.utils import (
 from logic.pending_scan import (
     anime_lookup_candidates,
     begin_scan_cache,
+    category_from_itype,
+    classify_audio_folder,
     classify_video_name as shared_classify_video_name,
+    classify_video_name_result,
     detect_content_itype as shared_detect_content_itype,
     detect_external_category as shared_detect_external_category,
     end_scan_cache,
     get_configured_category_folders,
+    has_video_disc_structure,
     has_clear_movie_year as shared_has_clear_movie_year,
     looks_like_tv_name,
     relative_key,
@@ -153,21 +157,6 @@ _VIDEO_FILE_EXTENSIONS = {
     ".webm",
     ".flv",
 }
-_DISC_EXTENSIONS = {
-    ".iso",
-    ".img",
-    ".mdf",   # Alcohol 120% image
-    ".mds",   # Alcohol 120% descriptor
-    ".nrg",   # Nero image
-    ".vob",   # DVD Video Object
-    ".ifo",   # DVD Information
-    ".bup",   # DVD Backup
-}
-_DISC_PATH_MARKERS = {"bdmv", "video_ts", "audio_ts", "certificate"}
-_DISC_FOLDER_MARKERS = {"bdmv", "video_ts", "audio_ts", "certificate"}
-_DISC_PARENT_BUBBLE_FILE_EXTS = {".iso", ".img", ".mdf", ".mds", ".nrg", ".vob", ".ifo", ".bup"}
-# Matches disc-numbered folder names: "Disc 1", "(Disc 2)", "D1", "DISC3", etc.
-_DISC_NUMBERED_FOLDER_RE = re.compile(r"(?i)(?:\bdisc\b|\bd\d{1,2}\b)")
 _AUDIOBOOK_EXTENSIONS = {".m4b"}
 _MUSIC_EXTENSIONS = {".m4a", ".mp3", ".flac", ".cue"}
 _EBOOK_EXTENSIONS = {".epub", ".pdf", ".mobi"}
@@ -182,6 +171,10 @@ _ANIME_SEQUENCE_PATTERN = re.compile(
     r"|\[\d{1,3}(?:v\d+)?\]"
     r"|\(\d{1,3}(?:v\d+)?\)"
     r"|(?:^|[.\s_-])-\s?\d{1,3}(?:v\d+)?(?:$|[.\s_-])"
+    r"|(?:^|[.\s_-])-[.\s_-]*(?!(?:19|20)\d{2}(?:$|[.\s_-]))\d{1,5}(?:v\d+)?(?:$|[.\s_-])"
+    r"|\[(?!(?:19|20)\d{2}\])\d{1,5}(?:v\d+)?\]"
+    r"|(?:^|[.\s_-])(?!(?:19|20)\d{2}(?:[.\s_-]|$))\d{4,5}(?:v\d+)?"
+    r"(?=[.\s_-]+(?:2160p|1080[pi]?|720p|576[pi]?|480[pi]?|WEB|BluRay|BDRip|HDTV|DVD))"
     r"|\b\d{4}[.\-_]\d{2}[.\-_]\d{2}\b"
     r"|\bSeason[.\s_-]+\d{1,2}\b"
     r"|\bS\d{1,2}\b"
@@ -264,54 +257,13 @@ _SOURCE_TAG_PATTERN = re.compile(
 
 
 def _has_disc_structure_signature(entry: Path) -> bool:
-    """Return True when a file/folder matches any DISC structural signature."""
-    try:
-        if entry.is_file():
-            if entry.suffix.lower() in _DISC_EXTENSIONS:
-                return True
-            lower_parts = [part.lower() for part in entry.parts]
-            return any(marker in lower_parts for marker in _DISC_FOLDER_MARKERS)
-        if entry.is_dir():
-            if _name_contains_disc_marker(entry.name):
-                return True
-            for root, dirnames, filenames in os.walk(str(entry)):
-                if any(_name_contains_disc_marker(d) for d in dirnames):
-                    return True
-                if any(Path(filename).suffix.lower() in _DISC_EXTENSIONS for filename in filenames):
-                    return True
-    except OSError:
-        return False
-    return False
-
-
-def _name_contains_disc_marker(name: str) -> bool:
-    """Return True if name is a disc-structure folder marker or contains one as a token."""
-    lower = name.strip().lower()
-    if lower in _DISC_FOLDER_MARKERS:
-        return True
-    # Strip punctuation before checking structural markers (handles "(disc", "d1)", etc.)
-    words = re.split(r"[^a-z0-9]+", lower)
-    if any(part in _DISC_FOLDER_MARKERS for part in words if part):
-        return True
-    # Disc-numbered folders: "Disc 1", "(Disc 2)", "D1", "D2", "DISC3", etc.
-    return bool(_DISC_NUMBERED_FOLDER_RE.search(name))
+    """Return True when a file/folder contains a real video-disc structure."""
+    return has_video_disc_structure(entry)
 
 
 def _directory_disc_bubble_up(entry: Path) -> bool:
     """Fast parent-row DISC promotion based on folder contents before name inference."""
-    if not entry.is_dir():
-        return False
-    try:
-        children = list(entry.iterdir())
-    except OSError:
-        return False
-    for child in children:
-        if child.is_dir() and _name_contains_disc_marker(child.name):
-            return True
-        if child.is_file() and child.suffix.lower() in _DISC_PARENT_BUBBLE_FILE_EXTS:
-            return True
-    # Fallback: deeper structure probe for nested disc roots/files.
-    return _has_disc_structure_signature(entry)
+    return entry.is_dir() and has_video_disc_structure(entry)
 
 
 def _directory_extension_first_category(entry: Path) -> str:
@@ -333,16 +285,17 @@ def _directory_extension_first_category(entry: Path) -> str:
                     counts["ebooks"] += 1
     except OSError:
         return ""
-    # Audio/book sidecars must not reclassify a video release.
-    if counts["video"] > 0:
-        return ""
     if counts["audiobooks"] == 0 and counts["music"] == 0 and counts["ebooks"] == 0:
         return ""
-    if counts["audiobooks"] >= max(counts["music"], counts["ebooks"]):
-        return "audiobooks"
-    if counts["ebooks"] >= counts["music"]:
+    audio_count = counts["audiobooks"] + counts["music"]
+    if audio_count > counts["video"]:
+        audio_category = classify_audio_folder(entry)
+        if audio_category:
+            return audio_category
+        return ""
+    if counts["ebooks"] > counts["video"] and counts["ebooks"] >= audio_count:
         return "books"
-    return "music"
+    return ""
 
 
 def _source_matrix_ignore_reason(category: str, title: str) -> str:
@@ -385,15 +338,18 @@ def _force_video_processing_state(node: Dict[str, Any], fallback_folder_hint: st
         return
     if not _has_video_container_and_source_signal(name, ptxt):
         return
-    guessed = classify_video_name(name, fallback_folder_hint, assume_movie_if_unknown=True).strip().lower()
-    if guessed in {"tv show", "tv"}:
-        cat = "tv"
-    elif guessed == "anime":
-        cat = "anime"
-    else:
-        cat = "movies"
-    node["detected_category"] = cat
-    node["category"] = cat
+    classification = classify_video_name_result(
+        name,
+        fallback_folder_hint,
+        anime_lookup=_anime_cache_lookup,
+    )
+    if classification.category not in {"tv", "anime", "movies"}:
+        return
+    node["detected_category"] = classification.category
+    node["category"] = classification.category
+    node["detection_method"] = classification.method
+    node["detection_confidence"] = classification.confidence
+    node["detection_evidence"] = list(classification.evidence)
     node["auto_select_ignored"] = False
     node["auto_select_reason"] = ""
     node["auto_selectable"] = True
@@ -713,13 +669,22 @@ def _anime_cache_lookup(name: str) -> Optional[bool]:
     return anime_cached(name)
 
 
-def classify_video_name(name: str, folder_category: str = "", assume_movie_if_unknown: bool = True) -> str:
+def classify_video_name(
+    name: str,
+    folder_category: str = "",
+    assume_movie_if_unknown: bool = False,
+    *,
+    explicit_category_hint: str = "",
+    explicit_itype_hint: str = "",
+) -> str:
     """Classify a video release name as TV Show, Anime, Movie, or Misc."""
     return shared_classify_video_name(
         name,
         folder_category,
         assume_movie_if_unknown,
         anime_lookup=_anime_cache_lookup,
+        explicit_category_hint=explicit_category_hint,
+        explicit_itype_hint=explicit_itype_hint,
     )
 
 
@@ -728,33 +693,9 @@ def detect_external_category(name: str, entry_path: Path) -> str:
     lower_name = str(name or "").lower()
     if _ANIME_BONUS_PATTERN.search(lower_name):
         return "anime"
-    suffix = entry_path.suffix.lower()
-    is_video_container = suffix in _VIDEO_FILE_EXTENSIONS
     anime_cached = _anime_cache_lookup(str(name or ""))
-    has_episode_shape = bool(_ANIME_SEQUENCE_PATTERN.search(lower_name)) or bool(_SEASON_MARKER_RE.search(name or "")) or bool(_EPISODIC_TV_PATTERN.search(name or ""))
-    has_video_source = bool(_SOURCE_TAG_PATTERN.search(lower_name))
-    has_anime_hint = bool(re.search(r"\b(anime|dual[-\s]?audio|multi[-\s]?subs?|subbed|dubbed)\b", lower_name))
     if anime_cached is True:
         return "anime"
-    # Type-first guard: if this is a real video container (or strong TV source+episode shape),
-    # do not let audio codec words like FLAC force music classification.
-    if is_video_container:
-        classified_video = classify_video_name(name, "", assume_movie_if_unknown=True).strip().lower()
-        if classified_video == "anime":
-            return "anime"
-        if has_anime_hint:
-            return "anime"
-        if has_episode_shape:
-            return "tv"
-        if has_video_source:
-            return "movies"
-        return "movies"
-    if has_episode_shape and has_video_source:
-        return "tv"
-    # Historical behavior: directory/file names that clearly express seasonal packs
-    # should not fall back to MOVIES just because year/source tokens are present.
-    if _SEASON_MARKER_RE.search(name or ""):
-        return "tv"
     return shared_detect_external_category(name, entry_path)
 
 
@@ -772,7 +713,7 @@ def _detect_external_category_fast(
         if re.search(r"(?:^|[.\s_-])S\d{2}(?:[.\s_-]|$)", name, re.IGNORECASE):
             return "tv"
         return "movies"
-    return ""
+    return "misc"
 
 
 def detect_content_itype(name: str, entry_path: Path, folder_category: str) -> str:
@@ -796,45 +737,15 @@ def _classify_standalone_file_category(entry: Path) -> str:
     ext_first_category = _directory_extension_first_category(entry)
     if ext_first_category:
         return ext_first_category
-    name = entry.name
     ext = entry.suffix.lower()
-    lower_parts = [part.lower() for part in entry.parts]
-    lower_path = str(entry).replace("\\", "/").lower()
-    # DISC matrix has highest precedence and overrides generic folder/path inferences.
-    if _has_disc_structure_signature(entry):
-        return "disc"
-    if any(marker in lower_parts for marker in _DISC_PATH_MARKERS):
-        return "disc"
-    if "/bdmv/" in lower_path or "/video_ts/" in lower_path or "/audio_ts/" in lower_path or "/certificate/" in lower_path:
-        return "disc"
     if ext in _EBOOK_EXTENSIONS:
         return "books"
-    if ext in _VIDEO_FILE_EXTENSIONS:
-        if _SEASON_MARKER_RE.search(name):
-            return "tv"
-        if _SCENE_VIDEO_TAG_RE.search(name):
-            return "movies"
     return ""
 
 
 def _itype_to_category_id(itype: str) -> str:
     """Map a detected item type to its upload category id."""
-    normalized = str(itype or "").strip().lower()
-    return {
-        "tv show": "tv",
-        "tv episode": "tv",
-        "anime": "anime",
-        "movie": "movies",
-        "movies": "movies",
-        "music": "music",
-        "audiobook": "audiobooks",
-        "ebook": "books",
-        "books": "books",
-        "app": "apps",
-        "apps": "apps",
-        "game": "apps",
-        "misc": "misc",
-    }.get(normalized, "")
+    return category_from_itype(itype, default="")
 
 
 def _build_virtual_pack_name(sample_episode: str, show_name: str, season_num: int) -> str:
@@ -1204,7 +1115,6 @@ def _load_external_metadata(data: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 
 def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Dict[str, Any]:
     """Resolve backend-owned category/detection metadata for one visible item."""
-    forced_category = _classify_standalone_file_category(entry)
     # Strict path isolation for loose files: never let parent folder hints drive detection.
     hint = "" if entry.is_file() else category_hint
     resolution = resolve_explicit_path(
@@ -1226,22 +1136,16 @@ def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Di
             "disc",
         }:
             ignored_reason = ""
-    detected_category = forced_category or resolution.category
+    detected_category = resolution.category
     raw_text = f"{entry.name} {entry}".lower()
-    parent_folder_name = str(entry.parent.name if entry.parent else "")
-    anime_context_locked = False
-    if str(category_hint or "").strip().lower() == "anime":
-        anime_context_locked = True
-    elif _anime_cache_lookup(parent_folder_name) is True:
-        anime_context_locked = True
-    elif _anime_cache_lookup(str(entry.name or "")) is True:
-        anime_context_locked = True
     # Keep historical behavior: anime bonus assets must short-circuit to ANIME+IGNORED
     # so later video/source guards cannot rewrite them to TV/MOVIES.
     if _ANIME_BONUS_PATTERN.search(raw_text):
         return {
             "detected_category": "anime",
             "detection_method": "anime-bonus-pattern",
+            "detection_confidence": "confirmed",
+            "detection_evidence": ["anime bonus asset"],
             "detection_flags": ["anime_bonus"],
             "detection_override": "Anime bonus asset",
             "auto_selectable": False,
@@ -1253,28 +1157,11 @@ def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Di
             "skip_reason": "Anime Non-Credit Feature / Bonus Asset",
             "category": "anime",
         }
-    # Hard video-container guard: codec tokens (e.g. FLAC) must never demote
-    # .mkv/.mp4/.avi/.ts/.mov payloads into non-video categories.
-    if entry.is_file() and entry.suffix.lower() in _VIDEO_FILE_EXTENSIONS:
-        hint_cat = str(category_hint or "").strip().lower()
-        if _EPISODIC_TV_PATTERN.search(raw_text):
-            if hint_cat == "anime" or anime_context_locked:
-                detected_category = "anime"
-            else:
-                detected_category = "anime" if bool(re.search(r"\b(anime|ncop|nced|creditless)\b", raw_text, re.IGNORECASE)) else "tv"
-            ignored_reason = ignored_reason if detected_category == "anime" else ""
-        else:
-            video_class = classify_video_name(entry.name, category_hint, assume_movie_if_unknown=True).strip().lower()
-            if video_class in {"tv show", "tv"}:
-                detected_category = "tv"
-            elif video_class in {"anime"}:
-                detected_category = "anime"
-            else:
-                detected_category = "movies"
-            ignored_reason = ""
     payload = {
         "detected_category": detected_category,
         "detection_method": resolution.detection_method,
+        "detection_confidence": resolution.detection_confidence,
+        "detection_evidence": list(resolution.detection_evidence),
         "detection_flags": list(getattr(resolution, "content_flags", ()) or ()),
         "detection_override": getattr(resolution, "override_note", ""),
         "auto_selectable": bool(resolution.queue_paths),
@@ -1400,27 +1287,29 @@ def _build_external_tree_item(
             item["child_count"] = sum(1 for child in node.iterdir() if not child.name.startswith("."))
         except OSError:
             item["child_count"] = 0
-    if not top_level and folder_category_hint:
-        # Preserve parent context for nested rows so child pills do not fall back to MOVIES.
-        item["detected_category"] = folder_category_hint
-        item["category"] = folder_category_hint
+    if not top_level:
+        if node.is_file():
+            item["itype"] = detect_content_itype(node.name, node, folder_category_hint)
+            nested_category = category_from_itype(item["itype"])
+        else:
+            nested_category = str(folder_category_hint or "misc").strip().lower()
+        item["detected_category"] = nested_category
+        item["category"] = nested_category
+        item["detection_method"] = "Configured folder" if folder_category_hint else "Shared classifier"
+        item["detection_confidence"] = "strong" if nested_category != "misc" else "unknown"
     _force_video_processing_state(item, folder_category_hint)
     if top_level:
         item["itype"] = resolution.itype
         forced_category = _classify_standalone_file_category(node)
         resolved_category = forced_category or resolution.category
-        item["detected_category"] = (
-            ""
-            if resolved_category == "misc"
-            and resolution.itype == "Misc"
-            and resolution.detection_method == "Folder fallback"
-            else resolved_category
-        )
+        item["detected_category"] = resolved_category or "misc"
         if item["detected_category"]:
             item["category"] = item["detected_category"]
         if item["detected_category"] == "anime":
             item["itype"] = "Anime"
         item["detection_method"] = resolution.detection_method
+        item["detection_confidence"] = resolution.detection_confidence
+        item["detection_evidence"] = list(resolution.detection_evidence)
         item["detection_flags"] = list(getattr(resolution, "content_flags", ()) or ())
         if resolution.override_note:
             item["detection_override"] = resolution.override_note
@@ -1431,6 +1320,8 @@ def _build_external_tree_item(
         # Normalize child rows first so parent promotion sees final child categories
         # (especially NCOP/NCED => ANIME bonus rows).
         _validate_child_video_items(item)
+        if item["detected_category"] == "anime":
+            _inherit_anime_context_to_children(item)
         _inherit_category_from_children(item)
         _inherit_anime_context_to_children(item)
         # Re-run promotion after anime-context inheritance for stable parent lock.
@@ -1691,6 +1582,8 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
                     "itype": detect_content_itype(entry.name, entry, detected_category),
                     "detected_category": detected_meta.get("detected_category", ""),
                     "detection_method": detected_meta.get("detection_method", ""),
+                    "detection_confidence": detected_meta.get("detection_confidence", "unknown"),
+                    "detection_evidence": detected_meta.get("detection_evidence", []),
                     "detection_flags": detected_meta.get("detection_flags", []),
                     "detection_override": detected_meta.get("detection_override", ""),
                     "auto_selectable": detected_meta.get("auto_selectable", True),

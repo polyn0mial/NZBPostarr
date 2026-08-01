@@ -564,32 +564,11 @@ def _inject_inferred_tv_pack_entries(
     return injected
 
 
-def _processing_anime_lookup(name: str) -> Optional[bool]:
-    """Use cached Jikan state first, then live lookup when anime checking is enabled."""
-    from logic.anime_cache import get_cached, is_anime
-
-    cached = get_cached(name)
-    if cached is not None:
-        return cached
-
-    conf = get_config()
-    if not getattr(conf, "enable_anime_checking", False):
-        return None
-    return is_anime(name)
-
-
 def _processing_cached_anime_lookup(name: str) -> Optional[bool]:
     """Use cached anime state only; queue validation should not wait on Jikan."""
     from logic.anime_cache import get_cached
 
     return get_cached(name)
-
-
-def _should_skip_live_anime_lookup_for_targeted_item(category_hint: str, itype_hint: str) -> bool:
-    hint_text = f"{category_hint} {itype_hint}".lower()
-    if "anime" in hint_text:
-        return False
-    return any(token in hint_text for token in ("tv", "show", "episode", "season", "pack"))
 
 
 def _log_explicit_resolution(resolution: Any) -> None:
@@ -1056,6 +1035,7 @@ def _submission_category_label(category: str) -> str:
         "anime": "Anime",
         "disc": "DISC",
         "music": "Music",
+        "audiobooks": "Audiobooks",
         "books": "Books",
         "apps": "Apps",
         "misc": "Misc",
@@ -1083,7 +1063,7 @@ def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
         else:
             normalized_category = "movies"
 
-    allowed_categories = {"movies", "tv", "anime", "music", "books", "apps", "misc"}
+    allowed_categories = {"movies", "tv", "anime", "music", "audiobooks", "books", "apps", "misc"}
     if normalized_category not in allowed_categories:
         if normalized_itype in allowed_categories:
             raise ValueError(
@@ -1093,7 +1073,7 @@ def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
 
     resolved_category = normalized_category
     if normalized_category in {"tv", "movies", "misc"}:
-        if normalized_itype in {"anime", "music", "books", "apps"}:
+        if normalized_itype in {"anime", "music", "audiobooks", "books", "apps"}:
             resolved_category = normalized_itype
         else:
             from logic.anime_cache import get_cached
@@ -1125,6 +1105,12 @@ def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
         raise ValueError("video content cannot be submitted as Misc")
     if resolved_category == "books" and media_counts["book"] == 0 and media_counts["audiobook"] == 0:
         raise ValueError("book category requires book metadata or book file types")
+    if (
+        resolved_category == "audiobooks"
+        and media_counts["audiobook"] == 0
+        and media_counts["music"] == 0
+    ):
+        raise ValueError("audiobook category requires audio file types")
     if resolved_category == "apps" and media_counts["app"] == 0:
         raise ValueError("apps category requires application/archive file types")
     if resolved_category == "music" and media_counts["music"] == 0:
@@ -2744,21 +2730,17 @@ def _collect_targeted_job_items(
             continue
 
         hint = item_hint_map.get(_normalize_runtime_path(selected_path), {})
-        category_hint = str(hint.get("category") or category or "")
-        itype_hint = str(hint.get("itype") or "")
-        anime_lookup = (
-            _processing_cached_anime_lookup
-            if _should_skip_live_anime_lookup_for_targeted_item(category_hint, itype_hint)
-            else _processing_anime_lookup
-        )
+        category_hint = str(hint.get("manual_category") or "")
+        itype_hint = str(hint.get("itype") or "") if category_hint else ""
         resolution = resolve_explicit_path(
             selected_path,
             category_hint=category_hint,
             itype_hint=itype_hint,
-            anime_lookup=anime_lookup,
+            respect_explicit_hint=bool(category_hint),
+            anime_lookup=_processing_cached_anime_lookup,
         )
         _log_explicit_resolution(resolution)
-        if normalize_submission_category(category_hint) == "disc" and "disc" in resolution.content_flags:
+        if "disc" in resolution.content_flags:
             raw_items.append((selected_path, "disc"))
             continue
         _append_targeted_resolution_items(

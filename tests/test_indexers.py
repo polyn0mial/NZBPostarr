@@ -179,13 +179,6 @@ def test_upload_item_does_not_override_nzb_subject(tmp_path, monkeypatch) -> Non
 
     monkeypatch.setattr(uploaders, "get_config", lambda: conf)
     monkeypatch.setattr(uploaders, "run_command", fake_run_command)
-    monkeypatch.setattr(
-        uploaders,
-        "compute_size",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("upload directory was scanned twice")),
-        raising=False,
-    )
-
     result = uploaders.upload_item("Release.Name", server, nzb_path=nzb_path)
 
     assert result is not None
@@ -233,6 +226,74 @@ def test_submit_to_indexer_rejects_unknown_category_without_default_fallback(tmp
     assert ok is False
     assert status == "misconfigured"
     assert "category" in reason.lower()
+
+
+def test_audiobook_category_mapping_prefers_direct_code_then_books_fallback() -> None:
+    from core.utils import normalize_submission_category
+
+    direct = registry_mod.CategoryMapping(audiobooks="3030", books="7020")
+    fallback = registry_mod.CategoryMapping(books="7020")
+    missing = registry_mod.CategoryMapping(movie="2040")
+
+    assert normalize_submission_category("audiobook") == "audiobooks"
+    assert normalize_submission_category("audiobooks") == "audiobooks"
+    assert direct.resolve_code("audiobooks") == ("3030", "audiobooks", True)
+    assert fallback.resolve_code("audiobooks") == ("7020", "books", False)
+    assert missing.resolve_code("audiobooks") == (None, None, False)
+
+
+def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) -> None:
+    indexer = IndexerDefinition(
+        id="audio-check",
+        name="Audio Check",
+        submit_url="https://example.invalid/api",
+        categories=registry_mod.CategoryMapping(audiobooks="3030"),
+    )
+    monkeypatch.setattr(
+        registry_mod,
+        "get_registry",
+        lambda: SimpleNamespace(all=lambda: [indexer]),
+    )
+
+    assert registry_mod.get_available_categories() == [
+        {
+            "id": "audiobooks",
+            "key": "audiobooks",
+            "label": "Audiobooks",
+            "icon": "headphones",
+            "color": "teal-400",
+            "indexers": [
+                {
+                    "id": "audio-check",
+                    "name": "Audio Check",
+                    "favicon_url": None,
+                    "color": "#808080",
+                }
+            ],
+        }
+    ]
+
+
+def test_books_mapping_advertises_audiobook_fallback_for_all_jobs(monkeypatch) -> None:
+    from logic import processing
+
+    indexer = IndexerDefinition(
+        id="books-check",
+        name="Books Check",
+        submit_url="https://example.invalid/api",
+        categories=registry_mod.CategoryMapping(books="7020"),
+    )
+    monkeypatch.setattr(
+        registry_mod,
+        "get_registry",
+        lambda: SimpleNamespace(all=lambda: [indexer]),
+    )
+
+    categories = registry_mod.get_available_categories()
+    assert [category["id"] for category in categories] == ["audiobooks", "books"]
+    assert processing._resolve_job_categories("all") == ["audiobooks", "books"]
+    assert processing._resolve_job_categories("mixed") == ["audiobooks", "books"]
+
 
 def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch) -> None:
     cases = [
@@ -358,6 +419,48 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
             "OK",
             None,
             _DummySubmitConfig(username="omg-user"),
+        ),
+        (
+            "audiobook-uses-dedicated-mapping",
+            IndexerDefinition(
+                id="audio-check",
+                name="Audio Check",
+                submit_url="https://example.invalid/api",
+                auth=AuthConfig(method="query_param", api_key_param="apikey"),
+                categories=registry_mod.CategoryMapping(
+                    audiobooks="3030",
+                    books="7020",
+                    misc="5000",
+                ),
+                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+            ),
+            "Author.Name.Novel.Unabridged.MP3",
+            "audiobooks",
+            "params",
+            "cat",
+            "3030",
+            "OK",
+            None,
+            _DummySubmitConfig(),
+        ),
+        (
+            "audiobook-falls-back-to-books-mapping",
+            IndexerDefinition(
+                id="books-check",
+                name="Books Check",
+                submit_url="https://example.invalid/api",
+                auth=AuthConfig(method="query_param", api_key_param="apikey"),
+                categories=registry_mod.CategoryMapping(books="7020", misc="5000"),
+                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+            ),
+            "Author.Name.Novel.Unabridged.MP3",
+            "audiobooks",
+            "params",
+            "cat",
+            "7020",
+            "OK",
+            None,
+            _DummySubmitConfig(),
         ),
         (
             "shipped-indexer-books-category",

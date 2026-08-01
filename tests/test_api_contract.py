@@ -82,6 +82,12 @@ def test_mark_uploaded_route_is_wired() -> None:
     assert "/api/pending/mark-uploaded" in paths
     assert "post" in paths["/api/pending/mark-uploaded"]
 
+
+def test_anime_cache_correction_route_is_wired() -> None:
+    paths = app_mod.app.openapi()["paths"]
+    assert "/api/pending/anime-cache" in paths
+    assert "post" in paths["/api/pending/anime-cache"]
+
 def test_grouped_items_route_is_wired() -> None:
     paths = app_mod.app.openapi()["paths"]
     assert "/api/uploads/grouped/items" in paths
@@ -113,6 +119,41 @@ def test_mark_uploaded_rejects_empty_input(monkeypatch) -> None:
     assert result["items"] == 2
     assert result["indexers"] == 1
     assert calls == [(["a", "b"], ["geek"], "Misc")]
+
+
+def test_anime_cache_correction_persists_and_refreshes(monkeypatch) -> None:
+    calls: list[tuple[str, bool]] = []
+    refresh_reasons: list[str] = []
+
+    monkeypatch.setattr(
+        "logic.anime_cache.set_cached",
+        lambda name, is_anime: calls.append((name, is_anime)) or True,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        app_mod._pending_index,
+        "request_refresh",
+        lambda *, reason: refresh_reasons.append(reason),
+    )
+
+    result = app_mod.correct_pending_anime_cache(
+        app_mod.AnimeCacheCorrectionRequest(name="Ghost in the Shell", is_anime=False)
+    )
+
+    assert result == {
+        "status": "success",
+        "name": "Ghost in the Shell",
+        "is_anime": False,
+        "category": "misc",
+    }
+    assert calls == [("Ghost in the Shell", False)]
+    assert refresh_reasons == ["anime-cache-correction"]
+
+
+def test_anime_cache_correction_rejects_blank_title() -> None:
+    with pytest.raises(HTTPException) as exc:
+        app_mod.correct_pending_anime_cache(app_mod.AnimeCacheCorrectionRequest(name="  ", is_anime=False))
+    assert exc.value.status_code == 400
 
 def test_grouped_items_passes_destination_through(monkeypatch) -> None:
     seen: dict[str, object] = {}

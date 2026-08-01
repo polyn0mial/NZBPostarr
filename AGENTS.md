@@ -30,6 +30,9 @@ self-titled `nzbpostarr/` source directory.
   `*.template.yaml`, or starting with `_` are never loaded as live indexers.
 - `webui/`: Jinja templates, frontend source, build scripts, and built assets.
 - `tests/`: backend, integration, frontend, and release-safety tests.
+- `tools/classifier_benchmark.py`: measured accuracy benchmark for the media
+  classifier. Run it before and after any change to the classification code and do
+  not let the score drop. It reports 100.0% (44/44) today.
 - `.github/release.py`: public-tree validation and release archive builder.
 - `.github/workflows/`: CI and tagged-release automation.
 
@@ -40,6 +43,9 @@ change:
 
 - `.env`
 - `.config/nzbpostarr/config.yaml`
+- `.config/nzbpostarr/daemon-state.json`
+- `.config/nzbpostarr/daemon-lifecycle.lock`
+- `.config/nzbpostarr/daemon.log`
 - `data/`
 - `.local/`
 - `.venv/`
@@ -179,6 +185,57 @@ weakening an assertion unless the product contract intentionally changed.
 - Avoid adding a dependency for behavior that is small and clearer in the
   standard library; prefer a maintained package when it replaces substantial,
   security-sensitive, or protocol-heavy bespoke code.
+
+## Durable Architecture Decisions
+
+- `logic/pending_scan.py` owns media classification. Snapshot code may add
+  filesystem evidence, but the browser must display the server verdict rather
+  than run a second filename classifier. Only an explicit `manual_category`
+  supplied by the user may override the server result.
+- An unclassified video is `Misc` with unknown confidence. Never silently turn
+  missing evidence into `Movie`. Keep category, item type, confidence, method,
+  and evidence from the same classification result.
+- Treat guessit season and episode metadata as strong evidence only when the
+  release name has a compatible episode shape. Treat its movie result as strong
+  only with an independent year or collection signal.
+- Never add title-specific movie, show, or anime exception tables. Correct the
+  generic mechanism and add a regression case to the classifier benchmark.
+- Keep OMGwtfnzbs' anime-to-TV mapping at its submission boundary. Do not convert
+  anime globally for other indexers or for the UI.
+- Keep one Pending/Uploads application and the flat source tree. Do not recreate
+  duplicate pages, services, or a self-titled source package.
+- Treat files under `webui/assets/js/pages/` as authored source and the matching
+  `dist/` files as build output. Never replace the source with one giant bundle.
+- Enforce bulk-selection exclusions on the server. Manual selection remains a
+  separate, explicit action.
+- Preserve per-destination completion history. A folder is not complete merely
+  because one destination accepted it.
+- Do not interpret a database error as "not uploaded", automatically resume a
+  paused queue after deployment, or drop nested search/classification data to
+  reduce a payload. Shape large nested data lazily instead.
+- Configuration writes must use the validated atomic writer. Do not overwrite
+  the active YAML file in place.
+- Do not add an indexer YAML from the software name or a guessed URL. Verify the
+  actual submission endpoint, authorization, fields, categories, and success
+  response from that indexer's documentation or a live authorized test.
+  Newznab defines retrieval, not a universal upload API.
+- `_curl_redirect_result` is OMGwtfnzbs-specific. Generalize redirect success
+  patterns in the schema only after a second verified CURL-style target exists.
+- This is a source-released application, not a Python distribution. The absence
+  of a `[project]` table in `pyproject.toml` is intentional; CI enforces the
+  Python 3.12 floor on 3.12 and 3.13. Revisit packaging metadata only if the app
+  becomes distributable through Python packaging tools.
+- Keep the optional `mcp` dependency out of `requirements.lock`, and do not bump
+  `pydantic_core` independently of the `pydantic` version that pins it.
+- Do not port the private archiver integration, worker routes, or hardcoded
+  operator paths from another deployment into this public repository.
+- Do not opportunistically split `app.py`, `logic/processing.py`,
+  `logic/queueing.py`, `core/registry.py`, or the queue page's tree traversal.
+  Make incremental, behavior-driven splits only with focused tests and a
+  measured benefit. Re-measure uploader, snapshot memory, stats, typing, and
+  orchestration before refactoring them.
+- Never merge obsolete private history into public history or move an existing
+  public tag. Publish changed release contents under a new version.
 
 ## Deployment and Upgrade
 

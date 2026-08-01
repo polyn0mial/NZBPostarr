@@ -77,6 +77,7 @@ class CategoryMapping(BaseModel):
     anime: str = ""
     disc: str = ""
     music: str = ""
+    audiobooks: str = ""
     books: str = ""
     apps: str = ""
     misc: str = ""
@@ -108,6 +109,8 @@ class CategoryMapping(BaseModel):
             candidates.extend(["movie_hd", "movie"])
         elif requested == "movie_full_br":
             candidates.extend(["movie_hd", "movie"])
+        elif requested == "audiobooks":
+            candidates.append("books")
 
         seen: set[str] = set()
         for candidate in candidates:
@@ -572,6 +575,12 @@ _KNOWN_CATEGORIES: Dict[str, Dict[str, str]] = {
     "tv": {"id": "tv", "label": "TV Shows", "icon": "tv", "color": "cyan-400"},
     "anime": {"id": "anime", "label": "Anime", "icon": "swords", "color": "pink-400"},
     "disc": {"id": "disc", "label": "DISC", "icon": "disc-3", "color": "slate-400"},
+    "audiobooks": {
+        "id": "audiobooks",
+        "label": "Audiobooks",
+        "icon": "headphones",
+        "color": "teal-400",
+    },
     "books": {
         "id": "books",
         "label": "Books",
@@ -615,6 +624,8 @@ def get_available_categories() -> List[Dict[str, Any]]:
 
     for indexer in registry.all():
         mapping = indexer.categories.model_dump()
+        if mapping.get("books") and not mapping.get("audiobooks"):
+            mapping["audiobooks"] = mapping["books"]
         for yaml_key, code in mapping.items():
             if yaml_key == "default" or not code:
                 continue
@@ -648,6 +659,7 @@ def get_available_categories() -> List[Dict[str, Any]]:
         "anime",
         "disc",
         "music",
+        "audiobooks",
         "books",
         "apps",
         "misc",

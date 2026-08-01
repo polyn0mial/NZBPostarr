@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Iterable, List, Optional, Set, Tuple
 
+from core.release_name import parse_release_name
 from core.utils import (
     AUDIOBOOK_EXTENSIONS,
     EBOOK_EXTENSIONS,
@@ -22,8 +23,12 @@ _AUTO_TV_PATTERNS = re.compile(
     r"(?:"
     r"S\d{1,2}[.\s-]?E\d{1,3}"
     r"|S\d{1,2}[.\s-]?(?:Complete|COMPLETE|Full)"
-    r"|Season[.\s-]?\d{1,2}"
-    r"|Series[.\s-]?\d{1,2}"
+    # The (?!\d) guards matter: without them "Season" or "Series" followed by a
+    # resolution or a year swallows the leading digits of that token, so
+    # "The.Last.Season.1080p" matched "Season.10" and classified as TV, and
+    # "MINISERIES.1080p" matched "SERIES.10".
+    r"|Season[.\s-]?\d{1,2}(?!\d)"
+    r"|Series[.\s-]?\d{1,2}(?!\d)"
     r"|Vol(?:ume)?[.\s_-]*\d{1,3}"
     r"|(?:^|[.\s_(-])\d{1,2}x\d{2,3}(?:[.\s_)-]|$)"
     r"|(?:^|[.\s_-])S\d{2}(?:[.\s_-]|$)"
@@ -44,6 +49,14 @@ _AUTO_COMPLETE_SERIES_RANGE_RE = re.compile(
     r"(?:19|20)\d{2}\s*[-/–-]\s*(?:19|20)\d{2}.*\b(?:complete|season|series|s\d{1,2}|dvd|remux)\b",
     re.IGNORECASE,
 )
+# A YYYY.MM.DD stamp is an episode air date (daily shows, news, sport). Movies do
+# not carry one, so this is an unambiguous TV signal. It needs its own constant
+# because has_clear_movie_year() sees the leading YYYY and returns "Movie" before
+# the TV patterns are ever consulted.
+_DATE_EPISODE_RE = re.compile(
+    r"(?:^|[.\s_-])(?:19|20)\d{2}[.\s_-](?:0[1-9]|1[0-2])[.\s_-](?:0[1-9]|[12]\d|3[01])(?:[.\s_-]|$)"
+)
+
 _TRAILING_RELEASE_GROUP_YEAR_RE = re.compile(r"[-._\s]+[A-Za-z][A-Za-z0-9]{1,20}(?:19|20)\d{2}$")
 _GENERIC_TV_SEASON_FOLDER_RE = re.compile(
     r"^(?:"
@@ -77,6 +90,18 @@ _ANIME_ABSOLUTE_EPISODE_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
+_FRAMED_ABSOLUTE_EPISODE_RE = re.compile(
+    r"(?:"
+    r"(?:^|[\s._-])-[.\s_-]*(?!(?:19|20)\d{2}(?:[\s._(\[]|$))\d{1,5}(?:v\d+)?(?=[\s._(\[]|$)"
+    r"|\[(?!(?:19|20)\d{2}\])\d{1,5}(?:v\d+)?\]"
+    r")",
+    re.IGNORECASE,
+)
+_BARE_HIGH_ABSOLUTE_EPISODE_RE = re.compile(
+    r"(?:^|[\s._-])(?!(?:19|20)\d{2}(?:[\s._-]|$))\d{4,5}(?:v\d+)?"
+    r"(?=[\s._-]+(?:2160p|1080[pi]?|720p|576[pi]?|480[pi]?|WEB|BluRay|BDRip|HDTV|DVD))",
+    re.IGNORECASE,
+)
 _ANIME_EXTRA_RE = re.compile(
     r"(?:"
     r"(?:^|[\s._-])(NCOP|NCED|OP|ED)(?:[\s._-]|$)"
@@ -88,10 +113,48 @@ _TV_EPISODE_HINT_RE = re.compile(
     r"(?:"
     r"(?:^|[.\s_-])(?:S\d{1,2}[.\s_-]*)?(?:E\d{1,3}|EP?\d{1,3}|Episode[.\s_-]?\d{1,3})(?:[.\s_([+-]|$)"
     r"|(?:^|[.\s_-])\d{1,2}x\d{1,3}(?:[.\s_)-]|$)"
-    r"|(?:^|[.\s_-])(?:Part|Pt|Chapter)[.\s_-]?\d{1,3}(?:[.\s_]|$)"
     r"|(?:^|[.\s_-])(?:Pilot|Finale|Final|Special|OVA|OAD)(?:[.\s_]|$)"
     r"|(?:^|[.\s_-])(?:1of\d{1,2}|Part\d{1,2}of\d{1,2})(?:[.\s_]|$)"
     r"|(?:^|[.\s_-])(?:\d{1,3}(?:[.\s_-]\d{2,4}){1,2})(?:[.\s_]|$)"
+    r")",
+    re.IGNORECASE,
+)
+_TV_PART_EPISODE_RE = re.compile(
+    r"(?:^|[.\s_-])(?:Part|Pt|Chapter)[.\s_-]?\d{1,3}(?:[.\s_]|$)",
+    re.IGNORECASE,
+)
+_STREAMING_EPISODE_SOURCE_RE = re.compile(
+    r"(?=.*(?:^|[.\s_-])(?:AMZN|NF|HMAX|DSNP|ATVP)(?:[.\s_-]|$))(?=.*(?:^|[.\s_-])WEB(?:-DL)?(?:[.\s_-]|$))",
+    re.IGNORECASE,
+)
+_SPORTS_LEAGUE_RE = re.compile(
+    r"(?:^|[.\s_-])(?:UFC|Bellator|ONE[.\s_-]?FC|WWE|AEW|NFL|NBA|WNBA|NHL|MLB|MLS|NCAA|F1|MotoGP)(?:[.\s_-]|$)",
+    re.IGNORECASE,
+)
+_SPORTS_EVENT_CONTEXT_RE = re.compile(
+    r"(?:"
+    r"(?:^|[.\s_-])(?:PPV|Fight[.\s_-]?Night|Main[.\s_-]?Event|Grand[.\s_-]?Prix)(?:[.\s_-]|$)"
+    r"|(?:^|[.\s_-])(?:Week|Round|Game|Race)[.\s_-]?\d{1,3}(?:[.\s_-]|$)"
+    r"|(?:^|[.\s_-])vs?\.?(?:[.\s_-]|$)"
+    r")",
+    re.IGNORECASE,
+)
+_COMPLETE_MINISERIES_RE = re.compile(
+    r"(?:"
+    r"(?:^|[.\s_-])complete[.\s_-]+mini[.\s_-]?series(?:[.\s_-]|$)"
+    r"|(?:^|[.\s_-])mini[.\s_-]?series[.\s_-]+complete(?:[.\s_-]|$)"
+    r")",
+    re.IGNORECASE,
+)
+_MOVIE_COLLECTION_RE = re.compile(
+    r"(?:^|[.\s_-])(?:anthology|box[.\s_-]?set|collection|duology|trilogy|quadrilogy|tetralogy)"
+    r"(?:[.\s_-]|$)",
+    re.IGNORECASE,
+)
+_GUESSIT_EPISODE_SHAPE_RE = re.compile(
+    r"(?:"
+    r"(?:^|[.\s_-])S\d{1,2}[.\s_-]+\d{1,3}(?:[.\s_-]|$)"
+    r"|(?:^|[.\s_-])\d{1,3}[.\s_-]+of[.\s_-]+\d{1,3}(?:[.\s_-]|$)"
     r")",
     re.IGNORECASE,
 )
@@ -192,13 +255,20 @@ _SERIES_SIGNATURE_STRIP_RE = re.compile(
 )
 
 _AUTO_ROOT_CATEGORIES = {"", "external", "auto"}
-_DISC_IMAGE_EXTENSIONS = {".iso", ".img", ".mdf", ".nrg"}
-_DISC_STRUCTURE_EXTENSIONS = {".ifo", ".bup", ".vob", ".m2ts", ".mpls", ".clpi", ".ssif"}
+_DISC_IMAGE_EXTENSIONS = {".iso", ".img", ".mdf", ".mds", ".nrg"}
 _DISC_STRUCTURE_DIRS = {"bdmv", "certificate", "video_ts"}
-_DISC_NAME_RE = re.compile(
-    r"(?:^|[\s._\-[\]()])(?:disc|disk|bdmv|video_ts|full[.\s_-]?bd|full[.\s_-]?blu[.\s_-]?ray)(?:[\s._\-[\]()]|$)",
-    re.IGNORECASE,
-)
+_APP_FILE_EXTENSIONS = {
+    ".exe",
+    ".msi",
+    ".apk",
+    ".dmg",
+    ".pkg",
+    ".deb",
+    ".rpm",
+    ".zip",
+    ".rar",
+    ".7z",
+} | _DISC_IMAGE_EXTENSIONS
 _FOLDER_CATEGORY_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("audiobooks", ("audiobook", "audiobooks", "audio book", "audio books", "podcast", "podcasts", "m4b")),
     ("books", ("ebook", "ebooks", "book", "books", "comic", "comics", "manga", "pdf", "epub")),
@@ -209,10 +279,22 @@ _FOLDER_CATEGORY_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("movies", ("movie", "movies", "film", "films")),
 )
 _AUDIOBOOK_HINT_RE = re.compile(
-    r"\b(?:audio[.\s_-]?books?|audiobooks?|podcasts?|m4b|lecture|lectures)\b", re.IGNORECASE
+    r"\b(?:"
+    r"audio[.\s_-]?books?|audiobooks?|podcasts?|m4b|lectures?|unabridged|abridged"
+    r"|narrators?|narrated(?:[.\s_-]+by)?|read[.\s_-]+by"
+    r")\b",
+    re.IGNORECASE,
 )
 _EBOOK_HINT_RE = re.compile(r"\b(?:e[.\s_-]?books?|ebooks?|books?|comics?|manga|pdfs?|epubs?)\b", re.IGNORECASE)
-_MUSIC_HINT_RE = re.compile(r"\b(?:music|albums?|discography|soundtracks?|ost|flac|mp3)\b", re.IGNORECASE)
+_MUSIC_RELEASE_HINT_RE = re.compile(
+    r"\b(?:albums?|discography|soundtracks?|ost|ep|singles?|cd[.\s_-]?\d*|flac)\b",
+    re.IGNORECASE,
+)
+_AUDIOBOOK_CHAPTER_RE = re.compile(
+    r"(?:^|[.\s_-])(?:chapter|ch|part|book)[.\s_-]*\d{1,4}(?:[.\s_-]|$)",
+    re.IGNORECASE,
+)
+_AMBIGUOUS_TRACK_RE = re.compile(r"(?:^|[.\s_-])track[.\s_-]*\d{1,4}(?:[.\s_-]|$)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -249,6 +331,40 @@ class IgnoredScanPath:
 
 
 @dataclass(frozen=True)
+class VideoClassificationResult:
+    """Canonical name-level classification with evidence strength."""
+
+    category: str
+    itype: str
+    confidence: str
+    method: str
+    evidence: Tuple[str, ...] = ()
+
+
+_ITYPE_TO_CATEGORY = {
+    "tv show": "tv",
+    "tv episode": "tv",
+    "tv pack": "tv",
+    "season pack": "tv",
+    "anime": "anime",
+    "movie": "movies",
+    "movie pack": "movies",
+    "music": "music",
+    "audiobook": "audiobooks",
+    "ebook": "books",
+    "app": "apps",
+    "disc": "disc",
+    "misc": "misc",
+    "unknown": "misc",
+}
+
+
+def category_from_itype(itype: str, default: str = "misc") -> str:
+    """Map a display item type to its canonical submission category."""
+    return _ITYPE_TO_CATEGORY.get(str(itype or "").strip().lower(), default)
+
+
+@dataclass(frozen=True)
 class ExplicitPathResolution:
     """Resolved category/type metadata for one explicit processing path."""
 
@@ -260,6 +376,8 @@ class ExplicitPathResolution:
     ignored_paths: Tuple[IgnoredScanPath, ...] = ()
     content_flags: Tuple[str, ...] = ()
     override_note: str = ""
+    detection_confidence: str = ""
+    detection_evidence: Tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         queue_paths = self.queue_paths
@@ -281,6 +399,19 @@ class ExplicitPathResolution:
                 object.__setattr__(self, "ignored_paths", tuple(ignored_paths))
             except TypeError:
                 object.__setattr__(self, "ignored_paths", ())
+
+        evidence = self.detection_evidence
+        if evidence is None:
+            object.__setattr__(self, "detection_evidence", ())
+        elif not isinstance(evidence, tuple):
+            try:
+                object.__setattr__(self, "detection_evidence", tuple(evidence))
+            except TypeError:
+                object.__setattr__(self, "detection_evidence", ())
+
+        if not self.detection_confidence:
+            confidence = "unknown" if self.category in {"", "misc"} else "strong"
+            object.__setattr__(self, "detection_confidence", confidence)
 
 
 def get_configured_category_folders(
@@ -392,6 +523,12 @@ def looks_like_tv_name(name: str) -> bool:
     """Return True when a release name clearly looks episodic/TV-like."""
     if _AUTO_COMPLETE_SERIES_RANGE_RE.search(name):
         return True
+    if _COMPLETE_MINISERIES_RE.search(name):
+        return True
+    # An air-date stamp outranks the movie-year veto below: the veto matches the
+    # YYYY of the date itself, so without this a daily show reads as a movie.
+    if _DATE_EPISODE_RE.search(name):
+        return True
     if has_clear_movie_year(name):
         return False
     return bool(_AUTO_TV_PATTERNS.search(name))
@@ -428,29 +565,6 @@ def looks_like_generic_tv_season_folder(name: str) -> bool:
     return not bool(re.search(r"[a-z]", cleaned))
 
 
-def _is_multi_season_container_dir(entry: Path) -> bool:
-    """True when a folder is mainly a container of season-like subfolders."""
-    if not entry.is_dir():
-        return False
-    try:
-        child_dirs = [child for child in entry.iterdir() if child.is_dir() and not child.name.startswith(".")]
-    except OSError:
-        return False
-    if len(child_dirs) < 2:
-        return False
-
-    season_like_count = 0
-    for child in child_dirs:
-        name = child.name
-        if looks_like_generic_tv_season_folder(name):
-            season_like_count += 1
-            continue
-        if re.search(r"(?:^|[.\s_-])S\d{1,2}(?:[.\s_-]\d{1,2})?(?:$|[.\s_-])", name, re.IGNORECASE):
-            season_like_count += 1
-            continue
-    return season_like_count >= 2
-
-
 def has_clear_movie_year(name: str) -> bool:
     """Return True when a release name has exactly one plausible movie year token."""
     comparable_name = Path(str(name)).stem
@@ -462,37 +576,151 @@ def has_clear_movie_year(name: str) -> bool:
     return len(set(_AUTO_YEAR_TOKEN_RE.findall(comparable_name))) == 1
 
 
-def classify_video_name(
+def _looks_like_sports_event(name: str) -> bool:
+    """Return True for a recognized league paired with event/broadcast context."""
+    stem = Path(str(name or "")).stem
+    return bool(_SPORTS_LEAGUE_RE.search(stem) and _SPORTS_EVENT_CONTEXT_RE.search(stem))
+
+
+def _looks_like_part_episode(name: str, folder_hint: str = "") -> bool:
+    """Require TV corroboration before treating ``Part N`` as an episode."""
+    raw_name = str(name or "")
+    stem = Path(raw_name).stem
+    match = _TV_PART_EPISODE_RE.search(stem)
+    if not match:
+        return False
+    if _coerce_category_hint(folder_hint) in {"tv", "anime"}:
+        return True
+
+    tail = stem[match.end() :]
+    year_match = _AUTO_YEAR_TOKEN_RE.search(tail)
+    if year_match and re.search(r"[A-Za-z]{3,}", tail[: year_match.start()]):
+        return True
+
+    title_words = [
+        word
+        for word in re.findall(r"[A-Za-z]{2,}", stem[: match.start()])
+        if word.casefold() not in {"a", "an", "the", "of", "in", "on", "at", "to", "and", "or"}
+    ]
+    if year_match is None:
+        return bool(len(title_words) >= 2 and _TV_PACK_SOURCE_RE.search(raw_name))
+    return bool(
+        year_match
+        and 1 <= len(title_words) <= 2
+        and any(len(word) >= 5 for word in title_words)
+        and _STREAMING_EPISODE_SOURCE_RE.search(raw_name)
+    )
+
+
+def _video_classification(
+    category: str,
+    itype: str,
+    confidence: str,
+    method: str,
+    *evidence: str,
+) -> VideoClassificationResult:
+    return VideoClassificationResult(
+        category=category,
+        itype=itype,
+        confidence=confidence,
+        method=method,
+        evidence=tuple(item for item in evidence if item),
+    )
+
+
+def classify_video_name_result(
     name: str,
     folder_category: str = "",
-    assume_movie_if_unknown: bool = True,
     *,
     anime_lookup: Optional[Callable[[str], Optional[bool]]] = None,
-) -> str:
-    """Classify a video release name as TV Show, Anime, Movie, or Misc."""
+    explicit_category_hint: str = "",
+    explicit_itype_hint: str = "",
+) -> VideoClassificationResult:
+    """Classify one video name without silently converting unknowns to movies."""
     folder_hint = str(folder_category or "").strip().lower()
+    # A category selected by the user is authoritative.  The accompanying
+    # display type can be stale after a UI category change, so it must not
+    # reverse that explicit choice.
+    explicit_hint = _coerce_category_hint(explicit_category_hint) or _hint_category_from_itype(explicit_itype_hint)
+    if explicit_hint == "anime":
+        return _video_classification("anime", "Anime", "confirmed", "Explicit category", "anime")
+    if explicit_hint == "tv":
+        return _video_classification("tv", "TV Show", "confirmed", "Explicit category", "tv")
+    if explicit_hint == "movies":
+        return _video_classification("movies", "Movie", "confirmed", "Explicit category", "movies")
+
     anime_status: Optional[bool] = None
     if anime_lookup is not None:
         try:
-            anime_status = anime_lookup(_normalize_lookup_title(name) or name)
+            anime_status = anime_lookup(name)
         except Exception:
             anime_status = None
 
     if anime_status is True:
-        return "Anime"
+        return _video_classification("anime", "Anime", "confirmed", "Anime cache", "confirmed anime")
     if anime_status is None and folder_hint == "anime":
-        return "Anime"
+        return _video_classification("anime", "Anime", "strong", "Configured folder", "anime folder")
     if folder_hint in {"movie", "movies"} and not _matches_episode_pattern(name, anime_mode=True):
-        return "Movie"
-    if _matches_episode_pattern(name):
-        return "TV Show"
+        return _video_classification("movies", "Movie", "strong", "Configured folder", "movies folder")
+    if _matches_episode_pattern(name, include_guessit=False):
+        return _video_classification("tv", "TV Show", "strong", "Episode pattern", "episode token")
+    if _DATE_EPISODE_RE.search(name):
+        return _video_classification("tv", "TV Show", "strong", "Episode pattern", "air date")
+    if _looks_like_part_episode(name, folder_hint):
+        return _video_classification("tv", "TV Show", "strong", "Episode pattern", "part episode")
+    if _COMPLETE_MINISERIES_RE.search(name):
+        return _video_classification("tv", "TV Show", "strong", "Series pattern", "complete miniseries")
+    if _looks_like_sports_event(name):
+        return _video_classification("tv", "TV Show", "strong", "Event pattern", "sports event")
+
+    try:
+        parsed = parse_release_name(name)
+    except Exception:
+        parsed = {}
+    parsed_media_type = str(parsed.get("media_type") or "").strip().lower()
+    parsed_season = parsed.get("season_number")
+    parsed_episode = parsed.get("episode_number")
+    if (
+        parsed_media_type == "tv"
+        and (parsed_season is not None or parsed_episode is not None)
+        and _GUESSIT_EPISODE_SHAPE_RE.search(name)
+    ):
+        return _video_classification("tv", "TV Show", "strong", "guessit", "episode metadata")
+
     if has_clear_movie_year(name):
-        return "Movie"
+        return _video_classification("movies", "Movie", "strong", "Movie pattern", "single release year")
     if looks_like_tv_name(name):
-        return "TV Show"
+        return _video_classification("tv", "TV Show", "strong", "Series pattern", "TV name")
     if _TV_EPISODE_HINT_RE.search(Path(str(name)).stem):
-        return "TV Show"
-    return "Movie" if assume_movie_if_unknown else "Misc"
+        return _video_classification("tv", "TV Show", "strong", "Episode pattern", "episode hint")
+    if parsed_media_type == "movie" and (
+        _AUTO_YEAR_TOKEN_RE.search(name) or _MOVIE_COLLECTION_RE.search(name)
+    ):
+        evidence = "movie collection" if _MOVIE_COLLECTION_RE.search(name) else "movie metadata"
+        return _video_classification("movies", "Movie", "strong", "guessit", evidence)
+    return _video_classification("misc", "Misc", "unknown", "No reliable signal")
+
+
+def classify_video_name(
+    name: str,
+    folder_category: str = "",
+    assume_movie_if_unknown: bool = False,
+    *,
+    anime_lookup: Optional[Callable[[str], Optional[bool]]] = None,
+    explicit_category_hint: str = "",
+    explicit_itype_hint: str = "",
+) -> str:
+    """Compatibility wrapper returning only the display item type."""
+    result = classify_video_name_result(
+        name,
+        folder_category,
+        anime_lookup=anime_lookup,
+        explicit_category_hint=explicit_category_hint,
+        explicit_itype_hint=explicit_itype_hint,
+    )
+    if result.confidence == "unknown" and assume_movie_if_unknown:
+        return "Movie"
+    return result.itype
 
 
 def infer_folder_category_hint(folder: Path | str | None) -> str:
@@ -562,6 +790,36 @@ def _entry_hint_text(entry: Path) -> str:
     return " ".join(str(part) for part in parts)
 
 
+def classify_audio_folder(
+    entry: Path,
+    leaf_files: Optional[Tuple[Path, ...]] = None,
+) -> str:
+    """Classify audio leaves as audiobooks, music, or unresolved."""
+    leaves = leaf_files if leaf_files is not None else _iter_leaf_files(entry)
+    audio_files = tuple(
+        path for path in leaves if path.suffix.lower() in AUDIOBOOK_EXTENSIONS | MUSIC_EXTENSIONS
+    )
+    if not audio_files:
+        return ""
+
+    hint_text = " ".join((_entry_hint_text(entry), *(path.stem for path in audio_files)))
+    if any(path.suffix.lower() in AUDIOBOOK_EXTENSIONS for path in audio_files):
+        return "audiobooks"
+    if _AUDIOBOOK_HINT_RE.search(hint_text):
+        return "audiobooks"
+    if _MUSIC_RELEASE_HINT_RE.search(hint_text):
+        return "music"
+
+    chapter_count = sum(bool(_AUDIOBOOK_CHAPTER_RE.search(path.stem)) for path in audio_files)
+    if chapter_count >= 2:
+        return "audiobooks"
+
+    track_count = sum(bool(_AMBIGUOUS_TRACK_RE.search(path.stem)) for path in audio_files)
+    if len(audio_files) >= 2 and track_count >= 2:
+        return ""
+    return "music"
+
+
 def _non_video_media_category(entry: Path, leaf_files: Optional[Tuple[Path, ...]] = None) -> str:
     """Return a specific non-video media category when the content is clear."""
     leaves = leaf_files if leaf_files is not None else _iter_leaf_files(entry)
@@ -588,26 +846,22 @@ def _non_video_media_category(entry: Path, leaf_files: Optional[Tuple[Path, ...]
         elif ext in MUSIC_EXTENSIONS:
             music_count += 1
             known_count += 1
-        elif ext in {".exe", ".msi", ".apk", ".dmg", ".pkg", ".deb", ".rpm", ".zip", ".rar", ".7z"}:
+        elif ext in _APP_FILE_EXTENSIONS:
             app_count += 1
             known_count += 1
 
-    if video_count:
-        return ""
-
-    hint_text = _entry_hint_text(entry)
     audio_count = audiobook_count + music_count
-    if audio_count:
-        if audiobook_count or _AUDIOBOOK_HINT_RE.search(hint_text):
-            return "audiobooks"
-        if _MUSIC_HINT_RE.search(hint_text) or music_count >= max(1, ebook_count):
-            return "music"
+    if audio_count > video_count:
+        audio_category = classify_audio_folder(entry, leaves)
+        if audio_category:
+            return audio_category
 
-    if ebook_count:
+    if ebook_count > video_count:
+        hint_text = _entry_hint_text(entry)
         if _EBOOK_HINT_RE.search(hint_text) or ebook_count >= max(1, audio_count):
             return "books"
 
-    if app_count and known_count and app_count / known_count >= 0.5:
+    if app_count > video_count and known_count and app_count / known_count >= 0.5:
         return "apps"
 
     return ""
@@ -615,7 +869,7 @@ def _non_video_media_category(entry: Path, leaf_files: Optional[Tuple[Path, ...]
 
 def infer_entry_category_hint(entry: Path, explicit_hint: str = "", itype_hint: str = "") -> str:
     """Infer the weakest-possible category hint from path structure and UI metadata."""
-    for hinted in (_hint_category_from_itype(itype_hint), _coerce_category_hint(explicit_hint)):
+    for hinted in (_coerce_category_hint(explicit_hint), _hint_category_from_itype(itype_hint)):
         if hinted:
             return hinted
 
@@ -719,9 +973,37 @@ def _iter_leaf_files(entry: Path) -> Tuple[Path, ...]:
     return _scan_cache_put("leaf", entry, tuple(files))
 
 
-def _matches_episode_pattern(name: str, *, anime_mode: bool = False) -> bool:
+def _has_guessit_episode_metadata(name: str) -> bool:
+    """Require both a compatible name shape and parsed episode metadata."""
+    if not _GUESSIT_EPISODE_SHAPE_RE.search(Path(str(name)).stem):
+        return False
+    try:
+        parsed = parse_release_name(name)
+    except Exception:
+        return False
+    return bool(
+        str(parsed.get("media_type") or "").strip().lower() == "tv"
+        and (parsed.get("season_number") is not None or parsed.get("episode_number") is not None)
+    )
+
+
+def _matches_episode_pattern(
+    name: str,
+    *,
+    anime_mode: bool = False,
+    include_guessit: bool = True,
+) -> bool:
     stem = Path(name).stem
     if _EXPLICIT_EPISODE_RE.search(stem):
+        return True
+    if _FRAMED_ABSOLUTE_EPISODE_RE.search(stem):
+        return True
+    bare_high_match = _BARE_HIGH_ABSOLUTE_EPISODE_RE.search(stem)
+    if bare_high_match:
+        prefix = _AUTO_ANIME_FANSUB_RE.sub("", stem[: bare_high_match.start()])
+        if len(re.findall(r"[A-Za-z]{2,}", prefix)) >= 2:
+            return True
+    if include_guessit and _has_guessit_episode_metadata(name):
         return True
     if not anime_mode:
         return False
@@ -805,7 +1087,11 @@ def _tv_pack_episode_rejection_reason(path: Path, video_extensions: Set[str]) ->
 
     name = path.name
     stem = path.stem
-    has_sxxexx_pattern = bool(_TV_PACK_EPISODE_RE.search(stem))
+    has_sxxexx_pattern = bool(
+        _TV_PACK_EPISODE_RE.search(stem)
+        or _has_guessit_episode_metadata(name)
+        or _looks_like_sports_event(name)
+    )
     has_episode_pattern = bool(has_sxxexx_pattern or _looks_like_tv_episode_name(stem, anime_mode=True))
     has_source_token = bool(_TV_PACK_SOURCE_RE.search(stem))
     if rules.get("ignore_non_video", True) and path.suffix.lower() not in video_extensions:
@@ -894,6 +1180,25 @@ def _has_tv_episode_like_video(video_names: list[str]) -> bool:
     return any(_looks_like_tv_episode_name(name) or _matches_episode_pattern(name) for name in video_names)
 
 
+def _has_nested_tv_context(entry: Path, video_files: Tuple[Path, ...]) -> bool:
+    """Return True when nested season and episode folders identify a TV leaf."""
+    if not entry.is_dir():
+        return False
+
+    episode_folder_re = re.compile(r"^(?:episode|ep|e)\s*\d{1,4}$", re.IGNORECASE)
+    for video_file in video_files:
+        try:
+            relative_parts = video_file.relative_to(entry).parts[:-1]
+        except ValueError:
+            continue
+        normalized_parts = [re.sub(r"[^a-z0-9]+", " ", part.lower()).strip() for part in relative_parts]
+        has_season = any(looks_like_generic_tv_season_folder(part) for part in relative_parts)
+        has_episode = any(episode_folder_re.fullmatch(part) for part in normalized_parts)
+        if has_season and has_episode:
+            return True
+    return False
+
+
 def _best_series_lookup_name(video_files: Tuple[Path, ...]) -> str:
     signatures: dict[str, int] = {}
     for path in video_files:
@@ -910,12 +1215,11 @@ def _anime_lookup_candidates(entry: Path, video_files: Tuple[Path, ...]) -> Tupl
     candidates: list[str] = []
 
     def add(value: str) -> None:
-        text = _normalize_lookup_title(str(value or ""))
-        if not text:
+        raw_text = str(value or "").strip()
+        if not raw_text or not _normalize_lookup_title(raw_text):
             return
-        for variant in (text, text.title()):
-            if variant and variant not in candidates:
-                candidates.append(variant)
+        if raw_text not in candidates:
+            candidates.append(raw_text)
 
     if entry.is_file():
         add(entry.name)
@@ -940,7 +1244,7 @@ def anime_lookup_candidates(
     *,
     video_extensions: Optional[Set[str]] = None,
 ) -> Tuple[str, ...]:
-    """Return normalized detector queries derived from a release and its video leaves."""
+    """Return detector queries derived from a release and its video leaves."""
     video_files = _iter_video_candidates(entry, video_extensions or VIDEO_EXTENSIONS)
     if not video_files:
         return ()
@@ -962,27 +1266,47 @@ def _lookup_anime_status(
             return True
         if status is False:
             saw_false = True
+            if _AUTO_YEAR_TOKEN_RE.search(candidate):
+                return False
     return False if saw_false else None
 
 
-def _detect_disc_leaf_files(entry: Path) -> Tuple[Path, ...]:
+def _detect_video_disc_leaf_files(entry: Path) -> Tuple[Path, ...]:
+    """Return leaves only when they contain an actual DVD/Blu-ray structure."""
     leaf_files = _iter_leaf_files(entry)
     if not leaf_files:
         return ()
 
-    for path in leaf_files:
-        if path.suffix.lower() in _DISC_IMAGE_EXTENSIONS | _DISC_STRUCTURE_EXTENSIONS:
-            return leaf_files
-        if any(part.lower() in _DISC_STRUCTURE_DIRS for part in path.parts):
-            return leaf_files
+    structured_suffixes = {".bdmv", ".ifo", ".bup", ".vob", ".m2ts", ".mpls", ".clpi", ".ssif"}
+    if any(
+        path.suffix.lower() in structured_suffixes
+        and any(part.lower() in _DISC_STRUCTURE_DIRS for part in path.parts)
+        for path in leaf_files
+    ):
+        return leaf_files
+
+    suffixes = {path.suffix.lower() for path in leaf_files}
+    has_dvd_controls = bool(suffixes & {".ifo", ".bup"})
+    has_dvd_stream = ".vob" in suffixes
+    has_bluray_controls = bool(suffixes & {".mpls", ".clpi"})
+    has_bluray_stream = bool(suffixes & {".m2ts", ".ssif"})
+    if (has_dvd_controls and has_dvd_stream) or (has_bluray_controls and has_bluray_stream):
+        return leaf_files
     return ()
 
 
+def has_video_disc_structure(entry: Path) -> bool:
+    """Return True only for an inspectable DVD or Blu-ray filesystem structure."""
+    return bool(_detect_video_disc_leaf_files(entry))
+
+
 def _disc_base_category(entry: Path, folder_hint: str, anime_status: Optional[bool]) -> tuple[str, str]:
+    normalized_hint = _coerce_category_hint(folder_hint)
+    if normalized_hint == "apps":
+        return "apps", "App"
     if anime_status is True:
         return "anime", "Anime"
 
-    normalized_hint = str(folder_hint or "").strip().lower()
     if normalized_hint in {"tv", "television", "series", "shows", "show"}:
         return "tv", "TV Show"
     if looks_like_generic_tv_season_folder(entry.name) or looks_like_tv_name(entry.name):
@@ -1130,7 +1454,7 @@ def _resolve_early_explicit_path(
             "books": EBOOK_EXTENSIONS,
             "audiobooks": AUDIOBOOK_EXTENSIONS | MUSIC_EXTENSIONS,
             "music": MUSIC_EXTENSIONS | AUDIOBOOK_EXTENSIONS,
-            "apps": {".exe", ".msi", ".apk", ".dmg", ".pkg", ".deb", ".rpm", ".zip", ".rar", ".7z"},
+            "apps": _APP_FILE_EXTENSIONS,
         }.get(non_video_category, set())
         queue_paths = tuple(path for path in all_leaf_files if path.suffix.lower() in non_video_exts)
         non_video_label = "ebook" if non_video_category == "books" else non_video_category.rstrip("s")
@@ -1200,6 +1524,7 @@ class _ExplicitVideoState:
     entry: Path
     category_hint: str
     itype_hint: str
+    respect_explicit_hint: bool
     folder_hint: str
     video_extensions: Set[str]
     anime_lookup: Callable[[str], Optional[bool]]
@@ -1222,6 +1547,7 @@ def _build_explicit_video_state(
     *,
     category_hint: str,
     itype_hint: str,
+    respect_explicit_hint: bool,
     folder_hint: str,
     video_extensions: Set[str],
     anime_lookup: Callable[[str], Optional[bool]],
@@ -1234,11 +1560,18 @@ def _build_explicit_video_state(
     anime_episode_files = tuple(
         path for path in video_files if _matches_episode_pattern(path.name, anime_mode=True)
     )
+    explicit_selection = (
+        _coerce_category_hint(category_hint) or _hint_category_from_itype(itype_hint)
+        if respect_explicit_hint
+        else ""
+    )
     strict_tv_pack = bool(
         entry.is_dir()
         and video_files
         and (
-            looks_like_tv_name(entry.name)
+            explicit_selection == "tv"
+            if explicit_selection
+            else looks_like_tv_name(entry.name)
             or folder_hint == "tv"
             or _coerce_category_hint(category_hint) == "tv"
             or _hint_category_from_itype(itype_hint) == "tv"
@@ -1264,11 +1597,20 @@ def _build_explicit_video_state(
         else (anime_episode_files, anime_ignored)
     )
     tv_context = _has_tv_context(entry)
+    entry_classification = classify_video_name_result(
+        entry.name,
+        folder_hint,
+        anime_lookup=anime_lookup,
+        explicit_category_hint=category_hint if respect_explicit_hint else "",
+        explicit_itype_hint=itype_hint if respect_explicit_hint else "",
+    )
     series_like = bool(
         _matches_episode_pattern(entry.name)
         or episodic_files
+        or entry_classification.category == "tv"
         or _has_related_video_files(video_names)
         or (entry.suffix.lower() in video_extensions and (looks_like_tv_name(entry.name) or tv_context))
+        or _has_nested_tv_context(entry, video_files)
         or (
             entry.is_dir()
             and bool(video_files or leaf_video_files)
@@ -1279,6 +1621,7 @@ def _build_explicit_video_state(
         entry=entry,
         category_hint=category_hint,
         itype_hint=itype_hint,
+        respect_explicit_hint=respect_explicit_hint,
         folder_hint=folder_hint,
         video_extensions=video_extensions,
         anime_lookup=anime_lookup,
@@ -1307,6 +1650,11 @@ def _explicit_anime_status(state: _ExplicitVideoState) -> Optional[bool]:
 
 def _explicit_is_anime(state: _ExplicitVideoState) -> bool:
     """Use detector evidence first and a configured anime hint only when unknown."""
+    if state.respect_explicit_hint:
+        selected_category = _coerce_category_hint(state.category_hint) or _hint_category_from_itype(state.itype_hint)
+        if selected_category:
+            return selected_category == "anime"
+
     anime_status = _explicit_anime_status(state)
     if anime_status is not None:
         return anime_status
@@ -1314,11 +1662,15 @@ def _explicit_is_anime(state: _ExplicitVideoState) -> bool:
 
 
 def _resolve_explicit_disc(state: _ExplicitVideoState) -> Optional[ExplicitPathResolution]:
-    disc_leaf_files = _detect_disc_leaf_files(state.entry)
-    if not disc_leaf_files and not _DISC_NAME_RE.search(state.entry.name):
+    disc_leaf_files = _detect_video_disc_leaf_files(state.entry)
+    if not disc_leaf_files:
         return None
 
     anime_status = _explicit_anime_status(state)
+    if state.respect_explicit_hint:
+        selected_category = _coerce_category_hint(state.category_hint) or _hint_category_from_itype(state.itype_hint)
+        if selected_category:
+            anime_status = selected_category == "anime"
     disc_category, disc_itype = _disc_base_category(state.entry, state.folder_hint, anime_status)
     override = "DISC content detected"
     if state.category_hint and state.category_hint.strip().lower() == "anime" and anime_status is not True:
@@ -1338,18 +1690,26 @@ def _resolve_explicit_disc(state: _ExplicitVideoState) -> Optional[ExplicitPathR
 def _resolve_explicit_movie(state: _ExplicitVideoState) -> Optional[ExplicitPathResolution]:
     if _explicit_is_anime(state):
         return None
-    if not (
-        has_clear_movie_year(state.entry.name)
-        and not _matches_episode_pattern(state.entry.name, anime_mode=True)
-        and not state.strict_tv_pack
-    ):
+    movie_name = state.entry.name
+    if state.entry.is_dir() and len(state.video_files) == 1:
+        movie_name = state.video_files[0].name
+    classification = classify_video_name_result(
+        movie_name,
+        state.folder_hint,
+        anime_lookup=state.anime_lookup,
+        explicit_category_hint=state.category_hint if state.respect_explicit_hint else "",
+        explicit_itype_hint=state.itype_hint if state.respect_explicit_hint else "",
+    )
+    if classification.category != "movies" or state.strict_tv_pack:
         return None
     return ExplicitPathResolution(
         source_path=state.entry,
         category="movies",
         itype="Movie",
-        detection_method="File scan",
+        detection_method=classification.method,
         queue_paths=(state.entry,),
+        detection_confidence=classification.confidence,
+        detection_evidence=classification.evidence,
     )
 
 
@@ -1358,24 +1718,50 @@ def _anime_override_note(state: _ExplicitVideoState) -> str:
     return f"Jikan match overrode {raw_hint.upper()} hint" if raw_hint.lower() not in {"", "anime"} else ""
 
 
+def _anime_resolution_provenance(
+    state: _ExplicitVideoState,
+    anime_status: Optional[bool],
+) -> tuple[str, str, Tuple[str, ...]]:
+    if state.respect_explicit_hint and _coerce_category_hint(state.category_hint) == "anime":
+        return "Explicit category", "confirmed", ("anime",)
+    if anime_status is True:
+        return "Jikan match", "confirmed", ("confirmed anime",)
+    return "Configured folder", "strong", ("anime folder",)
+
+
 def _resolve_explicit_series(state: _ExplicitVideoState) -> ExplicitPathResolution:
     anime_status = _explicit_anime_status(state)
-    is_anime = anime_status is True or (
-        anime_status is None and _coerce_category_hint(state.folder_hint or state.category_hint) == "anime"
+    is_anime = _explicit_is_anime(state)
+    anime_method, anime_confidence, anime_evidence = (
+        _anime_resolution_provenance(state, anime_status)
+        if is_anime
+        else ("", "unknown", ())
     )
-    if state.entry.is_dir() and _is_multi_season_container_dir(state.entry):
+    series_name = state.entry.name
+    if state.entry.is_dir():
+        representative = state.episode_queue_paths or state.video_files
+        if representative:
+            series_name = representative[0].name
+    classification = classify_video_name_result(
+        series_name,
+        state.folder_hint,
+        anime_lookup=state.anime_lookup,
+        explicit_category_hint=state.category_hint if state.respect_explicit_hint else "",
+        explicit_itype_hint=state.itype_hint if state.respect_explicit_hint else "",
+    )
+    detection_method = classification.method if classification.category == "tv" else "File scan"
+    detection_confidence = classification.confidence if classification.category == "tv" else "strong"
+    detection_evidence = classification.evidence if classification.category == "tv" else ()
+    if state.entry.is_file() and state.entry.suffix.lower() not in state.video_extensions:
         return ExplicitPathResolution(
             source_path=state.entry,
             category="anime" if is_anime else "tv",
-            itype="Anime" if is_anime else "TV Show",
-            detection_method="File scan",
+            itype="Anime" if is_anime else "TV Episode",
+            detection_method=anime_method if is_anime else detection_method,
             queue_paths=(),
-            ignored_paths=(
-                IgnoredScanPath(
-                    path=state.entry,
-                    reason="Multi-season container; queue child season folders individually",
-                ),
-            ),
+            ignored_paths=(IgnoredScanPath(path=state.entry, reason="No recognized video extension"),),
+            detection_confidence=anime_confidence if is_anime else detection_confidence,
+            detection_evidence=anime_evidence if is_anime else detection_evidence,
         )
 
     if is_anime:
@@ -1389,10 +1775,12 @@ def _resolve_explicit_series(state: _ExplicitVideoState) -> ExplicitPathResoluti
             source_path=state.entry,
             category="anime",
             itype="Anime",
-            detection_method="Jikan match",
+            detection_method=anime_method,
             queue_paths=anime_selected_paths,
             ignored_paths=anime_rejected_paths,
             override_note=_anime_override_note(state),
+            detection_confidence=anime_confidence,
+            detection_evidence=anime_evidence,
         )
 
     raw_hint = str(state.category_hint or state.folder_hint).strip().lower()
@@ -1407,10 +1795,12 @@ def _resolve_explicit_series(state: _ExplicitVideoState) -> ExplicitPathResoluti
             source_path=state.entry,
             category="tv",
             itype="TV Episode",
-            detection_method="File scan",
+            detection_method=detection_method,
             queue_paths=() if reason else (state.entry,),
             ignored_paths=(IgnoredScanPath(path=state.entry, reason=reason),) if reason else (),
             override_note=override,
+            detection_confidence=detection_confidence,
+            detection_evidence=detection_evidence,
         )
     if (
         state.entry.is_file()
@@ -1421,10 +1811,12 @@ def _resolve_explicit_series(state: _ExplicitVideoState) -> ExplicitPathResoluti
             source_path=state.entry,
             category="tv",
             itype="TV Episode" if _looks_like_tv_episode_name(state.entry.name) else "Misc",
-            detection_method="File scan",
+            detection_method=detection_method,
             queue_paths=(),
             ignored_paths=(IgnoredScanPath(path=state.entry, reason="Missing media source token"),),
             override_note=override,
+            detection_confidence=detection_confidence,
+            detection_evidence=detection_evidence,
         )
 
     if state.episode_queue_paths:
@@ -1436,16 +1828,23 @@ def _resolve_explicit_series(state: _ExplicitVideoState) -> ExplicitPathResoluti
         source_path=state.entry,
         category="tv",
         itype="TV Show" if state.entry.is_dir() else "TV Episode",
-        detection_method="File scan",
+        detection_method=detection_method,
         queue_paths=tv_queue_paths,
         ignored_paths=tv_ignored,
         override_note=override,
+        detection_confidence=detection_confidence,
+        detection_evidence=detection_evidence,
     )
 
 
 def _resolve_explicit_anime(state: _ExplicitVideoState) -> Optional[ExplicitPathResolution]:
     if not _explicit_is_anime(state):
         return None
+    anime_status = _explicit_anime_status(state)
+    detection_method, detection_confidence, detection_evidence = _anime_resolution_provenance(
+        state,
+        anime_status,
+    )
     anime_selected_paths = (
         state.anime_relaxed_queue_paths
         if state.entry.is_dir()
@@ -1456,10 +1855,12 @@ def _resolve_explicit_anime(state: _ExplicitVideoState) -> Optional[ExplicitPath
         source_path=state.entry,
         category="anime",
         itype="Anime",
-        detection_method="Jikan match",
+        detection_method=detection_method,
         queue_paths=anime_selected_paths,
         ignored_paths=anime_rejected_paths,
         override_note=_anime_override_note(state),
+        detection_confidence=detection_confidence,
+        detection_evidence=detection_evidence,
     )
 
 
@@ -1509,13 +1910,19 @@ def resolve_explicit_path(
     *,
     category_hint: str = "",
     itype_hint: str = "",
+    respect_explicit_hint: bool = False,
     anime_lookup: Optional[Callable[[str], Optional[bool]]] = None,
     video_extensions: Optional[Set[str]] = None,
 ) -> ExplicitPathResolution:
     """Resolve one explicit path into a processing category with anime filtering."""
     video_exts = video_extensions or VIDEO_EXTENSIONS
     lookup = anime_lookup or _default_cached_anime_lookup
-    folder_hint = infer_entry_category_hint(entry, category_hint, itype_hint)
+    raw_category_hint = str(category_hint or "").strip().lower()
+    folder_hint = (
+        ""
+        if raw_category_hint in {"external", "auto"}
+        else infer_entry_category_hint(entry, category_hint, itype_hint)
+    )
     all_leaf_files = _iter_leaf_files(entry)
     early_resolution = _resolve_early_explicit_path(
         entry,
@@ -1533,6 +1940,7 @@ def resolve_explicit_path(
         entry,
         category_hint=category_hint,
         itype_hint=itype_hint,
+        respect_explicit_hint=respect_explicit_hint,
         folder_hint=folder_hint,
         video_extensions=video_exts,
         anime_lookup=lookup,
@@ -1550,8 +1958,8 @@ def resolve_explicit_path(
 
 def detect_external_category(name: str, entry_path: Path) -> str:
     """Auto-detect queue category for an external folder/file based on naming patterns."""
-    disc_leaf_files = _detect_disc_leaf_files(entry_path)
-    if disc_leaf_files or _DISC_NAME_RE.search(name):
+    disc_leaf_files = _detect_video_disc_leaf_files(entry_path)
+    if disc_leaf_files:
         category, _itype = _disc_base_category(entry_path, infer_folder_category_hint(entry_path.parent), None)
         return category
     non_video_category = _non_video_media_category(entry_path)
@@ -1572,11 +1980,6 @@ def detect_external_category(name: str, entry_path: Path) -> str:
             return "anime"
     elif _ANIME_EXTRA_RE.search(name):
         return "anime"
-    if has_clear_movie_year(name):
-        return "movies"
-    if looks_like_tv_name(name):
-        return "tv"
-
     if entry_path.is_dir():
         try:
             children = [child.name for child in entry_path.iterdir() if not child.name.startswith(".")]
@@ -1589,7 +1992,14 @@ def detect_external_category(name: str, entry_path: Path) -> str:
         if _has_related_video_files(children):
             return "tv"
 
-    return ""
+    classification = classify_video_name_result(
+        name,
+        anime_lookup=_default_cached_anime_lookup,
+    )
+    if classification.category != "misc":
+        return classification.category
+
+    return "misc"
 
 
 def _hinted_content_itype(folder_category: str) -> str:
@@ -1610,7 +2020,6 @@ def _detect_file_content_itype(
     anime_lookup: Optional[Callable[[str], Optional[bool]]],
 ) -> str:
     ext = Path(name).suffix.lower()
-    stem = Path(str(name)).stem
     if ext in AUDIOBOOK_EXTENSIONS:
         return "Audiobook"
     if ext in EBOOK_EXTENSIONS:
@@ -1628,17 +2037,14 @@ def _detect_file_content_itype(
         return "Anime"
     if _ANIME_EXTRA_RE.search(name):
         return "Anime"
-    if has_clear_movie_year(name) and not _matches_episode_pattern(name, anime_mode=True):
-        return "Movie"
-    if _looks_like_source_bearing_tv_episode(name):
+    classification = classify_video_name_result(
+        name,
+        folder_category,
+        anime_lookup=lookup,
+    )
+    if classification.category == "tv" or _has_tv_context(entry_path):
         return "TV Episode"
-    if _matches_episode_pattern(name) or _TV_EPISODE_HINT_RE.search(stem):
-        return "TV Episode"
-    if looks_like_tv_name(name) or _has_tv_context(entry_path):
-        return "TV Episode"
-    if _looks_like_tv_episode_name(name) or _has_tv_context(entry_path):
-        return "TV Episode"
-    return "Misc"
+    return classification.itype
 
 
 def _scan_content_extensions(entry_path: Path) -> tuple[dict[str, int], list[str]]:
@@ -1686,6 +2092,7 @@ def _detect_directory_content_itype(
     ebook_count = sum(value for ext, value in ext_counts.items() if ext in EBOOK_EXTENSIONS)
     video_count = sum(value for ext, value in ext_counts.items() if ext in VIDEO_EXTENSIONS)
     anime_status = _lookup_anime_status(entry_path, video_files, lookup)
+    audio_count = audiobook_count + music_count
 
     if anime_status is True:
         return "Anime"
@@ -1693,8 +2100,8 @@ def _detect_directory_content_itype(
         return "Anime"
     if any(_ANIME_EXTRA_RE.search(video_name) for video_name in video_names):
         return "Anime"
-    if has_clear_movie_year(name):
-        return "Movie"
+    if _looks_like_sports_event(name):
+        return "TV Show"
     if video_count >= 1 and (
         _has_tv_episode_like_video(video_names)
         or any(_looks_like_source_bearing_tv_episode(video_name) for video_name in video_names)
@@ -1704,12 +2111,25 @@ def _detect_directory_content_itype(
         return "TV Show"
     if video_count >= 2 and _has_related_video_files(video_names):
         return "TV Show"
-    if audiobook_count > 0 and video_count == 0 and music_count == 0 and ebook_count == 0:
-        return "Audiobook"
-    if total > 0 and music_count / total >= 0.5 and video_count == 0:
-        return "Music"
-    if ebook_count > 0 and video_count == 0:
+    if audio_count > video_count:
+        audio_category = classify_audio_folder(entry_path)
+        if audio_category == "audiobooks":
+            return "Audiobook"
+        if audio_category == "music" and total > 0 and music_count / total >= 0.5:
+            return "Music"
+        return ""
+    if ebook_count > video_count:
         return "Ebook"
+    if video_count:
+        classification = classify_video_name_result(
+            name,
+            folder_category,
+            anime_lookup=lookup,
+        )
+        if classification.category == "tv":
+            return "TV Show"
+        if classification.category in {"anime", "movies"}:
+            return classification.itype
     return ""
 
 
@@ -1723,8 +2143,8 @@ def detect_content_itype(
     """Detect the display content type for a pending item."""
     lookup = anime_lookup or _default_cached_anime_lookup
     video_files = _iter_video_candidates(entry_path, VIDEO_EXTENSIONS)
-    disc_leaf_files = _detect_disc_leaf_files(entry_path)
-    if disc_leaf_files or _DISC_NAME_RE.search(name):
+    disc_leaf_files = _detect_video_disc_leaf_files(entry_path)
+    if disc_leaf_files:
         _category, itype = _disc_base_category(
             entry_path,
             infer_entry_category_hint(entry_path, folder_category),
@@ -1762,10 +2182,15 @@ def detect_content_itype(
         return "Anime"
     if anime_status is None and str(folder_category or "").strip().lower() == "anime":
         return "Anime"
-    if has_clear_movie_year(name):
-        return "Movie"
-    if looks_like_tv_name(name):
+    classification = classify_video_name_result(
+        name,
+        folder_category,
+        anime_lookup=lookup,
+    )
+    if classification.category == "tv":
         return "TV Show"
+    if classification.category in {"anime", "movies"}:
+        return classification.itype
     hinted = _hinted_content_itype(folder_category)
     if hinted:
         return hinted
@@ -1788,25 +2213,16 @@ def detect_auto_category(
     *,
     anime_lookup: Optional[Callable[[str], Optional[bool]]] = None,
 ) -> str:
-    """Map an entry to the upload category used by explicit-path jobs."""
+    """Map the shared content type result to its canonical category."""
     itype = detect_auto_itype(entry, folder_category_hint, anime_lookup=anime_lookup)
-    return {
-        "TV Show": "tv",
-        "TV Episode": "tv",
-        "Anime": "anime",
-        "Movie": "movies",
-        "Music": "music",
-        "Audiobook": "audiobooks",
-        "Ebook": "books",
-        "App": "apps",
-    }.get(itype, "misc")
+    return category_from_itype(itype)
 
 
 def _resolve_configured_scan_category(configured_category: str, entry: Path, folder_category_hint: str = "") -> str:
     """Return the effective queue category for a configured folder entry."""
     normalized = str(configured_category or "").strip().lower()
     if normalized in _AUTO_ROOT_CATEGORIES:
-        return detect_auto_category(entry, folder_category_hint)
+        return detect_auto_category(entry, "external")
     return normalized
 
 

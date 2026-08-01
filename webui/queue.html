@@ -372,6 +372,14 @@
                                         </div>
                                         <div class="flex items-center gap-0.5 opacity-100 flex-shrink-0 w-[4.75rem] justify-end">
                                             <button
+                                                type="button"
+                                                @click.stop="correctAnimeCache(item, getCategoryForItem(item) !== 'anime')"
+                                                :title="getCategoryForItem(item) === 'anime' ? 'Mark as not anime' : 'Mark as anime'"
+                                                :aria-label="getCategoryForItem(item) === 'anime' ? 'Mark as not anime' : 'Mark as anime'"
+                                                class="p-0.5 rounded text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-accent/20 transition-colors">
+                                                <lucide-icon name="languages" icon-class="w-3 h-3"></lucide-icon>
+                                            </button>
+                                            <button
                                                 @click.stop="queueSingleItem(item, 'external')"
                                                 :disabled="!getUploadCategoryForItem(item)"
                                                 :title="getUploadCategoryForItem(item) ? 'Add to staging as ' + getUploadCategoryForItem(item) : 'Select a category first'"
@@ -470,6 +478,14 @@
                                                 </div>
                                                 <div class="flex items-center gap-0.5 opacity-100 flex-shrink-0 w-[4.75rem] justify-end">
                                                     <button
+                                                        type="button"
+                                                        @click.stop="correctAnimeCache(child, getCategoryForItem(child) !== 'anime')"
+                                                        :title="getCategoryForItem(child) === 'anime' ? 'Mark as not anime' : 'Mark as anime'"
+                                                        :aria-label="getCategoryForItem(child) === 'anime' ? 'Mark as not anime' : 'Mark as anime'"
+                                                        class="p-0.5 rounded text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-accent/20 transition-colors">
+                                                        <lucide-icon name="languages" icon-class="w-2.5 h-2.5"></lucide-icon>
+                                                    </button>
+                                                    <button
                                                         @click.stop="queueSingleItem(child, 'external')"
                                                         :disabled="!getUploadCategoryForItem(child)"
                                                         :title="getUploadCategoryForItem(child) ? 'Add to staging as ' + getUploadCategoryForItem(child) : 'Select a category first'"
@@ -548,6 +564,14 @@
                                                         </template>
                                                     </div>
                                                     <div class="flex items-center gap-0.5 opacity-100 flex-shrink-0 w-[4.75rem] justify-end">
+                                                        <button
+                                                            type="button"
+                                                            @click.stop="correctAnimeCache(gc, getCategoryForItem(gc) !== 'anime')"
+                                                            :title="getCategoryForItem(gc) === 'anime' ? 'Mark as not anime' : 'Mark as anime'"
+                                                            :aria-label="getCategoryForItem(gc) === 'anime' ? 'Mark as not anime' : 'Mark as anime'"
+                                                            class="p-0.5 rounded text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-accent/20 transition-colors">
+                                                            <lucide-icon name="languages" icon-class="w-2.5 h-2.5"></lucide-icon>
+                                                        </button>
                                                         <button
                                                             @click.stop="queueSingleItem(gc, 'external')"
                                                             :disabled="!getUploadCategoryForItem(gc)"

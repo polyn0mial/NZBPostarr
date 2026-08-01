@@ -45,7 +45,7 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
             ("webui", "assets", "js", "pages", "queue.js"),
             [
                 "const cat = this.getCategoryForItem(child);",
-                "nextCategories[item.key] = manualCategory || this.inferExternalCategory(item);",
+                "nextCategories[item.key] = manualCategory || this.serverCategoryForItem(item);",
                 "if (this.externalCategories[cursor]) return this.externalCategories[cursor];",
                 "for (const child of item.children || []) {",
                 "const skipDupeCheck = this.forceSkipDupeCheck;",
@@ -63,6 +63,13 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
                 'this.buildActionPayloadsFromEntries(this.getActionEntriesForItem(item, "external"))',
                 "No visible selected items are available to stage",
                 "const data = await this.apiFetch(`/api/pending/items?${params}`, { timeoutMs: 15e3 });",
+                'await this.apiPost("/api/pending/anime-cache", {',
+                "async correctAnimeCache(item, isAnime) {",
+                "createSortableInstance(instanceKey, container, options) {",
+                'this.createSortableInstance("_pendingExternalGroupsSortable", container, {',
+                'this.createSortableInstance("_activeJobModalSortable", container, {',
+                'this.createSortableInstance("_queuedJobModalSortable", container, {',
+                'this.createSortableInstance("_sortable", container, {',
             ],
         ),
         (
@@ -73,6 +80,9 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
                 '@click.stop="forceUploadExtChild(gc, $event)"',
                 ':disabled="!getUploadCategoryForItem(child)"',
                 ':disabled="!getUploadCategoryForItem(gc)"',
+                '@click.stop="correctAnimeCache(item, getCategoryForItem(item) !== \'anime\')"',
+                '@click.stop="correctAnimeCache(child, getCategoryForItem(child) !== \'anime\')"',
+                '@click.stop="correctAnimeCache(gc, getCategoryForItem(gc) !== \'anime\')"',
             ],
         ),
     ]
@@ -81,6 +91,16 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
         text = _read_repo_text(*path_parts)
         for needle in required_substrings:
             assert needle in text, f"{case_name}: {needle}"
+
+    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    assert "this._pendingExternalGroupsSortable = null;" not in queue_js
+    for obsolete_browser_inference in (
+        "inferExternalCategory",
+        "inferCategoryFromText",
+        "TV_NAME_PATTERN",
+        "MOVIE_NAME_PATTERN",
+    ):
+        assert obsolete_browser_inference not in queue_js
 
 def test_webui_performance_guards_are_present() -> None:
     page_base_js = _read_repo_text("webui", "assets", "js", "page-base.js")

@@ -265,12 +265,21 @@ def cmd_pending(args: argparse.Namespace) -> int:
             print(f"WARNING: proceeding with empty upload snapshot due to DB error: {exc}")
         uploaded_names = set()
 
-    # Determine which categories to show
+    # Determine which categories/folders to show.
     filter_cat = args.category.lower() if hasattr(args, "category") and args.category else None
+    filter_folder = str(getattr(args, "folder", "") or "").strip()
+    result_limit = getattr(args, "limit", None)
 
     scanned_items = collect_configured_scan_items(conf)
     if filter_cat:
         scanned_items = [item for item in scanned_items if item[0] == filter_cat]
+    if filter_folder:
+        normalized_folder = str(Path(filter_folder))
+        scanned_items = [
+            item
+            for item in scanned_items
+            if str(item[1]) == normalized_folder or item[1].name == filter_folder
+        ]
 
     if not scanned_items:
         if args.json:
@@ -306,29 +315,269 @@ def cmd_pending(args: argparse.Namespace) -> int:
         grand_total += len(items)
         grand_pending += len(pending)
 
+        displayed_pending = pending[:result_limit] if result_limit is not None else pending
+
         if args.json:
             entry: dict[str, Any] = {"pending": len(pending), "total": len(items)}
             if args.verbose:
-                entry["items"] = [f"{folder.name}/{rel}" for folder, _item, rel in pending]
+                entry["items"] = [f"{folder.name}/{rel}" for folder, _item, rel in displayed_pending]
             categories_payload[cat] = entry
         else:
             print(f"\n  [{cat.upper()}] {len(pending)} pending / {len(items)} total")
             if args.verbose and pending:
-                for folder, _item, rel in pending[:50]:
+                for folder, _item, rel in displayed_pending:
                     print(f"    • {folder.name}/{rel}")
-                if len(pending) > 50:
-                    print(f"    ... and {len(pending) - 50} more")
+                if len(displayed_pending) < len(pending):
+                    print(f"    ... and {len(pending) - len(displayed_pending)} more")
 
     if args.json:
         payload = {
             "categories": categories_payload,
             "total": grand_total,
             "pending": grand_pending,
+            "folder": filter_folder or None,
+            "limit": result_limit,
         }
         print(json.dumps(payload, indent=2, default=str))
     else:
         print(f"\n  Total: {grand_pending} pending / {grand_total} items")
     return 0
+
+
+def _config_path_segments(path: str) -> list[str]:
+    """Normalize a dotted path and reject ambiguous empty segments."""
+    segments = path.split(".")
+    if not path or any(not segment.strip() for segment in segments):
+        raise ValueError("configuration keys must contain non-empty dotted path segments")
+    return [segment.strip() for segment in segments]
+
+
+def _config_value_at_path(data: Any, path: str) -> Any:
+    """Read a dotted config path without exposing a second config model."""
+    current = data
+    for segment in _config_path_segments(path):
+        if not isinstance(current, dict) or segment not in current:
+            raise KeyError(path)
+        current = current[segment]
+    return current
+
+
+def _set_config_value_at_path(data: dict[str, Any], path: str, value: Any) -> None:
+    """Set a dotted config path, requiring all parent mappings to exist."""
+    segments = _config_path_segments(path)
+    current: dict[str, Any] = data
+    for segment in segments[:-1]:
+        child = current.get(segment)
+        if not isinstance(child, dict):
+            raise KeyError(path)
+        current = child
+    current[segments[-1]] = value
+
+
+def cmd_config(args: argparse.Namespace) -> int:
+    """Read or update configuration through core.config's synchronized writer."""
+    from core.config import get_config, save_config
+
+    command = getattr(args, "config_command", None)
+    path = str(getattr(args, "key", "") or "").strip()
+    try:
+        data = get_config().model_dump(mode="json", by_alias=True)
+    except Exception as exc:
+        return _emit_result(
+            args,
+            {"status": "error", "message": f"Unable to load configuration: {exc}"},
+            human=f"Error: unable to load configuration: {exc}",
+            rc=1,
+        )
+
+    if command == "get":
+        try:
+            value = _config_value_at_path(data, path)
+        except ValueError as exc:
+            return _emit_result(
+                args,
+                {"status": "error", "message": str(exc)},
+                human=f"Error: {exc}",
+                rc=1,
+            )
+        except KeyError:
+            return _emit_result(
+                args,
+                {"status": "error", "message": f"Configuration key '{path}' was not found."},
+                human=f"Error: configuration key '{path}' was not found.",
+                rc=1,
+            )
+        return _emit_result(args, {"key": path, "value": value}, human=str(value))
+
+    if command == "set":
+        import yaml
+
+        try:
+            value = yaml.safe_load(args.value)
+            _set_config_value_at_path(data, path, value)
+        except (KeyError, ValueError, yaml.YAMLError) as exc:
+            return _emit_result(
+                args,
+                {"status": "error", "message": f"Invalid configuration update: {exc}"},
+                human=f"Error: invalid configuration update: {exc}",
+                rc=1,
+            )
+        if not save_config(data):
+            return _emit_result(
+                args,
+                {"status": "error", "message": "Failed to save configuration."},
+                human="Error: failed to save configuration.",
+                rc=1,
+            )
+        return _emit_result(
+            args,
+            {"status": "updated", "key": path, "value": value, "restart_required": True},
+            human=f"Updated {path}. Restart the long-lived NZBPostarr process to apply all watcher changes.",
+        )
+
+    return _emit_result(
+        args,
+        {"status": "error", "message": "No config command given."},
+        human="Error: use 'config get' or 'config set'.",
+        rc=1,
+    )
+
+
+def _run_launcher_control(flag: str) -> tuple[int, str]:
+    """Run one safe launcher lifecycle action in a separate process."""
+    import subprocess
+
+    from core.config import APP_ROOT
+
+    completed = subprocess.run(
+        [sys.executable, str(APP_ROOT / "main.py"), flag],
+        cwd=str(APP_ROOT),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    detail = (completed.stdout or completed.stderr or "").strip()
+    return completed.returncode, detail
+
+
+def _managed_daemon_is_running() -> bool:
+    return _run_launcher_control("--status")[0] == 0
+
+
+def _restart_managed_daemon(delay_seconds: float = 0.0) -> tuple[bool, str]:
+    stop_rc, stop_detail = _run_launcher_control("--stop")
+    if stop_rc != 0:
+        return False, stop_detail or "The managed daemon could not be stopped."
+    if delay_seconds > 0:
+        time.sleep(delay_seconds)
+    start_rc, start_detail = _run_launcher_control("--daemon")
+    if start_rc != 0:
+        return False, start_detail or "The managed daemon could not be started."
+    return True, start_detail or "NZBPostarr daemon restarted."
+
+
+def cmd_system(args: argparse.Namespace) -> int:
+    """Run deployment controls through the same updater and queue services as the API."""
+    from logic import updater
+    from logic.services import get_upload_service
+
+    command = getattr(args, "system_command", None)
+    update_command = getattr(args, "update_command", None)
+    try:
+        if command == "update" and update_command == "check":
+            payload = updater.check_for_updates()
+            if payload.get("check_error"):
+                payload["status"] = "error"
+                payload["message"] = f"Update check failed: {payload['check_error']}"
+                return _emit_result(args, payload, rc=1)
+            payload.setdefault("status", "ok")
+            return _emit_result(args, payload)
+        if command == "update" and update_command == "install":
+            payload = updater.install_from_github(version=args.version, restart=False)
+            payload["restart_required"] = not args.no_restart
+            payload["message"] = (
+                "Update installed. Restart NZBPostarr with 'system restart' or your process supervisor."
+                if not args.no_restart
+                else "Update installed without requesting a restart."
+            )
+            return _emit_result(args, payload)
+        if command == "update" and update_command == "rollback":
+            payload = updater.rollback_to_backup(args.backup_id, restart=False)
+            payload["restart_required"] = not args.no_restart
+            payload["message"] = (
+                "Rollback applied. Restart NZBPostarr with 'system restart' or your process supervisor."
+                if not args.no_restart
+                else "Rollback applied without requesting a restart."
+            )
+            return _emit_result(args, payload)
+        if command == "restart":
+            stopped = None
+            if not args.no_stop:
+                stopped = get_upload_service().stop_all_jobs_and_wait(
+                    clear_staged_items=not args.keep_staged_items,
+                    wait_timeout_s=args.wait_timeout,
+                )
+                if stopped.get("timed_out") and not args.force:
+                    return _emit_result(
+                        args,
+                        {
+                            "status": "partial",
+                            "message": "Work did not stop before the timeout; restart was not attempted. Use --force to proceed.",
+                            "stop": stopped,
+                            "restart_required": True,
+                        },
+                        rc=1,
+                    )
+            if not _managed_daemon_is_running():
+                return _emit_result(
+                    args,
+                    {
+                        "status": "restart_required",
+                        "message": "No managed daemon is running. Restart NZBPostarr with your process supervisor or operator workflow.",
+                        "stop": stopped,
+                        "restart_required": True,
+                    },
+                    rc=1,
+                )
+            restarted, detail = _restart_managed_daemon(delay_seconds=args.delay)
+            return _emit_result(
+                args,
+                {
+                    "status": "restarted" if restarted else "error",
+                    "message": detail,
+                    "stop": stopped,
+                    "restart_required": not restarted,
+                },
+                rc=0 if restarted else 1,
+            )
+        if command == "stop-all":
+            result = get_upload_service().stop_all_jobs_and_wait(
+                clear_staged_items=not args.keep_staged_items,
+                wait_timeout_s=args.wait_timeout,
+            )
+            status = "partial" if result.get("timed_out") else "stopped"
+            message = (
+                "Stop requested, but some work was still shutting down when the timeout expired."
+                if result.get("timed_out")
+                else "All uploads stopped and waiting work cleared."
+            )
+            return _emit_result(
+                args,
+                {"status": status, "message": message, "stop": result},
+                rc=1 if result.get("timed_out") else 0,
+            )
+    except updater.UpdateError as exc:
+        return _emit_result(args, {"status": "error", "message": str(exc)}, human=f"Error: {exc}", rc=1)
+    except Exception as exc:
+        message = f"System command failed: {exc}"
+        return _emit_result(args, {"status": "error", "message": message}, human=f"Error: {message}", rc=1)
+
+    return _emit_result(
+        args,
+        {"status": "error", "message": "No system command given."},
+        human="Error: use 'system --help' to see available commands.",
+        rc=1,
+    )
 
 
 def cmd_history(args: argparse.Namespace) -> int:
@@ -878,6 +1127,20 @@ def cmd_stats(args: argparse.Namespace) -> int:
 # ============================================================
 
 
+def _non_negative_int(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0:
+        raise argparse.ArgumentTypeError("must be zero or greater")
+    return parsed
+
+
+def _restart_delay(value: str) -> float:
+    parsed = float(value)
+    if not 0 <= parsed <= 30:
+        raise argparse.ArgumentTypeError("must be between 0 and 30 seconds")
+    return parsed
+
+
 def build_headless_parser() -> argparse.ArgumentParser:
     """Build the argument parser for headless mode."""
     parser = argparse.ArgumentParser(
@@ -1016,6 +1279,17 @@ def build_headless_parser() -> argparse.ArgumentParser:
         "-v",
         action="store_true",
         help="List individual pending items",
+    )
+    p_pending.add_argument(
+        "--folder",
+        default=None,
+        help="Restrict results to a configured folder path or folder name",
+    )
+    p_pending.add_argument(
+        "--limit",
+        type=_non_negative_int,
+        default=None,
+        help="Maximum pending items listed per category when using --verbose",
     )
     p_pending.add_argument(
         "--json",
@@ -1158,6 +1432,53 @@ def build_headless_parser() -> argparse.ArgumentParser:
     p_job_promote.add_argument("job_id", help="Job ID")
     p_job_promote.add_argument("--json", action="store_true", help="Output the result as JSON")
 
+    # ── config ──
+    p_config = sub.add_parser("config", help="Read or update a configuration value")
+    config_sub = p_config.add_subparsers(dest="config_command", help="Configuration commands")
+    p_config_get = config_sub.add_parser("get", help="Read a dotted configuration key")
+    p_config_get.add_argument("key", help="Configuration key, for example host or api_keys.geek")
+    p_config_get.add_argument("--json", action="store_true", help="Output the result as JSON")
+    p_config_set = config_sub.add_parser("set", help="Update a dotted configuration key")
+    p_config_set.add_argument("key", help="Configuration key, for example debug or api_keys.geek")
+    p_config_set.add_argument("value", help="YAML scalar, list, or mapping value")
+    p_config_set.add_argument("--json", action="store_true", help="Output the result as JSON")
+
+    # ── system ──
+    p_system = sub.add_parser("system", help="Run update and service lifecycle controls")
+    system_sub = p_system.add_subparsers(dest="system_command", help="System commands")
+    p_system_update = system_sub.add_parser("update", help="Check, install, or roll back application updates")
+    update_sub = p_system_update.add_subparsers(dest="update_command", help="Update commands")
+    p_update_check = update_sub.add_parser("check", help="Check GitHub for an update now")
+    p_update_check.add_argument("--json", action="store_true", help="Output the result as JSON")
+    p_update_install = update_sub.add_parser("install", help="Install the latest or selected GitHub release")
+    p_update_install.add_argument("--version", default=None, help="Release version or tag to install")
+    p_update_install.add_argument("--no-restart", action="store_true", help="Do not restart after installation")
+    p_update_install.add_argument("--json", action="store_true", help="Output the result as JSON")
+    p_update_rollback = update_sub.add_parser("rollback", help="Restore a local updater backup")
+    p_update_rollback.add_argument("backup_id", help="Backup ID returned by the updater")
+    p_update_rollback.add_argument("--no-restart", action="store_true", help="Do not restart after rollback")
+    p_update_rollback.add_argument("--json", action="store_true", help="Output the result as JSON")
+    p_system_restart = system_sub.add_parser("restart", help="Stop work safely and schedule a restart")
+    p_system_restart.add_argument(
+        "--delay",
+        type=_restart_delay,
+        default=2.0,
+        help="Seconds to wait between stopping and starting a managed daemon (default: 2)",
+    )
+    p_system_restart.add_argument("--no-stop", action="store_true", help="Do not stop active or queued jobs first")
+    p_system_restart.add_argument(
+        "--force",
+        action="store_true",
+        help="Restart a managed daemon even when graceful job shutdown times out",
+    )
+    p_system_restart.add_argument("--keep-staged-items", action="store_true", help="Keep staged temporary items")
+    p_system_restart.add_argument("--wait-timeout", type=float, default=30.0, help="Seconds to wait for jobs to stop")
+    p_system_restart.add_argument("--json", action="store_true", help="Output the result as JSON")
+    p_system_stop = system_sub.add_parser("stop-all", help="Stop active jobs, clear waiting work, and wait until quiet")
+    p_system_stop.add_argument("--keep-staged-items", action="store_true", help="Keep staged temporary items")
+    p_system_stop.add_argument("--wait-timeout", type=float, default=30.0, help="Seconds to wait for jobs to stop")
+    p_system_stop.add_argument("--json", action="store_true", help="Output the result as JSON")
+
     # ── logs ──
     p_logs = sub.add_parser("logs", help="Show recent console log lines from the shared in-memory buffer")
     p_logs.add_argument(
@@ -1230,6 +1551,8 @@ def run_headless(argv: List[str]) -> int:
         "stream-monitors": cmd_stream_monitors,
         "stats": cmd_stats,
         "queue": cmd_queue,
+        "config": cmd_config,
+        "system": cmd_system,
         "logs": cmd_logs,
     }
 

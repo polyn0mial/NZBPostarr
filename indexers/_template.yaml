@@ -68,6 +68,7 @@ categories:
   movie_full_br: '2050' # Movies / Full BR
   anime: '5070' # Anime
   music: '3010' # Music
+  audiobooks: '' # Optional dedicated audiobook category; falls back to books
   books: '7020' # Books / ebooks
   apps: '' # Leave blank to reject app uploads until mapped
   misc: '5000' # Miscellaneous

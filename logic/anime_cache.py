@@ -24,7 +24,7 @@ import time
 import unicodedata
 from collections import deque
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 import requests
 from loguru import logger
@@ -40,7 +40,7 @@ _MAX_PER_MINUTE = 60
 # ── Module-level state (thread-safe via _lock) ──────────────────────────────
 # Bump this whenever the matching algorithm changes - existing caches with a
 # different (or missing) version will be discarded and rebuilt automatically.
-_CACHE_VERSION = 7
+_CACHE_VERSION = 8
 
 # Score thresholds for 2-content-word tiebreaker.
 # When the primary (romanized) title has at least one word overlap with our
@@ -66,6 +66,7 @@ _minute_window: deque[float] = deque()
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 _PUNC_RE = re.compile(r"[^\w\s]")
+_RELEASE_YEAR_RE = re.compile(r"(?:^|[.\s_(-])((?:19|20)\d{2})(?=$|[.\s_)-])")
 # Common English articles/prepositions excluded from word-overlap scoring
 _STOPWORDS = frozenset({"a", "an", "the", "of", "in", "on", "at", "to", "and", "or", "is", "for", "no"})
 
@@ -210,6 +211,36 @@ def _cache_key(title: str) -> str:
     return _strip_punc(title.strip().casefold())
 
 
+def _release_year(raw_name: str) -> Optional[int]:
+    """Return the last release-year token carried by a raw release name."""
+    matches = _RELEASE_YEAR_RE.findall(str(raw_name or ""))
+    return int(matches[-1]) if matches else None
+
+
+def _cache_key_for_release(raw_name: str, title: str) -> str:
+    """Keep year-specific verdicts from affecting another release of a title."""
+    key = _cache_key(title)
+    year = _release_year(raw_name)
+    return f"{key}::{year}" if year is not None else key
+
+
+def _jikan_entry_year(entry: Mapping[str, Any]) -> Optional[int]:
+    """Read a production year from the fields returned by Jikan v4."""
+    year = entry.get("year")
+    if isinstance(year, int):
+        return year
+    if isinstance(year, str) and year.isdigit():
+        return int(year)
+
+    aired = entry.get("aired")
+    aired_from = aired.get("from") if isinstance(aired, dict) else None
+    if isinstance(aired_from, str):
+        match = re.match(r"((?:19|20)\d{2})", aired_from)
+        if match:
+            return int(match.group(1))
+    return None
+
+
 # ── Persistence ─────────────────────────────────────────────────────────────
 
 
@@ -306,7 +337,7 @@ def _wait_for_slot() -> bool:
 # ── Jikan lookup ────────────────────────────────────────────────────────────
 
 
-def _query_jikan(title: str) -> Optional[bool]:
+def _query_jikan(title: str, *, release_year: Optional[int] = None) -> Optional[bool]:
     """Query Jikan to determine if *title* is an anime.
 
     Returns True (anime), False (not anime), or None (lookup failed / rate-limited).
@@ -377,6 +408,14 @@ def _query_jikan(title: str) -> Optional[bool]:
                 # stricter 8.0 bar so only franchise-level hits pass.
                 primary_words = _content_words(_strip_punc((entry.get("title") or "").lower()))
                 has_primary_overlap = bool(set(q_cwords) & set(primary_words))
+                if not has_primary_overlap and release_year is not None:
+                    entry_year = _jikan_entry_year(entry)
+                    if entry_year is not None and entry_year != release_year:
+                        logger.debug(
+                            f"Anime: '{title}' matched translated title '{entry.get('title')}' "
+                            f"but release year {release_year} != anime year {entry_year} -> skipping"
+                        )
+                        continue
                 score_threshold = _MIN_SCORE_2WORD if has_primary_overlap else _MIN_SCORE_2WORD_ENG_ONLY
                 members_threshold = _MIN_MEMBERS_2WORD_UNSCORED if has_primary_overlap else _MIN_MEMBERS_2WORD_ENG_ONLY
 
@@ -441,14 +480,15 @@ def is_anime(raw_name: str) -> Optional[bool]:
         if not title or len(title) < 2:
             return None
 
-        key = _cache_key(title)
+        release_year = _release_year(raw_name)
+        key = _cache_key_for_release(raw_name, title)
 
         # Check cache
         if key in _cache:
             return _cache[key]
 
         # Lookup
-        result = _query_jikan(title)
+        result = _query_jikan(title, release_year=release_year)
         if result is not None:
             _cache[key] = result
             _save_cache()
@@ -470,14 +510,15 @@ def check_titles_batch(raw_names: list[str]) -> Dict[str, Optional[bool]]:
 
         for raw in raw_names:
             title = _normalise_title(raw)
-            key = _cache_key(title)
+            release_year = _release_year(raw)
+            key = _cache_key_for_release(raw, title)
 
             if key in _cache:
                 results[raw] = _cache[key]
                 continue
 
             # Try lookup (will block briefly for rate-limit slots)
-            r = _query_jikan(title)
+            r = _query_jikan(title, release_year=release_year)
             if r is not None:
                 _cache[key] = r
                 results[raw] = r
@@ -498,4 +539,31 @@ def get_cached(raw_name: str) -> Optional[bool]:
         title = _normalise_title(raw_name)
         if not title:
             return None
-        return _cache.get(_cache_key(title))
+        return _cache.get(_cache_key_for_release(raw_name, title))
+
+
+def set_cached(raw_name: str, value: bool) -> bool:
+    """Persist a user-confirmed anime verdict for one normalized release."""
+    with _lock:
+        _load_cache()
+        title = _normalise_title(raw_name)
+        if not title:
+            return False
+        _cache[_cache_key_for_release(raw_name, title)] = bool(value)
+        _save_cache()
+        return True
+
+
+def invalidate(raw_name: str) -> bool:
+    """Remove one cached anime verdict without affecting other releases."""
+    with _lock:
+        _load_cache()
+        title = _normalise_title(raw_name)
+        if not title:
+            return False
+        key = _cache_key_for_release(raw_name, title)
+        if key not in _cache:
+            return False
+        del _cache[key]
+        _save_cache()
+        return True

@@ -19,8 +19,6 @@ var FILTER_MODE_OPTIONS = [
   { value: "hideIgnored", label: "Hide Ignored" }
 ];
 var SESSION_CACHE_MAX_BYTES = 2e6;
-var TV_NAME_PATTERN = /(?:S\d{1,2}[.\s-]?E\d{1,3}|S\d{1,2}[.\s-]?(?:Complete|COMPLETE|Full)|Season[.\s-]?\d{1,2}|Series[.\s-]?\d{1,2}|(?:^|[.\s_(-])\d{1,2}x\d{2,3}(?:[.\s_)-]|$)|(?:^|[.\s_-])S\d{2}(?:[.\s_-]|$)|(?:19|20)\d{2}[.\s-]\d{2}[.\s-]\d{2})/i;
-var MOVIE_NAME_PATTERN = /(?:^|[.\s_(-])(?:19|20)\d{2}(?:[.\s_\])-]|$)/i;
 function deepFreezePendingTree(items) {
   if (!items || typeof items !== "object") return items;
   const visit = (node) => {
@@ -814,6 +812,20 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     }
   },
   methods: {
+    destroySortableInstance(instanceKey) {
+      const instance = this[instanceKey];
+      if (instance) {
+        instance.destroy();
+        this[instanceKey] = null;
+      }
+    },
+    createSortableInstance(instanceKey, container, options) {
+      this.destroySortableInstance(instanceKey);
+      if (!container) return null;
+      const instance = new Sortable(container, options);
+      this[instanceKey] = instance;
+      return instance;
+    },
     selectAllCategories() {
       this.selectedCategories = ["all"];
     },
@@ -1445,31 +1457,6 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         if (/^misc\d*$/.test(raw) || /^other\d*$/.test(raw)) return "misc";
         return raw;
       };
-      const inferCategoryFromText = (text) => {
-        const raw = (text || "").toString();
-        if (!raw) return "";
-        const lowered = raw.toLowerCase();
-        const isVideoContainer = /\.(mkv|mp4|avi|ts|mov|m4v|wmv)\b/.test(lowered);
-        const isAudioOnlyContainer = /\.(flac|mp3|m4a|aac|ogg|wav)\b/.test(lowered);
-        const hasAnimeHints = /\b(anime|dual[-\s]?audio|multi[-\s]?subs?|subbed|dubbed|pokemon|pocket monsters|horizons)\b/.test(lowered);
-        const hasEpisodeShape = /\b(s\d{1,2}e\d{1,3}|season[.\s_-]?\d{1,2}|(?:^|[.\s_(-])\d{1,2}x\d{1,3}(?:[.\s_)-]|$)|\bep(?:isode)?[.\s_-]?\d{1,3}\b)\b/.test(lowered);
-        const hasVideoSource = /\b(remux|bluray|bdrip|brrip|web[-_.\s]?dl|webrip|hdtv|dvdrip|repack|x26[45]|h\.?26[45]|hevc|avc|2160p|1080p|720p)\b/.test(lowered) || /\b(19|20)\d{2}\b/.test(lowered);
-        if (/\.(iso|img|bin)\b/.test(lowered) || /\b(bdmv|video_ts|audio_ts|certificate)\b/.test(lowered)) return "disc";
-        if (isVideoContainer) {
-          const scrubbed = lowered.replace(/\b(flac|aac|mp3|dts|truehd|atmos|ogg|m4a)\b/g, " ");
-          if (hasAnimeHints) return "anime";
-          if (hasEpisodeShape || /\b(tv|series)\b/.test(scrubbed)) return "tv";
-          if (hasVideoSource) return "movies";
-          return "movies";
-        }
-        if (hasAnimeHints) return "anime";
-        if (hasEpisodeShape || /\b(tv|series|hdtv)\b/.test(lowered)) return "tv";
-        if (hasVideoSource) return "movies";
-        if (isAudioOnlyContainer || /\b(music|flac|mp3|aac|ogg|m4a)\b/.test(lowered)) return "music";
-        if (/\b(ebook|ebooks|book|books|audiobook|audiobooks)\b/.test(lowered) || /\.(epub|pdf|mobi|cbz|cbr)\b/.test(lowered)) return "ebooks";
-        if (/\b(disc|misc|apps?)\b/.test(lowered)) return "disc";
-        return "";
-      };
       const isSyntheticRootFilesNode = (node) => {
         if (!node || typeof node !== "object") return false;
         const rawName = String(node.name || node.title || "").toLowerCase();
@@ -1485,7 +1472,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         if (!node.key && node.path) {
           node.key = `path:${this.normalizePathKey(node.path)}`;
         }
-        const inferredSelfCategory = normalizeCategory(inferCategoryFromText(`${node.name || ""}`));
+        const inferredSelfCategory = normalizeCategory(node.itype ? this.itypeToCategory(node.itype) : "");
         const detectedSelfCategory = normalizeCategory(node.detected_category);
         const explicitSelfCategory = normalizeCategory(node.category);
         const inheritedCategory = normalizeCategory(parentCategory);
@@ -1512,7 +1499,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
             group.folder_name = group.label || (inferredFolder.split("/").pop() || `External ${index2 + 1}`);
           }
           group.items = group.items || [];
-          const groupCatHint = normalizeCategory(inferCategoryFromText(group.group_name || group.folder_name || ""));
+          const groupCatHint = "";
           (group.items || []).forEach((node) => normalizeNode(node, groupCatHint));
           if (group.items.length === 1 && isSyntheticRootFilesNode(group.items[0])) {
             const synthetic = group.items[0];
@@ -1650,10 +1637,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       );
     },
     destroyPendingExternalGroupsSortable() {
-      if (this._pendingExternalGroupsSortable) {
-        this._pendingExternalGroupsSortable.destroy();
-        this._pendingExternalGroupsSortable = null;
-      }
+      this.destroySortableInstance("_pendingExternalGroupsSortable");
     },
     initPendingExternalGroupsSortable() {
       this.destroyPendingExternalGroupsSortable();
@@ -1662,7 +1646,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       if (!container) return;
       const groups = container.querySelectorAll(".pending-ext-group[data-key]");
       if (groups.length <= 1) return;
-      this._pendingExternalGroupsSortable = new Sortable(container, {
+      this.createSortableInstance("_pendingExternalGroupsSortable", container, {
         handle: ".pending-ext-drag-handle",
         draggable: ".pending-ext-group",
         animation: 160,
@@ -1720,15 +1704,13 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       const manual = { ...this.manualExternalCategories || {} };
       const nextCategories = {};
       const nextManual = {};
-      const nodes = [];
       const visitItem = (item) => {
         if (!item || !item.key) return;
         const manualCategory = manual[item.key];
         if (manualCategory) {
           nextManual[item.key] = manualCategory;
         }
-        nextCategories[item.key] = manualCategory || this.inferExternalCategory(item);
-        nodes.push(item);
+        nextCategories[item.key] = manualCategory || this.serverCategoryForItem(item);
         for (const child of item.children || []) {
           visitItem(child);
         }
@@ -1736,31 +1718,6 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       for (const group of groups) {
         for (const item of group.items || []) {
           visitItem(item);
-        }
-      }
-      const animeSignatures = new Set(nodes.filter((item) => nextCategories[item.key] === "anime" || item.itype === "Anime" || item.detected_category === "anime").map((item) => this.seriesSignature(item.name || item.path || "")).filter(Boolean));
-      if (animeSignatures.size > 0) {
-        for (const item of nodes) {
-          if (!item || !item.key || nextManual[item.key]) continue;
-          const signature = this.seriesSignature(item.name || item.path || "");
-          if (signature && animeSignatures.has(signature)) {
-            nextCategories[item.key] = "anime";
-          }
-        }
-      }
-      const propagateAnime = (item, inheritedAnime = false) => {
-        if (!item || !item.key) return;
-        const isAnime = inheritedAnime || nextCategories[item.key] === "anime";
-        if (isAnime && !nextManual[item.key]) {
-          nextCategories[item.key] = "anime";
-        }
-        for (const child of item.children || []) {
-          propagateAnime(child, isAnime);
-        }
-      };
-      for (const group of groups) {
-        for (const item of group.items || []) {
-          propagateAnime(item, false);
         }
       }
       this.manualExternalCategories = nextManual;
@@ -1976,6 +1933,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         category,
         itype: item.itype || "External",
         is_dir: !!item.is_dir,
+        manual_category: item.key ? this.manualExternalCategories[item.key] || "" : "",
         detected_category: item.detected_category || category || "",
         detection_method: item.detection_method || "",
         detection_flags: item.detection_flags || [],
@@ -2151,6 +2109,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
           key: item.key,
           path: meta.path,
           category: cat,
+          manual_category: meta.manual_category || "",
           itype: this.resolveUploadItype(meta.itype, cat),
           detected_category: meta.detected_category || cat,
           detection_method: meta.detection_method || "",
@@ -2171,7 +2130,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     buildSelectedActionPayloads() {
       return this.buildActionPayloadsFromEntries(this.getSelectedActionEntries());
     },
-    inferExternalCategory(item) {
+    serverCategoryForItem(item) {
       if (!item) return "";
       const normalizeCategory = (value) => {
         const raw = (value || "").toString().trim().toLowerCase();
@@ -2189,36 +2148,8 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         return raw;
       };
       const directCategory = normalizeCategory(item.detected_category || item.category || item.assigned_category_safe || "");
-      if (directCategory === "anime") return "anime";
       if (directCategory) return directCategory;
-      const fromItype = normalizeCategory(item.itype ? this.itypeToCategory(item.itype) : "");
-      if (fromItype === "anime") return "anime";
-      const descendantLeaves = this.collectExternalLeafItems(item).filter((leaf) => leaf.key !== item.key);
-      if (descendantLeaves.some((leaf) => leaf.detected_category === "anime" || leaf.itype === "Anime")) {
-        return "anime";
-      }
-      const descendantCategories = descendantLeaves
-        .map((leaf) => normalizeCategory(leaf.detected_category || leaf.category || (leaf.itype ? this.itypeToCategory(leaf.itype) : "")))
-        .filter(Boolean);
-      if (descendantCategories.length) {
-        const counts = descendantCategories.reduce((acc, cat) => {
-          acc[cat] = (acc[cat] || 0) + 1;
-          return acc;
-        }, {});
-        const ranked = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-        if (ranked.length && ranked[0][0]) return ranked[0][0];
-      }
-      if (fromItype) return fromItype;
-      if (descendantLeaves.length > 1) {
-        const tvHits = descendantLeaves.filter((leaf) => TV_NAME_PATTERN.test(leaf.name || "")).length;
-        if (tvHits > 0) {
-          return "tv";
-        }
-      }
-      if (MOVIE_NAME_PATTERN.test(item.name || "")) {
-        return "movies";
-      }
-      return "";
+      return normalizeCategory(item.itype ? this.itypeToCategory(item.itype) : "");
     },
     setExternalCategory(key, value) {
       const nextManual = { ...this.manualExternalCategories || {} };
@@ -2237,6 +2168,20 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         }
       }
       if (changed) this.selectedMeta = nextMeta;
+    },
+    async correctAnimeCache(item, isAnime) {
+      if (!item || !item.name) return;
+      try {
+        const correction = await this.apiPost("/api/pending/anime-cache", {
+          name: item.name,
+          is_anime: isAnime
+        });
+        const correctedCategory = correction.category || (isAnime ? "anime" : "misc");
+        this.setExternalCategory(item.key, correctedCategory);
+        this.showToast("success", "Anime Detection Corrected", isAnime ? "Marked as anime" : "Marked as not anime");
+      } catch (e2) {
+        this.showToast("error", "Anime Correction Failed", "Could not save the anime detection correction");
+      }
     },
     // ============================================================
     //  Skip Files
@@ -2593,31 +2538,6 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         };
         return map[raw] || raw;
       };
-      const inferCategoryFromText = (text) => {
-        const raw = (text || "").toString();
-        if (!raw) return "";
-        const lowered = raw.toLowerCase();
-        const isVideoContainer = /\.(mkv|mp4|avi|ts|mov|m4v|wmv)\b/.test(lowered);
-        const isAudioOnlyContainer = /\.(flac|mp3|m4a|aac|ogg|wav)\b/.test(lowered);
-        const hasAnimeHints = /\b(anime|dual[-\s]?audio|multi[-\s]?subs?|subbed|dubbed|pokemon|pocket monsters|horizons)\b/.test(lowered);
-        const hasEpisodeShape = /\b(s\d{1,2}e\d{1,3}|season[.\s_-]?\d{1,2}|(?:^|[.\s_(-])\d{1,2}x\d{1,3}(?:[.\s_)-]|$)|\bep(?:isode)?[.\s_-]?\d{1,3}\b)\b/.test(lowered);
-        const hasVideoSource = /\b(remux|bluray|bdrip|brrip|web[-_.\s]?dl|webrip|hdtv|dvdrip|repack|x26[45]|h\.?26[45]|hevc|avc|2160p|1080p|720p)\b/.test(lowered) || /\b(19|20)\d{2}\b/.test(lowered);
-        if (/\.(iso|img|bin)\b/.test(lowered) || /\b(bdmv|video_ts|audio_ts|certificate)\b/.test(lowered)) return "disc";
-        if (isVideoContainer) {
-          const scrubbed = lowered.replace(/\b(flac|aac|mp3|dts|truehd|atmos|ogg|m4a)\b/g, " ");
-          if (hasAnimeHints) return "anime";
-          if (hasEpisodeShape || /\b(tv|series)\b/.test(scrubbed)) return "tv";
-          if (hasVideoSource) return "movies";
-          return "movies";
-        }
-        if (hasAnimeHints) return "anime";
-        if (hasEpisodeShape || /\b(tv|series|hdtv)\b/.test(lowered)) return "tv";
-        if (hasVideoSource) return "movies";
-        if (isAudioOnlyContainer || /\b(music|flac|mp3|aac|ogg|m4a)\b/.test(lowered)) return "music";
-        if (/\b(ebook|ebooks|book|books|audiobook|audiobooks)\b/.test(lowered) || /\.(epub|pdf|mobi|cbz|cbr)\b/.test(lowered)) return "ebooks";
-        if (/\b(disc|misc|apps?)\b/.test(lowered)) return "disc";
-        return "";
-      };
       const directManualCategory = item.key ? normalizeCategory(this.manualExternalCategories[item.key]) : "";
       if (directManualCategory && directManualCategory !== "external") return directManualCategory;
       const detectedCategory = normalizeCategory(item.detected_category);
@@ -2626,11 +2546,9 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       if (explicitCategory && explicitCategory !== "external") return explicitCategory;
       const safeAssigned = normalizeCategory(item.assigned_category_safe);
       if (safeAssigned && safeAssigned !== "external") return safeAssigned;
-      const inferredSelf = normalizeCategory(inferCategoryFromText(`${item.name || ""}`));
-      if (inferredSelf && inferredSelf !== "external") return inferredSelf;
       const itype = (item.itype || "").toLowerCase();
       if (itype === "external") {
-        return detectedCategory || inferredSelf || "";
+        return detectedCategory || "";
       }
       if (itype.includes("season pack") || itype.includes("tv show")) return "tv";
       if (itype.includes("tv") || itype.includes("episode")) return "tv";
@@ -2639,7 +2557,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       if (itypeCategory) return itypeCategory;
       const resolvedExternal = item.key ? this._resolveExtCategory(item.key) : "";
       if (resolvedExternal) return resolvedExternal;
-      return detectedCategory || inferredSelf || "";
+      return detectedCategory || "";
     },
     _resolveExtCategory(key) {
       if (!key) return "";
@@ -3055,6 +2973,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       const items = rawItems.map((item) => ({
         path: item.path,
         category: this.getCategoryForItem(item) || item.category,
+        manual_category: item.key ? this.manualExternalCategories[item.key] || "" : "",
         itype: this.resolveUploadItype(item.itype, this.getCategoryForItem(item) || item.category),
         name: item.name || (item.path || "").replace(/\\/g, "/").split("/").pop() || "",
         detected_category: item.detected_category || this.getCategoryForItem(item) || item.category,
@@ -3433,10 +3352,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       return `${prefix} - ${this.jobDisplayName(job)}`;
     },
     destroyActiveJobModalSortable() {
-      if (this._activeJobModalSortable) {
-        this._activeJobModalSortable.destroy();
-        this._activeJobModalSortable = null;
-      }
+      this.destroySortableInstance("_activeJobModalSortable");
     },
     initActiveJobModalSortable() {
       this.destroyActiveJobModalSortable();
@@ -3446,7 +3362,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       if (this.activeJobModalItems.length < 2) return;
       const container = this.$refs.activeJobModalSortableContainer;
       if (!container) return;
-      this._activeJobModalSortable = new Sortable(container, {
+      this.createSortableInstance("_activeJobModalSortable", container, {
         handle: ".active-job-drag-handle",
         draggable: ".active-job-row",
         animation: 180,
@@ -3678,11 +3594,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       }, 200);
     },
     destroyQueuedJobModalSortable() {
-      if (this._queuedJobModalSortable) {
-        this._queuedJobModalSortable.destroy();
-        this._queuedJobModalSortable = null;
-        this._pendingExternalGroupsSortable = null;
-      }
+      this.destroySortableInstance("_queuedJobModalSortable");
     },
     initQueuedJobModalSortable() {
       this.destroyQueuedJobModalSortable();
@@ -3691,7 +3603,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       if (this.queuedJobModalItems.length < 2) return;
       const container = this.$refs.queuedJobModalSortableContainer;
       if (!container) return;
-      this._queuedJobModalSortable = new Sortable(container, {
+      this.createSortableInstance("_queuedJobModalSortable", container, {
         handle: ".queued-job-drag-handle",
         draggable: ".queued-job-row",
         animation: 180,
@@ -3755,13 +3667,10 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     //  SortableJS - Drag-to-Reorder
     // ============================================================
     initSortable() {
-      if (this._sortable) {
-        this._sortable.destroy();
-        this._sortable = null;
-      }
+      this.destroySortableInstance("_sortable");
       const container = this.$refs.sortableContainer;
       if (!container || this.queueItems.length === 0) return;
-      this._sortable = new Sortable(container, {
+      this.createSortableInstance("_sortable", container, {
         handle: ".drag-handle",
         draggable: ".queue-group",
         animation: 200,
@@ -4370,10 +4279,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     if (this.debouncedLoadPending && typeof this.debouncedLoadPending.cancel === "function") {
       this.debouncedLoadPending.cancel();
     }
-    if (this._sortable) {
-      this._sortable.destroy();
-      this._sortable = null;
-    }
+    this.destroySortableInstance("_sortable");
     this.destroyActiveJobModalSortable();
     this.destroyQueuedJobModalSortable();
     this.destroyPendingExternalGroupsSortable();

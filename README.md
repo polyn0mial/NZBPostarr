@@ -19,6 +19,7 @@ indexers.
 - **Direct NZB reposting**: `--headless stream /path/to/file.nzb` queues Usenet-to-Usenet stream jobs from the CLI
 - **On-demand CLI stats**: `--headless stats` shows a live snapshot without running the WebUI collector
 - **Folder monitor**: watches folders via `watchdog` and auto-triggers uploads on new content
+- **Cross-platform daemon mode**: background start, status, and stop controls on Windows, macOS, and Linux
 - **tmux integration**: offers to run inside a persistent tmux session on first launch
 - **Process reaper**: cleans up orphaned nyuu/rar/parpar processes automatically
 
@@ -56,6 +57,18 @@ python3 main.py
 ```
 
 On first run with no config file present, the interactive setup wizard launches automatically and walks you through every option.
+
+To run the WebUI in the background without tmux or systemd:
+
+```bash
+python3 main.py --daemon
+python3 main.py --status
+python3 main.py --stop
+```
+
+Daemon state and `daemon.log` live beside the active configuration file.
+Production Linux installations should still prefer the systemd service created
+by the setup wizard.
 
 ---
 
@@ -172,6 +185,7 @@ python3 main.py --headless stats --watch
 
 # View pending items
 python3 main.py --headless pending
+python3 main.py --headless pending tv --folder /srv/incoming/tv --limit 25 --verbose
 
 # View upload history
 python3 main.py --headless history
@@ -185,6 +199,19 @@ python3 main.py --headless queue job retry <JOB_ID>
 
 # Tail the application log
 python3 main.py --headless logs --lines 200
+
+# Read or update a dotted configuration key
+python3 main.py --headless config get host
+python3 main.py --headless config set debug true
+
+# Check, install, or roll back an update
+python3 main.py --headless system update check
+python3 main.py --headless system update install
+python3 main.py --headless system update rollback <BACKUP_ID>
+
+# Stop queue work or restart a launcher-managed daemon
+python3 main.py --headless system stop-all
+python3 main.py --headless system restart
 ```
 
 ### Scripting
@@ -199,6 +226,12 @@ python3 main.py --headless queue status --json | jq '.running[].job_id'
 `status` exits 1 when a required external tool is missing, and `indexers` exits
 1 when no indexer is enabled, so a monitoring script can check state without
 parsing output.
+
+Configuration updates report `restart_required`; restart the long-lived process
+so folder watchers and collectors use the new settings. Update and rollback
+commands never respawn the headless command itself. `system restart` safely
+cycles a launcher-managed daemon and returns nonzero when an external supervisor
+or operator must perform the restart.
 
 ---
 
@@ -264,6 +297,36 @@ an account with read access to configured source directories and write access
 to NZBPostarr’s data directory. Configuration and runtime data remain outside
 tracked source, so replacing the application files does not erase queue history
 or credentials.
+
+### Operator release smoke test
+
+Automated tests use fixtures and mocked indexers. Before resuming production
+work after a classifier, queue, updater, or frontend change, use authorized test
+content and credentials to check the live boundaries:
+
+1. Open a real nested source in Queue and inspect active, queued, and Recently
+   Finished rows, category badges, ignored markers, and yield controls.
+2. Pause a safe job, promote another, resume the first, and confirm its prior
+   progress remains. Compare Stop with Stop + Clear.
+3. Confirm Force Upload bypasses staging and review without losing the chosen
+   items.
+4. Preview a bulk selection across allowed and excluded roots. Confirm excluded
+   roots stay out of the bulk action but remain manually selectable.
+5. Verify confirmed anime stays Anime in the UI and internally, negative Western
+   animation stays TV, and only OMGwtfnzbs receives the submission-time TV
+   mapping.
+6. Exercise representative nested episode layouts plus DISC, ISO, BDMV, and
+   VIDEO_TS sources. Confirm extension, source, episode, and ignored-item rules.
+7. Confirm each enabled indexer accepts the intended category and reports its
+   own result without blocking other destinations.
+8. Restart or update the service, then confirm paused queue state and Recently
+   Finished history survive. Resume work manually only after inspection.
+
+For a failure, record a redacted path/name shape, configured folder category,
+detector/cache outcome, UI and submission categories, affected indexers, job ID,
+state transition, relevant redacted logs, and `/api/system/revision`. Fix the
+generic mechanism and add a regression test; never add the title to a production
+exception list.
 
 ## Public Releases
 

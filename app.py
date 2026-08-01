@@ -2137,6 +2137,13 @@ class ForceUploadRequest(BaseModel):
     bulk_selection: bool = False
 
 
+class AnimeCacheCorrectionRequest(BaseModel):
+    """Persist a user correction for one title's anime detector result."""
+
+    name: str
+    is_anime: bool
+
+
 def _log_selected_payload(prefix: str, items: List[Dict[str, Any]]) -> None:
     """Emit concise selection logs for queued/forced uploads."""
     for item in items:
@@ -2326,7 +2333,7 @@ def _collect_uncached_anime_check_names(data: Dict[str, Any]) -> list[str]:
     return pending_snapshot_mod.collect_uncached_anime_check_names(data)
 
 
-def _classify_video_name(name: str, folder_category: str = "", assume_movie_if_unknown: bool = True) -> str:
+def _classify_video_name(name: str, folder_category: str = "", assume_movie_if_unknown: bool = False) -> str:
     return pending_snapshot_mod.classify_video_name(name, folder_category, assume_movie_if_unknown)
 
 
@@ -2639,6 +2646,39 @@ async def mark_items_uploaded(req: MarkUploadedRequest) -> Dict[str, Any]:
         "records_created": created,
         "items": len(req.item_keys),
         "indexers": len(req.indexer_ids),
+    }
+
+
+@pending_router.post("/anime-cache")
+def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, Any]:
+    """Store a user-confirmed anime verdict and refresh pending classifications."""
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="A title name is required")
+
+    from logic.anime_cache import set_cached
+
+    if not set_cached(name, req.is_anime):
+        raise HTTPException(status_code=400, detail="The title could not be normalized")
+
+    from logic.pending_scan import classify_video_name
+
+    itype = classify_video_name(
+        name,
+        assume_movie_if_unknown=False,
+        anime_lookup=lambda _name: req.is_anime,
+    )
+    category = {
+        "Anime": "anime",
+        "TV Show": "tv",
+        "Movie": "movies",
+    }.get(itype, "misc")
+    _pending_index.request_refresh(reason="anime-cache-correction")
+    return {
+        "status": "success",
+        "name": name,
+        "is_anime": req.is_anime,
+        "category": category,
     }
 
 

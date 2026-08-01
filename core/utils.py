@@ -44,8 +44,8 @@ _SUBMISSION_CATEGORY_ALIASES = {
     "music": "music",
     "book": "books",
     "books": "books",
-    "audiobook": "books",
-    "audiobooks": "books",
+    "audiobook": "audiobooks",
+    "audiobooks": "audiobooks",
     "ebook": "books",
     "ebooks": "books",
     "app": "apps",
@@ -730,11 +730,6 @@ def compute_size_uncached(p: Path) -> int:
         return total
     except OSError:
         return 0
-
-
-def compute_size(p: Path) -> int:
-    """Compatibility wrapper for a live filesystem size measurement."""
-    return compute_size_uncached(p)
 
 
 def get_path_hash(p: Path) -> str:

@@ -4,6 +4,7 @@
 
 import shutil
 
+from logic import services as services_mod
 from tests.support import *
 
 
@@ -123,6 +124,30 @@ def test_headless_parser_logs_subcommand() -> None:
     assert logs_args.command == "logs"
     assert logs_args.lines == 50
     assert logs_args.json is True
+
+
+def test_headless_parser_config_system_and_pending_filters() -> None:
+    parser = headless_mod.build_headless_parser()
+
+    config_args = parser.parse_args(["config", "set", "api_keys.geek", "token", "--json"])
+    assert config_args.command == "config"
+    assert config_args.config_command == "set"
+    assert config_args.key == "api_keys.geek"
+    assert config_args.json is True
+
+    update_args = parser.parse_args(["system", "update", "install", "--version", "v1.2.3", "--no-restart"])
+    assert update_args.system_command == "update"
+    assert update_args.update_command == "install"
+    assert update_args.version == "v1.2.3"
+    assert update_args.no_restart is True
+
+    pending_args = parser.parse_args(["pending", "--folder", "incoming", "--limit", "3"])
+    assert pending_args.folder == "incoming"
+    assert pending_args.limit == 3
+
+    with pytest.raises(SystemExit) as exc_info:
+        parser.parse_args(["pending", "--limit", "-1"])
+    assert exc_info.value.code == 2
 
 
 def test_headless_version_flag_exits_zero(capsys) -> None:
@@ -316,6 +341,280 @@ def test_cmd_pending_json_empty(monkeypatch, capsys) -> None:
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "empty"
+
+
+def test_cmd_pending_filters_folder_and_limits_verbose_items(monkeypatch, capsys, tmp_path) -> None:
+    conf = SimpleNamespace(folder_paths=[])
+    monkeypatch.setattr(config_mod, "get_config", lambda: conf)
+    monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: []))
+    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}))
+    tv_folder = tmp_path / "tv"
+    other_folder = tmp_path / "other"
+    monkeypatch.setattr(
+        pending_scan,
+        "collect_configured_scan_items",
+        lambda _conf: [
+            ("tv", tv_folder, tv_folder / "Show.S01"),
+            ("tv", tv_folder, tv_folder / "Show.S02"),
+            ("movies", other_folder, other_folder / "Movie.2026"),
+        ],
+    )
+    monkeypatch.setattr(pending_scan, "relative_key", lambda item, _folder: item.name)
+
+    rc = headless_mod.cmd_pending(SimpleNamespace(category=None, folder="tv", limit=1, verbose=True, json=True))
+
+    assert rc == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["folder"] == "tv"
+    assert payload["pending"] == 2
+    assert payload["categories"]["tv"]["items"] == ["tv/Show.S01"]
+
+
+# ============================================================
+#  cmd_config and cmd_system
+# ============================================================
+
+
+def test_cmd_config_get_and_set_use_config_writer(monkeypatch, capsys) -> None:
+    data = {"host": "127.0.0.1", "api_keys": {"geek": "old"}}
+    saved: list[dict] = []
+    monkeypatch.setattr(config_mod, "get_config", lambda: SimpleNamespace(model_dump=lambda **_kwargs: data.copy()))
+    monkeypatch.setattr(config_mod, "save_config", lambda updates: saved.append(updates) or True)
+
+    get_rc = headless_mod.cmd_config(SimpleNamespace(config_command="get", key="api_keys.geek", json=True))
+    get_payload = json.loads(capsys.readouterr().out)
+    set_rc = headless_mod.cmd_config(
+        SimpleNamespace(config_command="set", key="host", value="0.0.0.0", json=True)
+    )
+    set_payload = json.loads(capsys.readouterr().out)
+
+    assert get_rc == 0
+    assert get_payload == {"key": "api_keys.geek", "value": "old"}
+    assert set_rc == 0
+    assert set_payload["status"] == "updated"
+    assert set_payload["restart_required"] is True
+    assert saved == [{"host": "0.0.0.0", "api_keys": {"geek": "old"}}]
+
+
+@pytest.mark.parametrize("key", ["", " ", ".host", "api_keys..geek", "api_keys. .geek"])
+def test_cmd_config_rejects_empty_dotted_path_segments(monkeypatch, capsys, key) -> None:
+    monkeypatch.setattr(
+        config_mod,
+        "get_config",
+        lambda: SimpleNamespace(model_dump=lambda **_kwargs: {"host": "127.0.0.1", "api_keys": {}}),
+    )
+
+    rc = headless_mod.cmd_config(SimpleNamespace(config_command="get", key=key, json=True))
+
+    assert rc == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "error"
+    assert "non-empty dotted path segments" in payload["message"]
+
+
+def test_cmd_system_update_never_schedules_from_headless_process(monkeypatch, capsys) -> None:
+    calls: list[tuple] = []
+    monkeypatch.setattr(
+        updater,
+        "install_from_github",
+        lambda **kwargs: calls.append(("install", kwargs)) or {"status": "ok"},
+    )
+    monkeypatch.setattr(
+        updater,
+        "rollback_to_backup",
+        lambda *args, **kwargs: calls.append(("rollback", args, kwargs)) or {"status": "ok"},
+    )
+    monkeypatch.setattr(
+        updater,
+        "schedule_restart",
+        lambda **_kwargs: pytest.fail("headless update must not schedule its own argv"),
+    )
+
+    install_rc = headless_mod.cmd_system(
+        SimpleNamespace(
+            system_command="update",
+            update_command="install",
+            version="v1.2.3",
+            no_restart=False,
+            json=True,
+        )
+    )
+    install_payload = json.loads(capsys.readouterr().out)
+    rollback_rc = headless_mod.cmd_system(
+        SimpleNamespace(
+            system_command="update",
+            update_command="rollback",
+            backup_id="backup-1",
+            no_restart=True,
+            json=True,
+        )
+    )
+    rollback_payload = json.loads(capsys.readouterr().out)
+
+    assert install_rc == rollback_rc == 0
+    assert install_payload["restart_required"] is True
+    assert rollback_payload["restart_required"] is False
+    assert calls == [
+        ("install", {"version": "v1.2.3", "restart": False}),
+        ("rollback", ("backup-1",), {"restart": False}),
+    ]
+
+
+def test_cmd_system_check_error_and_stop_timeout_return_nonzero(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(updater, "check_for_updates", lambda: {"check_error": "offline"})
+    check_rc = headless_mod.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
+    check_payload = json.loads(capsys.readouterr().out)
+
+    service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
+    monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
+    stop_rc = headless_mod.cmd_system(
+        SimpleNamespace(
+            system_command="stop-all",
+            update_command=None,
+            keep_staged_items=False,
+            wait_timeout=1.0,
+            json=True,
+        )
+    )
+    stop_payload = json.loads(capsys.readouterr().out)
+
+    assert check_rc == 1
+    assert check_payload["status"] == "error"
+    assert "offline" in check_payload["message"]
+    assert stop_rc == 1
+    assert stop_payload["status"] == "partial"
+
+
+def test_cmd_system_restart_uses_managed_daemon_lifecycle(monkeypatch, capsys) -> None:
+    calls: list[tuple] = []
+
+    class Service:
+        def stop_all_jobs_and_wait(self, **kwargs):
+            calls.append(("stop", kwargs))
+            return {"timed_out": False, "stopped": 1}
+
+    monkeypatch.setattr(updater, "check_for_updates", lambda: {"update_available": True})
+    monkeypatch.setattr(services_mod, "get_upload_service", lambda: Service())
+    monkeypatch.setattr(headless_mod, "_managed_daemon_is_running", lambda: True)
+    monkeypatch.setattr(
+        headless_mod,
+        "_restart_managed_daemon",
+        lambda delay_seconds: calls.append(("daemon_restart", delay_seconds)) or (True, "daemon restarted"),
+    )
+
+    check_rc = headless_mod.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
+    check_payload = json.loads(capsys.readouterr().out)
+    restart_rc = headless_mod.cmd_system(
+        SimpleNamespace(
+            system_command="restart",
+            update_command=None,
+            no_stop=False,
+            force=False,
+            keep_staged_items=False,
+            wait_timeout=5.0,
+            delay=1.5,
+            json=True,
+        )
+    )
+    restart_payload = json.loads(capsys.readouterr().out)
+
+    assert check_rc == 0
+    assert check_payload["update_available"] is True
+    assert restart_rc == 0
+    assert restart_payload["status"] == "restarted"
+    assert calls == [
+        ("stop", {"clear_staged_items": True, "wait_timeout_s": 5.0}),
+        ("daemon_restart", 1.5),
+    ]
+
+
+def test_cmd_system_restart_timeout_requires_force(monkeypatch, capsys) -> None:
+    service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
+    monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
+    monkeypatch.setattr(
+        headless_mod,
+        "_managed_daemon_is_running",
+        lambda: pytest.fail("daemon lifecycle must not run after a timeout"),
+    )
+
+    rc = headless_mod.cmd_system(
+        SimpleNamespace(
+            system_command="restart",
+            update_command=None,
+            no_stop=False,
+            force=False,
+            keep_staged_items=False,
+            wait_timeout=1.0,
+            delay=0.0,
+            json=True,
+        )
+    )
+
+    assert rc == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "partial"
+    assert payload["restart_required"] is True
+
+
+def test_cmd_system_restart_force_proceeds_after_timeout(monkeypatch, capsys) -> None:
+    calls: list[float] = []
+    service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
+    monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
+    monkeypatch.setattr(headless_mod, "_managed_daemon_is_running", lambda: True)
+    monkeypatch.setattr(
+        headless_mod,
+        "_restart_managed_daemon",
+        lambda delay_seconds: calls.append(delay_seconds) or (True, "daemon restarted"),
+    )
+
+    rc = headless_mod.cmd_system(
+        SimpleNamespace(
+            system_command="restart",
+            update_command=None,
+            no_stop=False,
+            force=True,
+            keep_staged_items=False,
+            wait_timeout=1.0,
+            delay=0.25,
+            json=True,
+        )
+    )
+
+    assert rc == 0
+    assert json.loads(capsys.readouterr().out)["status"] == "restarted"
+    assert calls == [0.25]
+
+
+def test_cmd_system_restart_without_managed_daemon_requires_operator(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(headless_mod, "_managed_daemon_is_running", lambda: False)
+
+    rc = headless_mod.cmd_system(
+        SimpleNamespace(
+            system_command="restart",
+            update_command=None,
+            no_stop=True,
+            force=False,
+            keep_staged_items=False,
+            wait_timeout=1.0,
+            delay=0.0,
+            json=True,
+        )
+    )
+
+    assert rc == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["status"] == "restart_required"
+    assert "process supervisor" in payload["message"]
+
+
+def test_cmd_system_normalizes_operational_exception(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(updater, "check_for_updates", lambda: (_ for _ in ()).throw(OSError("network down")))
+
+    rc = headless_mod.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
+
+    assert rc == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == {"status": "error", "message": "System command failed: network down"}
 
 
 # ============================================================

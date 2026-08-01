@@ -1183,6 +1183,56 @@ def test_queue_mutates_queued_job_items_by_path_identity(tmp_path) -> None:
         assert getattr(service, operation)("job-1", value) is True, case_name
         assert service._get_job_target_paths(service._jobs["job-1"]) == expected_paths(first, second), case_name
 
+
+def test_tv_path_rewrites_ignore_forged_client_category_hints(tmp_path, monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from logic import pending_scan
+    from logic.queueing import ProcessingJobRequest, QueueServiceMixin
+
+    monkeypatch.setattr(pending_scan, "resolve_explicit_path", lambda _path: SimpleNamespace(category="movies"))
+
+    pack = tmp_path / "Forged.Show.S01.1080p.WEB-DL"
+    pack.mkdir()
+    first = pack / "Movie.One.2024.1080p.BluRay.mkv"
+    second = pack / "Movie.Two.2025.1080p.BluRay.mkv"
+    first.write_bytes(b"x")
+    second.write_bytes(b"x")
+    forged_hints = tuple(
+        {
+            "path": str(path),
+            "category": "tv",
+            "detected_category": "tv",
+            "itype": "TV Episode",
+        }
+        for path in (first, second)
+    )
+    expanded = QueueServiceMixin._with_inferred_tv_pack_request_paths(
+        ProcessingJobRequest(category="tv", paths=(str(first), str(second)), item_hints=forged_hints)
+    )
+
+    assert expanded.paths == (str(first), str(second))
+
+    parent = tmp_path / "Forged.Parent.2024.1080p.BluRay"
+    child = parent / "Forged.Child.2025.1080p.BluRay"
+    child.mkdir(parents=True)
+    (child / "Movie.2025.1080p.BluRay.mkv").write_bytes(b"x")
+    collapse_hints = tuple(
+        {
+            "path": str(path),
+            "category": "tv",
+            "detected_category": "tv",
+            "itype": "TV Show",
+        }
+        for path in (parent, child)
+    )
+    collapsed = QueueServiceMixin._collapse_overlapping_tv_request_paths(
+        ProcessingJobRequest(category="tv", paths=(str(parent), str(child)), item_hints=collapse_hints)
+    )
+
+    assert collapsed.paths == (str(parent), str(child))
+
+
 def test_queue_start_keeps_mixed_categories_in_one_job(tmp_path, monkeypatch) -> None:
     from logic import queueing
 
