@@ -449,64 +449,78 @@ def _force_tree_category(node: Dict[str, Any], category: str) -> None:
             _force_tree_category(child, cat)
 
 
+def _decide_child_promoted_category(
+    node: Dict[str, Any],
+    current: str,
+    children: List[Dict[str, Any]],
+    child_cats: List[str],
+) -> str:
+    """Decide which category (if any) ``node`` should be promoted to from its children.
+
+    Returns ``"disc"``, another category name, or ``""`` for no promotion. DISC is
+    highest precedence; the caller applies it via ``_force_tree_category``.
+    """
+    child_set = {c for c in child_cats if c}
+    if not child_set:
+        return ""
+    if "disc" in child_set:
+        return "disc"
+
+    # For regular media packs, let strong child consensus set the parent.
+    tv_count = sum(1 for c in child_cats if c == "tv")
+    anime_count = sum(1 for c in child_cats if c == "anime")
+    movie_count = sum(1 for c in child_cats if c == "movies")
+    anime_bonus_count = sum(
+        1
+        for c in children
+        if _ANIME_BONUS_PATTERN.search(str(c.get("name") or "").lower())
+    )
+    parent_anime_cached = _anime_cache_lookup(str(node.get("name") or "")) is True
+    has_desc_anime_cached = any(
+        _anime_cache_lookup(str(c.get("name") or "")) is True for c in children
+    )
+
+    if (
+        (parent_anime_cached or has_desc_anime_cached)
+        and not (tv_count > 0 and anime_count == 0 and anime_bonus_count == 0)
+    ):
+        return "anime"
+    if anime_bonus_count > 0:
+        # Presence of NCOP/NCED bonus markers should lock the enclosing pack to ANIME.
+        return "anime"
+    if anime_count > 0 and movie_count == 0:
+        return "anime"
+    if tv_count > 0 and movie_count == 0:
+        return "tv"
+    if current in {"", "misc"} and movie_count > 0:
+        return "movies"
+    return ""
+
+
+def _walk_category_inheritance(n: Dict[str, Any]) -> None:
+    """Post-order walk that promotes a parent's category from its children's consensus."""
+    children = [c for c in (n.get("children") or []) if isinstance(c, dict)]
+    for child in children:
+        _walk_category_inheritance(child)
+    if not children:
+        return
+
+    current = str(n.get("detected_category") or n.get("category") or "").strip().lower()
+    child_cats = [str(c.get("detected_category") or c.get("category") or "").strip().lower() for c in children]
+    promote = _decide_child_promoted_category(n, current, children, child_cats)
+    if promote == "disc":
+        _force_tree_category(n, "disc")
+        return
+    if promote:
+        n["detected_category"] = promote
+        n["category"] = promote
+
+
 def _inherit_category_from_children(node: Dict[str, Any]) -> None:
     """Promote parent category from descendants when structure clearly indicates one type."""
     if not isinstance(node, dict):
         return
-
-    def walk(n: Dict[str, Any]) -> None:
-        children = [c for c in (n.get("children") or []) if isinstance(c, dict)]
-        for child in children:
-            walk(child)
-        if not children:
-            return
-
-        current = str(n.get("detected_category") or n.get("category") or "").strip().lower()
-        child_cats = [str(c.get("detected_category") or c.get("category") or "").strip().lower() for c in children]
-        child_set = {c for c in child_cats if c}
-        if not child_set:
-            return
-
-        # DISC remains highest precedence.
-        if "disc" in child_set:
-            _force_tree_category(n, "disc")
-            return
-
-        # For regular media packs, let strong child consensus set the parent.
-        tv_count = sum(1 for c in child_cats if c == "tv")
-        anime_count = sum(1 for c in child_cats if c == "anime")
-        movie_count = sum(1 for c in child_cats if c == "movies")
-        anime_bonus_count = sum(
-            1
-            for c in children
-            if _ANIME_BONUS_PATTERN.search(str(c.get("name") or "").lower())
-        )
-        parent_anime_cached = _anime_cache_lookup(str(n.get("name") or "")) is True
-        has_desc_anime_cached = any(
-            _anime_cache_lookup(str(c.get("name") or "")) is True for c in children
-        )
-
-        promote = ""
-        if (
-            (parent_anime_cached or has_desc_anime_cached)
-            and not (tv_count > 0 and anime_count == 0 and anime_bonus_count == 0)
-        ):
-            promote = "anime"
-        elif anime_bonus_count > 0:
-            # Presence of NCOP/NCED bonus markers should lock the enclosing pack to ANIME.
-            promote = "anime"
-        elif anime_count > 0 and movie_count == 0:
-            promote = "anime"
-        elif tv_count > 0 and movie_count == 0:
-            promote = "tv"
-        elif current in {"", "misc"} and movie_count > 0:
-            promote = "movies"
-
-        if promote:
-            n["detected_category"] = promote
-            n["category"] = promote
-
-    walk(node)
+    _walk_category_inheritance(node)
 
 
 def _inherit_anime_context_to_children(node: Dict[str, Any]) -> None:

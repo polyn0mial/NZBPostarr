@@ -1151,6 +1151,122 @@ class QueueServiceMixin:
 
         return None
 
+    def _build_restored_terminal_job(
+        self,
+        row: dict[str, Any],
+        *,
+        job_id: str,
+        category: str,
+        started_at: str,
+        created_at: str,
+        display_name: str,
+        persisted_status: str,
+        priority: int,
+    ) -> dict[str, Any]:
+        """Rebuild a finished job's state dict from its persisted row."""
+        terminal_job: dict[str, Any] = JobState(
+            job_id=job_id,
+            category=category,
+            status=persisted_status,
+            started_at=started_at,
+            created_at=created_at,
+            progress=str(row.get("progress") or ""),
+            progress_percent=int(row.get("progress_percent") or 0),
+            test_mode=bool(row.get("test_mode", False)),
+            display_name=display_name,
+            priority=priority,
+            attempt_count=int(row.get("attempt_count") or 0),
+            retry_of=str(row.get("retry_of") or "") or None,
+            retried_as=str(row.get("retried_as") or "") or None,
+            retry_eligible=bool(row.get("retry_eligible", False)),
+            last_error=str(row.get("last_error") or "") or None,
+            events=list(row.get("events") or [])[-30:],
+        ).model_dump()
+        terminal_job.update(
+            {
+                "source": self._normalize_job_source(row.get("source")),
+                "job_type": str(row.get("job_type") or "processing"),
+                "finished_at": str(row.get("finished_at") or started_at),
+                "items_processed": int(row.get("items_processed") or 0),
+                "items_total": int(row.get("items_total") or 0),
+                "items_skipped": int(row.get("items_skipped") or 0),
+                "total_bytes": int(row.get("total_bytes") or 0),
+                "summary": dict(row.get("summary") or {}),
+            }
+        )
+        retry_request = row.get("retry_request")
+        if isinstance(retry_request, dict) and retry_request:
+            terminal_job["_retry_request"] = retry_request
+        return terminal_job
+
+    def _build_restored_queued_job(
+        self,
+        row: dict[str, Any],
+        *,
+        job_id: str,
+        category: str,
+        started_at: str,
+        created_at: str,
+        display_name: str,
+        run_after: Any,
+        priority: int,
+        persisted_status: str,
+        kwargs: dict[str, Any],
+    ) -> tuple[dict[str, Any], bool]:
+        """Rebuild a still-pending job's state dict from its persisted row.
+
+        Returns the job dict and whether it was manually stopped (the caller uses that
+        to re-pause the queue).
+        """
+        restored_manual_stop = False
+        progress = str(row.get("progress") or "")
+        if persisted_status == "stopped":
+            progress = "Recovered after restart - waiting for queue resume."
+            restored_manual_stop = True
+        elif persisted_status in {"running", "stopping", "paused"}:
+            progress = "Recovered after restart - re-queued."
+        elif not progress:
+            progress = "Recovered after restart - queued."
+
+        job: dict[str, Any] = JobState(
+            job_id=job_id,
+            category=category,
+            status="queued",
+            started_at=started_at,
+            created_at=created_at,
+            progress=progress,
+            speed=None,
+            eta=None,
+            current_stage="QUEUED",
+            test_mode=bool(row.get("test_mode", False)),
+            display_name=display_name,
+            run_after=run_after,
+            priority=priority,
+            attempt_count=int(row.get("attempt_count") or 0),
+            retry_of=str(row.get("retry_of") or "") or None,
+            retried_as=str(row.get("retried_as") or "") or None,
+            events=list(row.get("events") or [])[-30:],
+        ).model_dump()
+        if not display_name:
+            job.pop("display_name", None)
+        if not run_after:
+            job.pop("run_after", None)
+        job["source"] = self._normalize_job_source(row.get("source"))
+        job["_kwargs"] = kwargs
+        retry_request = row.get("retry_request")
+        if isinstance(retry_request, dict) and retry_request:
+            job["_retry_request"] = retry_request
+        self._set_job_target_paths(job, row.get("paths"))
+
+        prior_processed = int(row.get("items_processed") or 0)
+        prior_total = int(row.get("items_total") or 0)
+        if prior_processed > 0 or prior_total > 0:
+            job["_resume_items_processed"] = prior_processed
+            job["_resume_items_total"] = prior_total
+            job["_resume_items_skipped"] = int(row.get("items_skipped") or 0)
+
+        return job, restored_manual_stop
+
     def _restore_jobs_from_disk_locked(self) -> None:
         data = self._load_jobs_state_payload_locked()
         if data is None:
@@ -1190,89 +1306,33 @@ class QueueServiceMixin:
                 persisted_status == "stopped" and not persisted_paths
             )
             if persisted_finished:
-                terminal_job: dict[str, Any] = JobState(
+                self._jobs[job_id] = self._build_restored_terminal_job(
+                    row,
                     job_id=job_id,
                     category=category,
-                    status=persisted_status,
                     started_at=started_at,
                     created_at=created_at,
-                    progress=str(row.get("progress") or ""),
-                    progress_percent=int(row.get("progress_percent") or 0),
-                    test_mode=bool(row.get("test_mode", False)),
                     display_name=display_name,
+                    persisted_status=persisted_status,
                     priority=priority,
-                    attempt_count=int(row.get("attempt_count") or 0),
-                    retry_of=str(row.get("retry_of") or "") or None,
-                    retried_as=str(row.get("retried_as") or "") or None,
-                    retry_eligible=bool(row.get("retry_eligible", False)),
-                    last_error=str(row.get("last_error") or "") or None,
-                    events=list(row.get("events") or [])[-30:],
-                ).model_dump()
-                terminal_job.update(
-                    {
-                        "source": self._normalize_job_source(row.get("source")),
-                        "job_type": str(row.get("job_type") or "processing"),
-                        "finished_at": str(row.get("finished_at") or started_at),
-                        "items_processed": int(row.get("items_processed") or 0),
-                        "items_total": int(row.get("items_total") or 0),
-                        "items_skipped": int(row.get("items_skipped") or 0),
-                        "total_bytes": int(row.get("total_bytes") or 0),
-                        "summary": dict(row.get("summary") or {}),
-                    }
                 )
-                retry_request = row.get("retry_request")
-                if isinstance(retry_request, dict) and retry_request:
-                    terminal_job["_retry_request"] = retry_request
-                self._jobs[job_id] = terminal_job
                 recovered_finished += 1
                 continue
 
-            progress = str(row.get("progress") or "")
-            if persisted_status == "stopped":
-                progress = "Recovered after restart - waiting for queue resume."
-                restored_manual_stop = True
-            elif persisted_status in {"running", "stopping", "paused"}:
-                progress = "Recovered after restart - re-queued."
-            elif not progress:
-                progress = "Recovered after restart - queued."
-
-            job: dict[str, Any] = JobState(
+            job, is_manual_stop = self._build_restored_queued_job(
+                row,
                 job_id=job_id,
                 category=category,
-                status="queued",
                 started_at=started_at,
                 created_at=created_at,
-                progress=progress,
-                speed=None,
-                eta=None,
-                current_stage="QUEUED",
-                test_mode=bool(row.get("test_mode", False)),
                 display_name=display_name,
                 run_after=run_after,
                 priority=priority,
-                attempt_count=int(row.get("attempt_count") or 0),
-                retry_of=str(row.get("retry_of") or "") or None,
-                retried_as=str(row.get("retried_as") or "") or None,
-                events=list(row.get("events") or [])[-30:],
-            ).model_dump()
-            if not display_name:
-                job.pop("display_name", None)
-            if not run_after:
-                job.pop("run_after", None)
-            job["source"] = self._normalize_job_source(row.get("source"))
-            job["_kwargs"] = kwargs
-            retry_request = row.get("retry_request")
-            if isinstance(retry_request, dict) and retry_request:
-                job["_retry_request"] = retry_request
-            self._set_job_target_paths(job, row.get("paths"))
-
-            prior_processed = int(row.get("items_processed") or 0)
-            prior_total = int(row.get("items_total") or 0)
-            if prior_processed > 0 or prior_total > 0:
-                job["_resume_items_processed"] = prior_processed
-                job["_resume_items_total"] = prior_total
-                job["_resume_items_skipped"] = int(row.get("items_skipped") or 0)
-
+                persisted_status=persisted_status,
+                kwargs=kwargs,
+            )
+            if is_manual_stop:
+                restored_manual_stop = True
             self._jobs[job_id] = job
             recovered += 1
 
