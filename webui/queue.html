@@ -82,7 +82,7 @@
                             placeholder="Search items..."
                             class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none h-[36px] sm:h-[32px]" />
                     </div>
-                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer h-[36px] sm:h-[32px] px-2 rounded-md hover:bg-notion-bg-hover transition-colors flex-shrink-0" title="Search for exact text including dots, dashes, underscores">
+                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer h-[36px] sm:h-[32px] px-2 rounded-md hover:bg-notion-bg-hover transition-colors shrink-0" title="Search for exact text including dots, dashes, underscores">
                         <input type="checkbox" v-model="literalSearch" class="w-4 h-4 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
                         <span class="hidden xs:inline">Literal</span>
                     </label>
@@ -215,8 +215,8 @@
                                     :checked="areAllFlatCategorySelected(cat.id)"
                                     @click.stop
                                     @change="toggleFlatCategorySelection(cat.id, $event.target.checked)"
-                                    class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer flex-shrink-0" />
-                                <lucide-icon :name="collapsedCategories[cat.id] ? 'chevron-right' : 'chevron-down'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary flex-shrink-0"></lucide-icon>
+                                    class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer shrink-0" />
+                                <lucide-icon :name="collapsedCategories[cat.id] ? 'chevron-right' : 'chevron-down'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
                                 <lucide-icon :name="getCategoryIcon(cat.id)" :icon-class="'w-3.5 h-3.5 text-' + getCategoryColor(cat.id) + '-400'"></lucide-icon>
                                 <span class="text-[10px] font-semibold text-notion-text-tertiary uppercase tracking-wider">{{ cat.label }} ({{ visibleCategoryCount(cat.id) }})</span>
                             </div>
@@ -231,8 +231,8 @@
                                         :checked="selectedItems.has(item.key)"
                                         @change="toggleItemSelection(item, $event.target.checked)"
                                         :disabled="isItemSkipped(item)"
-                                        class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer flex-shrink-0" />
-                                    <div :class="'w-6 h-6 bg-' + getCategoryColor(cat.id) + '-500/15 rounded flex items-center justify-center flex-shrink-0 hidden sm:flex'">
+                                        class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer shrink-0" />
+                                    <div :class="'w-6 h-6 bg-' + getCategoryColor(cat.id) + '-500/15 rounded flex items-center justify-center shrink-0 hidden sm:flex'">
                                         <lucide-icon :name="getCategoryIcon(cat.id)" :icon-class="'w-3 h-3 text-' + getCategoryColor(cat.id) + '-400'"></lucide-icon>
                                     </div>
                                     <div class="flex items-baseline gap-1.5 min-w-0 flex-[1_1_0] max-w-[26vw] lg:max-w-[34vw] overflow-hidden">
@@ -243,18 +243,18 @@
                                             </template>
                                             <template v-else>{{ item.name }}</template>
                                         </span>
-                                        <span v-if="hasRowChildren(item)" class="text-[10px] text-notion-text-placeholder flex-shrink-0 whitespace-nowrap">({{ getRowChildCount ? getRowChildCount(item) : getRowChildren(item).length }} files)</span>
+                                        <span v-if="hasRowChildren(item)" class="text-[10px] text-notion-text-placeholder shrink-0 whitespace-nowrap">({{ getRowChildCount ? getRowChildCount(item) : getRowChildren(item).length }} files)</span>
                                     </div>
-                                    <div class="flex items-center gap-1 flex-shrink-0">
-                                        <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
-                                        <span v-if="isItemSkipped(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
-                                        <span v-if="shouldShowYieldBubble(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
+                                    <div class="flex items-center gap-1 shrink-0">
+                                        <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider shrink-0">Done</span>
+                                        <span v-if="isItemSkipped(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider shrink-0 pointer-events-auto">Skipped</span>
+                                        <span v-if="shouldShowYieldBubble(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 shrink-0" title="Ignored">
                                             <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
                                         </span>
-                                        <span v-if="isItemQueued(item) && !item.auto_select_ignored && !isItemIgnored(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
+                                        <span v-if="isItemQueued(item) && !item.auto_select_ignored && !isItemIgnored(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider shrink-0">Staged</span>
                                     </div>
-                                    <span :class="['text-[10px] font-mono w-16 text-right flex-shrink-0 hidden sm:block', sizeToneClass(item.size)]">{{ formatSize(item.size) }}</span>
-                                    <div class="flex items-center justify-end gap-1 flex-shrink-0 w-[112px] hidden sm:flex">
+                                    <span :class="['text-[10px] font-mono w-16 text-right shrink-0 hidden sm:block', sizeToneClass(item.size)]">{{ formatSize(item.size) }}</span>
+                                    <div class="flex items-center justify-end gap-1 shrink-0 w-[112px] hidden sm:flex">
                                         <template v-for="idx in activeIndexers" :key="idx.id">
                                             <span class="infotip-trigger relative inline-flex items-center justify-center w-4 h-4 rounded" :style="{ boxShadow: 'inset 0 0 0 1.5px ' + indexerRingColor(item, idx.id) }">
                                                 <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-2.5 h-2.5 object-contain rounded-sm" @error="idx.favicon_url = null" />
@@ -266,7 +266,7 @@
                                             </span>
                                         </template>
                                     </div>
-                                    <div class="flex items-center gap-0.5 opacity-100 flex-shrink-0 w-[4.75rem] justify-end ml-auto">
+                                    <div class="flex items-center gap-0.5 opacity-100 shrink-0 w-[4.75rem] justify-end ml-auto">
                                         <button @click.stop="queueSingleItem(item, cat.id)" title="Add to staging" class="p-1 rounded hover:bg-notion-info/20 text-notion-text-tertiary hover:text-notion-info transition-colors">
                                             <lucide-icon name="list-plus" icon-class="w-3 h-3"></lucide-icon>
                                         </button>
@@ -293,8 +293,8 @@
                                 <button :class="['pending-ext-drag-handle p-0.5 rounded flex-shrink-0', pendingExternalGroupOrderLocked ? 'text-notion-accent cursor-not-allowed opacity-80' : 'text-notion-text-placeholder hover:text-notion-text-tertiary cursor-grab active:cursor-grabbing']" :title="pendingExternalGroupOrderLocked ? 'Directory order is locked' : 'Drag to reorder directories'" @click.stop>
                                     <lucide-icon :name="pendingExternalGroupOrderLocked ? 'lock-keyhole' : 'grip-vertical'" icon-class="w-3.5 h-3.5"></lucide-icon>
                                 </button>
-                                <input type="checkbox" :checked="areAllExtGroupSelected(extGroup)" @click.stop @change="toggleExtGroupSelection(extGroup, $event.target.checked)" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer flex-shrink-0" />
-                                <lucide-icon :name="collapsedCategories[externalGroupCollapseKey(extGroup)] ? 'chevron-right' : 'chevron-down'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary flex-shrink-0"></lucide-icon>
+                                <input type="checkbox" :checked="areAllExtGroupSelected(extGroup)" @click.stop @change="toggleExtGroupSelection(extGroup, $event.target.checked)" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer shrink-0" />
+                                <lucide-icon :name="collapsedCategories[externalGroupCollapseKey(extGroup)] ? 'chevron-right' : 'chevron-down'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
                                 <span :title="extGroup.items && extGroup.items.length > 0 ? 'Directory row only. Some child files may still be uploadable.' : ''" class="flex items-center justify-center">
                                     <lucide-icon name="folder-input" icon-class="w-3.5 h-3.5 text-emerald-400"></lucide-icon>
                                 </span>
@@ -311,16 +311,16 @@
                                             @change="hasRowChildren(item) ? toggleExtFolderSelection(item, $event.target.checked) : toggleItemSelection(item, $event.target.checked)"
                                             :disabled="!item.is_dir && isSelectionIgnored(item)"
                                             :title="getSelectionTitle(item)"
-                                            class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer flex-shrink-0" />
+                                            class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer shrink-0" />
                                         <button
                                             v-if="hasRowChildren(item)"
                                             type="button"
                                             @click.stop="toggleExtItem(item.key)"
-                                            class="expand-trigger-btn w-3.5 h-3.5 -mx-0.5 inline-flex items-center justify-center flex-shrink-0 text-notion-text-tertiary hover:text-notion-text-primary transition-colors"
+                                            class="expand-trigger-btn w-3.5 h-3.5 -mx-0.5 inline-flex items-center justify-center shrink-0 text-notion-text-tertiary hover:text-notion-text-primary transition-colors"
                                             style="background:none;border:none;cursor:pointer;padding:0 6px;display:inline-flex;align-items:center;user-select:none;">
                                             <lucide-icon :name="expandedExtItems[item.key] ? 'chevron-down' : 'chevron-right'" icon-class="w-3 h-3"></lucide-icon>
                                         </button>
-                                        <span v-else class="w-3.5 -mx-0.5 flex-shrink-0"></span>
+                                        <span v-else class="w-3.5 -mx-0.5 shrink-0"></span>
                                         <div :class="'w-6 h-6 bg-' + getCategoryColor(externalCategories[item.key] || getCategoryForItem(item)) + '-500/15 rounded flex items-center justify-center flex-shrink-0'" :title="item.is_dir ? getFolderStateTooltip(item) : ''">
                                             <lucide-icon :name="getCategoryIcon(externalCategories[item.key] || getCategoryForItem(item))" :icon-class="'w-3 h-3 text-' + getCategoryColor(externalCategories[item.key] || getCategoryForItem(item)) + '-400'"></lucide-icon>
                                         </div>
@@ -336,29 +336,29 @@
                                                 </template>
                                                 <template v-else>{{ item.name }}</template>
                                             </span>
-                                            <span v-if="hasRowChildren(item)" class="text-[10px] text-notion-text-placeholder flex-shrink-0">({{ getRowChildCount(item) }} files)</span>
+                                            <span v-if="hasRowChildren(item)" class="text-[10px] text-notion-text-placeholder shrink-0">({{ getRowChildCount(item) }} files)</span>
                                         </div>
                                         <select
                                             :value="externalCategories[item.key] || getCategoryForItem(item) || ''"
                                             @click.stop
                                             @change="setExternalCategory(item.key, $event.target.value)"
-                                            :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(externalCategories[item.key] || getCategoryForItem(item))]"
+                                            :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(externalCategories[item.key] || getCategoryForItem(item))]"
                                             style="text-align-last:center;"
                                             :title="'Detected as ' + getDetectionLabel(item) + '. Click to change category.'"
                                             :aria-label="'Change category for ' + item.name">
                                             <option class="bg-notion-bg text-notion-text-primary normal-case" value="">Type</option>
                                             <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in allCategoryMeta" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
                                         </select>
-                                        <div class="flex items-center gap-1 flex-shrink-0">
-                                            <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
-                                            <span v-if="isItemSkipped(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
-                                            <span v-if="shouldShowYieldBubble(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
+                                        <div class="flex items-center gap-1 shrink-0">
+                                            <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider shrink-0">Done</span>
+                                            <span v-if="isItemSkipped(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider shrink-0 pointer-events-auto">Skipped</span>
+                                            <span v-if="shouldShowYieldBubble(item)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 shrink-0" title="Ignored">
                                                 <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
                                             </span>
-                                            <span v-if="isItemQueued(item) && !item.auto_select_ignored && !isItemIgnored(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
+                                            <span v-if="isItemQueued(item) && !item.auto_select_ignored && !isItemIgnored(item)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider shrink-0">Staged</span>
                                         </div>
-                                        <span :class="['text-[10px] font-mono w-16 text-right flex-shrink-0 hidden sm:block', sizeToneClass(item.size)]">{{ formatSize(item.size) }}</span>
-                                        <div v-if="activeIndexers.length > 0 && item.indexers && Object.keys(item.indexers).length > 0" class="flex items-center justify-end gap-1 flex-shrink-0 w-[112px] hidden sm:flex">
+                                        <span :class="['text-[10px] font-mono w-16 text-right shrink-0 hidden sm:block', sizeToneClass(item.size)]">{{ formatSize(item.size) }}</span>
+                                        <div v-if="activeIndexers.length > 0 && item.indexers && Object.keys(item.indexers).length > 0" class="flex items-center justify-end gap-1 shrink-0 w-[112px] hidden sm:flex">
                                             <template v-for="idx in activeIndexers" :key="idx.id">
                                                 <span class="infotip-trigger relative inline-flex items-center justify-center w-4 h-4 rounded" :style="{ boxShadow: 'inset 0 0 0 1.5px ' + indexerRingColor(item, idx.id) }">
                                                     <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-2.5 h-2.5 object-contain rounded-sm" @error="idx.favicon_url = null" />
@@ -370,7 +370,7 @@
                                                 </span>
                                             </template>
                                         </div>
-                                        <div class="flex items-center gap-0.5 opacity-100 flex-shrink-0 w-[4.75rem] justify-end">
+                                        <div class="flex items-center gap-0.5 opacity-100 shrink-0 w-[4.75rem] justify-end">
                                             <button
                                                 type="button"
                                                 @click.stop="correctAnimeCache(item, getCategoryForItem(item) !== 'anime')"
@@ -422,17 +422,17 @@
                                                     :checked="selectedItems.has(child.key)"
                                                     @change="toggleExtChildSelection(child, item, $event.target.checked)"
                                                     :title="getSelectionTitle(child)"
-                                                    class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer flex-shrink-0" />
+                                                    class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer shrink-0" />
                                                 <button
                                                     v-if="hasRowChildren(child)"
                                                     type="button"
                                                     @click.stop="toggleExtItem(child.key)"
-                                                    class="cursor-pointer expand-trigger-icon -mx-0.5 inline-flex items-center justify-center flex-shrink-0 text-notion-text-tertiary hover:text-notion-text-primary transition-colors select-none"
+                                                    class="cursor-pointer expand-trigger-icon -mx-0.5 inline-flex items-center justify-center shrink-0 text-notion-text-tertiary hover:text-notion-text-primary transition-colors select-none"
                                                     style="background:none;border:none;cursor:pointer;padding:0 6px;">
                                                     <lucide-icon :name="expandedExtItems[child.key] ? 'chevron-down' : 'chevron-right'" icon-class="w-3 h-3"></lucide-icon>
                                                 </button>
-                                                <span v-else class="w-3.5 -mx-0.5 inline-flex items-center justify-center flex-shrink-0 text-transparent select-none">&nbsp;</span>
-                                                <span :title="child.is_dir ? getFolderStateTooltip(child) : ''" class="flex items-center justify-center flex-shrink-0">
+                                                <span v-else class="w-3.5 -mx-0.5 inline-flex items-center justify-center shrink-0 text-transparent select-none">&nbsp;</span>
+                                                <span :title="child.is_dir ? getFolderStateTooltip(child) : ''" class="flex items-center justify-center shrink-0">
                                                     <lucide-icon :name="getCategoryIcon(externalCategories[child.key] || getCategoryForItem(item))" :icon-class="'w-3 h-3 text-' + getCategoryColor(externalCategories[child.key] || getCategoryForItem(item)) + '-400 flex-shrink-0'"></lucide-icon>
                                                 </span>
                                                 <div
@@ -442,29 +442,29 @@
                                                     :class="{ 'cursor-pointer': hasRowChildren(child) }"
                                                     @click="hasRowChildren(child) && toggleExtItem(child.key)">
                                                     <span class="text-[11px] text-notion-text-secondary min-w-0" style="max-width: 28vw; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ child.name }}</span>
-                                                    <span v-if="hasRowChildren(child)" class="text-[10px] text-notion-text-placeholder flex-shrink-0">({{ getRowChildCount(child) }} items)</span>
+                                                    <span v-if="hasRowChildren(child)" class="text-[10px] text-notion-text-placeholder shrink-0">({{ getRowChildCount(child) }} items)</span>
                                                 </div>
                                                 <select
                                                     :value="externalCategories[child.key] || getCategoryForItem(item) || ''"
                                                     @click.stop
                                                     @change="setExternalCategory(child.key, $event.target.value)"
-                                                    :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(externalCategories[child.key] || getCategoryForItem(item))]"
+                                                    :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(externalCategories[child.key] || getCategoryForItem(item))]"
                                                     style="text-align-last:center;"
                                                     :title="'Detected as ' + getDetectionLabel(child) + '. Click to change category.'"
                                                     :aria-label="'Change category for ' + child.name">
                                                     <option class="bg-notion-bg text-notion-text-primary normal-case" value="">Type</option>
                                                     <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in allCategoryMeta" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
                                                 </select>
-                                                <div class="flex items-center gap-1 flex-shrink-0">
-                                                    <span v-if="isItemCompleted(child) && !isItemSkipped(child)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
-                                                    <span v-if="isItemSkipped(child)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
-                                                    <span v-if="shouldShowYieldBubble(child)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
+                                                <div class="flex items-center gap-1 shrink-0">
+                                                    <span v-if="isItemCompleted(child) && !isItemSkipped(child)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider shrink-0">Done</span>
+                                                    <span v-if="isItemSkipped(child)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider shrink-0 pointer-events-auto">Skipped</span>
+                                                    <span v-if="shouldShowYieldBubble(child)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 shrink-0" title="Ignored">
                                                         <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
                                                     </span>
-                                                    <span v-if="isItemQueued(child) && !child.auto_select_ignored && !isItemIgnored(child)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
+                                                    <span v-if="isItemQueued(child) && !child.auto_select_ignored && !isItemIgnored(child)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider shrink-0">Staged</span>
                                                 </div>
-                                                <span :class="['text-[10px] font-mono w-16 text-right flex-shrink-0 hidden sm:block', sizeToneClass(child.size, 'text-notion-text-placeholder')]">{{ formatSize(child.size) }}</span>
-                                                <div v-if="activeIndexers.length > 0 && child.indexers && Object.keys(child.indexers).length > 0" class="flex items-center justify-end gap-1 flex-shrink-0 w-[112px] hidden sm:flex">
+                                                <span :class="['text-[10px] font-mono w-16 text-right shrink-0 hidden sm:block', sizeToneClass(child.size, 'text-notion-text-placeholder')]">{{ formatSize(child.size) }}</span>
+                                                <div v-if="activeIndexers.length > 0 && child.indexers && Object.keys(child.indexers).length > 0" class="flex items-center justify-end gap-1 shrink-0 w-[112px] hidden sm:flex">
                                                     <template v-for="idx in activeIndexers" :key="idx.id">
                                                         <span class="infotip-trigger relative inline-flex items-center justify-center w-4 h-4 rounded" :style="{ boxShadow: 'inset 0 0 0 1.5px ' + indexerRingColor(child, idx.id) }">
                                                             <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-2.5 h-2.5 object-contain rounded-sm" @error="idx.favicon_url = null" />
@@ -476,7 +476,7 @@
                                                         </span>
                                                     </template>
                                                 </div>
-                                                <div class="flex items-center gap-0.5 opacity-100 flex-shrink-0 w-[4.75rem] justify-end">
+                                                <div class="flex items-center gap-0.5 opacity-100 shrink-0 w-[4.75rem] justify-end">
                                                     <button
                                                         type="button"
                                                         @click.stop="correctAnimeCache(child, getCategoryForItem(child) !== 'anime')"
@@ -525,8 +525,8 @@
                                                     :key="gc.key"
                                                     :class="['pending-virtual-row grid items-center gap-0.5 pl-12 pr-3 py-0.5 transition-colors group/gc w-full min-w-0', isItemSkipped(gc) ? 'opacity-40' : isItemCompleted(gc) ? 'opacity-50 hover:opacity-75' : 'hover:bg-notion-bg-hover/30']"
                                                     style="grid-template-columns: auto auto minmax(11rem, 1fr) auto auto auto auto;">
-                                                    <input type="checkbox" :checked="selectedItems.has(gc.key)" @change="toggleExtChildSelection(gc, item, $event.target.checked)" class="w-3 h-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer flex-shrink-0" />
-                                                    <span :title="gc.is_dir ? getFolderStateTooltip(gc) : ''" class="flex items-center justify-center flex-shrink-0">
+                                                    <input type="checkbox" :checked="selectedItems.has(gc.key)" @change="toggleExtChildSelection(gc, item, $event.target.checked)" class="w-3 h-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer shrink-0" />
+                                                    <span :title="gc.is_dir ? getFolderStateTooltip(gc) : ''" class="flex items-center justify-center shrink-0">
                                                         <lucide-icon :name="getExternalItemIcon(gc)" :icon-class="'w-3 h-3 text-' + getExternalItemColor(gc) + '-400 flex-shrink-0'"></lucide-icon>
                                                     </span>
                                                     <span class="text-[11px] text-notion-text-secondary min-w-0" style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" :title="gc.name">{{ gc.name }}</span>
@@ -534,7 +534,7 @@
                                                         :value="externalCategories[gc.key] || getCategoryForItem(gc) || findExternalAncestorCategory(gc) || ''"
                                                         @click.stop
                                                         @change="setExternalCategory(gc.key, $event.target.value)"
-                                                        :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide flex-shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(getCategoryForItem(gc) || findExternalAncestorCategory(gc))]"
+                                                        :class="['h-6 px-2 rounded border text-[10px] font-semibold uppercase tracking-wide shrink-0 cursor-pointer focus:border-notion-accent focus:outline-none w-20 text-center', categoryBadgeClass(getCategoryForItem(gc) || findExternalAncestorCategory(gc))]"
                                                         style="text-align-last:center;"
                                                         :title="'Detected as ' + getDetectionLabel(gc) + '. Click to change category.'"
                                                         :aria-label="'Change category for ' + gc.name">
@@ -542,16 +542,16 @@
                                                         <option class="bg-notion-bg text-notion-text-primary normal-case" value="tv">TV</option>
                                                         <option class="bg-notion-bg text-notion-text-primary normal-case" v-for="cat in flatCategories" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
                                                     </select>
-                                                    <div class="flex items-center gap-1 flex-shrink-0">
-                                                        <span v-if="isItemCompleted(gc) && !isItemSkipped(gc)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider flex-shrink-0">Done</span>
-                                                        <span v-if="isItemSkipped(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider flex-shrink-0 pointer-events-auto">Skipped</span>
-                                                        <span v-if="shouldShowYieldBubble(gc)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 flex-shrink-0" title="Ignored">
+                                                    <div class="flex items-center gap-1 shrink-0">
+                                                        <span v-if="isItemCompleted(gc) && !isItemSkipped(gc)" class="text-[9px] text-emerald-400 bg-emerald-500/10 px-1.5 py-0.5 rounded-full font-semibold uppercase tracking-wider shrink-0">Done</span>
+                                                        <span v-if="isItemSkipped(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-text-placeholder bg-notion-bg-hover font-semibold uppercase tracking-wider shrink-0 pointer-events-auto">Skipped</span>
+                                                        <span v-if="shouldShowYieldBubble(gc)" class="inline-flex items-center justify-center w-5 h-5 rounded-full text-notion-warning bg-notion-warning/10 border border-notion-warning/30 shrink-0" title="Ignored">
                                                             <lucide-icon name="triangle-alert" icon-class="w-3 h-3"></lucide-icon>
                                                         </span>
-                                                        <span v-if="isItemQueued(gc) && !gc.auto_select_ignored && !isItemIgnored(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider flex-shrink-0">Staged</span>
+                                                        <span v-if="isItemQueued(gc) && !gc.auto_select_ignored && !isItemIgnored(gc)" class="inline-flex items-center justify-center min-w-12 px-1.5 py-0.5 rounded-full text-[9px] text-notion-accent bg-notion-accent/10 font-semibold uppercase tracking-wider shrink-0">Staged</span>
                                                     </div>
-                                                    <span v-if="!gc.is_dir" :class="['text-[10px] font-mono w-16 text-right flex-shrink-0 hidden sm:block ml-auto', sizeToneClass(gc.size, 'text-notion-text-placeholder')]">{{ formatSize(gc.size) }}</span>
-                                                    <div v-if="activeIndexers.length > 0 && gc.indexers && Object.keys(gc.indexers).length > 0" class="flex items-center justify-end gap-1 flex-shrink-0 w-[112px] hidden sm:flex">
+                                                    <span v-if="!gc.is_dir" :class="['text-[10px] font-mono w-16 text-right shrink-0 hidden sm:block ml-auto', sizeToneClass(gc.size, 'text-notion-text-placeholder')]">{{ formatSize(gc.size) }}</span>
+                                                    <div v-if="activeIndexers.length > 0 && gc.indexers && Object.keys(gc.indexers).length > 0" class="flex items-center justify-end gap-1 shrink-0 w-[112px] hidden sm:flex">
                                                         <template v-for="idx in activeIndexers" :key="idx.id">
                                                             <span class="infotip-trigger relative inline-flex items-center justify-center w-4 h-4 rounded" :style="{ boxShadow: 'inset 0 0 0 1.5px ' + indexerRingColor(gc, idx.id) }">
                                                                 <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-2.5 h-2.5 object-contain rounded-sm" @error="idx.favicon_url = null" />
@@ -563,7 +563,7 @@
                                                             </span>
                                                         </template>
                                                     </div>
-                                                    <div class="flex items-center gap-0.5 opacity-100 flex-shrink-0 w-[4.75rem] justify-end">
+                                                    <div class="flex items-center gap-0.5 opacity-100 shrink-0 w-[4.75rem] justify-end">
                                                         <button
                                                             type="button"
                                                             @click.stop="correctAnimeCache(gc, getCategoryForItem(gc) !== 'anime')"
@@ -689,21 +689,21 @@
                 <div v-for="(group, gIdx) in groupedQueueItems" :key="group.parentPath" class="queue-group">
                     <!-- Group header (only for multi-item groups) -->
                     <div v-if="group.items.length > 1" class="queue-group-header flex items-center gap-2 px-3 py-1.5 bg-notion-bg-secondary/50 select-none hover:bg-notion-bg-hover transition-colors group/grp">
-                        <div class="cursor-grab active:cursor-grabbing text-notion-text-placeholder hover:text-notion-text-tertiary transition-colors drag-handle flex-shrink-0" title="Drag to reorder">
+                        <div class="cursor-grab active:cursor-grabbing text-notion-text-placeholder hover:text-notion-text-tertiary transition-colors drag-handle shrink-0" title="Drag to reorder">
                             <lucide-icon name="grip-vertical" icon-class="w-4 h-4"></lucide-icon>
                         </div>
                         <div class="flex items-center gap-2 flex-1 min-w-0 cursor-pointer" @click="toggleQueueGroup(group.parentPath)">
-                            <lucide-icon :name="isQueueGroupCollapsed(group.parentPath) ? 'chevron-right' : 'chevron-down'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary flex-shrink-0"></lucide-icon>
-                            <div class="w-5 h-5 rounded flex items-center justify-center bg-notion-accent/10 flex-shrink-0">
+                            <lucide-icon :name="isQueueGroupCollapsed(group.parentPath) ? 'chevron-right' : 'chevron-down'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
+                            <div class="w-5 h-5 rounded flex items-center justify-center bg-notion-accent/10 shrink-0">
                                 <lucide-icon name="folder" icon-class="w-3 h-3 text-notion-accent"></lucide-icon>
                             </div>
-                            <span :class="categoryBadgeClass(group.category)" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase flex-shrink-0">{{ group.category }}</span>
+                            <span :class="categoryBadgeClass(group.category)" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0">{{ group.category }}</span>
                             <p class="text-xs font-medium text-notion-text-primary truncate flex-1 min-w-0">{{ group.parentName }}</p>
                         </div>
                         <!-- Upload plan badge -->
-                        <span v-if="groupUploadPlan(group)" :class="groupUploadPlan(group).classes" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase flex-shrink-0 whitespace-nowrap">{{ groupUploadPlan(group).label }}</span>
-                        <span class="text-[10px] text-notion-text-tertiary font-mono flex-shrink-0">{{ group.items.length }} items</span>
-                        <button @click.stop="removeGroup(group)" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors opacity-0 group-hover/grp:opacity-100 flex-shrink-0" title="Remove all from queue">
+                        <span v-if="groupUploadPlan(group)" :class="groupUploadPlan(group).classes" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase shrink-0 whitespace-nowrap">{{ groupUploadPlan(group).label }}</span>
+                        <span class="text-[10px] text-notion-text-tertiary font-mono shrink-0">{{ group.items.length }} items</span>
+                        <button @click.stop="removeGroup(group)" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors opacity-0 group-hover/grp:opacity-100 shrink-0" title="Remove all from queue">
                             <lucide-icon name="x" icon-class="w-3.5 h-3.5"></lucide-icon>
                         </button>
                     </div>
@@ -715,20 +715,20 @@
                         :data-id="item.id"
                         class="flex items-center gap-3 px-3 py-1.5 bg-notion-bg hover:bg-notion-bg-hover transition-colors group queue-item"
                         :class="{ 'pl-11': group.items.length > 1 }">
-                        <div v-if="group.items.length === 1" class="cursor-grab active:cursor-grabbing text-notion-text-placeholder hover:text-notion-text-tertiary transition-colors drag-handle flex-shrink-0" title="Drag to reorder">
+                        <div v-if="group.items.length === 1" class="cursor-grab active:cursor-grabbing text-notion-text-placeholder hover:text-notion-text-tertiary transition-colors drag-handle shrink-0" title="Drag to reorder">
                             <lucide-icon name="grip-vertical" icon-class="w-4 h-4"></lucide-icon>
                         </div>
-                        <div class="w-5 h-5 rounded flex items-center justify-center bg-notion-bg-hover flex-shrink-0">
+                        <div class="w-5 h-5 rounded flex items-center justify-center bg-notion-bg-hover shrink-0">
                             <span class="text-[10px] font-bold text-notion-text-tertiary">{{ item._queueIndex }}</span>
                         </div>
-                        <span v-if="group.items.length === 1" :class="categoryBadgeClass(getCategoryForItem(item) || item.category)" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase flex-shrink-0">{{ getCategoryForItem(item) || item.category }}</span>
-                        <span v-if="resolvedItemType(item) === 'pack'" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase flex-shrink-0 bg-violet-500/15 text-violet-400">Pack</span>
-                        <span v-else-if="resolvedItemType(item) === 'episode'" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase flex-shrink-0 bg-sky-500/15 text-sky-400">Episode</span>
+                        <span v-if="group.items.length === 1" :class="categoryBadgeClass(getCategoryForItem(item) || item.category)" class="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0">{{ getCategoryForItem(item) || item.category }}</span>
+                        <span v-if="resolvedItemType(item) === 'pack'" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase shrink-0 bg-violet-500/15 text-violet-400">Pack</span>
+                        <span v-else-if="resolvedItemType(item) === 'episode'" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase shrink-0 bg-sky-500/15 text-sky-400">Episode</span>
                         <p class="text-xs text-notion-text-primary truncate flex-1 min-w-0" :title="item.path">{{ item.name }}</p>
-                        <button @click="forceStartItem(item)" class="p-1 rounded hover:bg-notion-accent/20 text-notion-text-placeholder hover:text-notion-accent transition-colors flex-shrink-0" title="Force start this item now">
+                        <button @click="forceStartItem(item)" class="p-1 rounded hover:bg-notion-accent/20 text-notion-text-placeholder hover:text-notion-accent transition-colors shrink-0" title="Force start this item now">
                             <lucide-icon name="play" icon-class="w-3.5 h-3.5"></lucide-icon>
                         </button>
-                        <button @click="removeItem(item.id)" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors flex-shrink-0" title="Remove from queue">
+                        <button @click="removeItem(item.id)" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors shrink-0" title="Remove from queue">
                             <lucide-icon name="x" icon-class="w-3.5 h-3.5"></lucide-icon>
                         </button>
                     </div>
@@ -743,10 +743,10 @@
 <!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
 <div v-if="queueControl.paused && jobQueueEntries.length === 0" class="flex items-center justify-between gap-3 px-4 py-2.5 bg-notion-warning/5 border border-notion-warning/20 rounded-lg">
     <div class="flex items-center gap-2 text-notion-warning text-xs">
-        <lucide-icon name="pause-circle" icon-class="w-4 h-4 flex-shrink-0"></lucide-icon>
+        <lucide-icon name="pause-circle" icon-class="w-4 h-4 shrink-0"></lucide-icon>
         <span>Queue processing is paused. New jobs will not start until resumed.</span>
     </div>
-    <button @click="resumeQueueProcessing()" class="action-btn action-btn--compact action-btn--success flex-shrink-0">
+    <button @click="resumeQueueProcessing()" class="action-btn action-btn--compact action-btn--success shrink-0">
         <lucide-icon name="play" icon-class="w-3.5 h-3.5"></lucide-icon>
         Resume
     </button>
@@ -831,7 +831,7 @@
         <div>
             <transition-group name="job-list" tag="div" class="divide-y divide-notion-divider">
                 <div v-for="job in jobQueueEntries" :key="job.job_id" class="flex items-start gap-4 px-4 py-3 bg-notion-bg hover:bg-notion-bg-hover transition-colors group cursor-pointer" @click="openJobQueueEntry(job)">
-                    <div class="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0" :class="isJobQueueActiveEntry(job) ? 'bg-notion-accent/10 text-notion-accent' : 'bg-notion-bg-hover text-notion-text-secondary'">
+                    <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" :class="isJobQueueActiveEntry(job) ? 'bg-notion-accent/10 text-notion-accent' : 'bg-notion-bg-hover text-notion-text-secondary'">
                         <span v-if="isJobQueueActiveEntry(job)" class="text-[10px] font-bold uppercase tracking-wider">Now</span>
                         <span v-else class="text-xs font-bold">#{{ job._queuePosition }}</span>
                     </div>
@@ -839,7 +839,7 @@
                         <div class="flex items-start justify-between gap-3 min-w-0">
                             <div class="flex items-center gap-2 min-w-0 flex-1">
                                 <span class="text-sm font-medium text-notion-text-primary truncate">{{ jobDisplayName(job) }}</span>
-                                <span :class="jobQueueStatusBadgeClass(job)" class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider flex-shrink-0">{{ jobQueueStatusLabel(job) }}</span>
+                                <span :class="jobQueueStatusBadgeClass(job)" class="rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider shrink-0">{{ jobQueueStatusLabel(job) }}</span>
                                 <span v-if="job.test_mode" class="bg-notion-warning/20 text-notion-warning rounded font-bold px-1.5 py-0.5 text-[10px]">TEST</span>
                             </div>
                         </div>
@@ -857,7 +857,7 @@
                         <div v-if="isJobQueueActiveEntry(job)" class="mt-2 space-y-1 min-w-0">
                             <div class="flex justify-between text-[11px] min-w-0">
                                 <span class="text-notion-text-secondary truncate max-w-[70%]">{{ job.progress || 'Processing...' }}</span>
-                                <span class="text-notion-text-primary font-medium flex-shrink-0 ml-2">{{ jobItemPercent(job) }}</span>
+                                <span class="text-notion-text-primary font-medium shrink-0 ml-2">{{ jobItemPercent(job) }}</span>
                             </div>
                             <div class="h-1.5 bg-notion-bg-secondary rounded-full overflow-hidden">
                                 <div class="h-full bg-notion-accent rounded-full transition-all duration-500 ease-out" :style="{width: jobItemPercent(job)}"></div>
@@ -868,7 +868,7 @@
                             </div>
                         </div>
                     </div>
-                    <div v-if="!isJobQueueActiveEntry(job)" class="flex items-center gap-1 flex-shrink-0 self-start">
+                    <div v-if="!isJobQueueActiveEntry(job)" class="flex items-center gap-1 shrink-0 self-start">
                         <button @click.stop="editJobQueueEntry(job)" class="p-1.5 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors" title="Edit queued job">
                             <lucide-icon name="pencil" icon-class="w-4 h-4"></lucide-icon>
                         </button>
@@ -911,7 +911,7 @@
     <div :class="queueSectionClass('finished')">
         <div class="divide-y divide-notion-divider">
             <div v-for="job in finishedPreview" :key="job.job_id" class="flex items-center gap-3 px-4 py-1.5 bg-notion-bg hover:bg-notion-bg-hover transition-colors group">
-                <div :class="finishedStatusBg(job)" class="w-6 h-6 rounded-lg flex items-center justify-center flex-shrink-0">
+                <div :class="finishedStatusBg(job)" class="w-6 h-6 rounded-lg flex items-center justify-center shrink-0">
                     <lucide-icon :name="getStatusConfig(job.status).icon" :icon-class="'w-3 h-3 ' + getStatusConfig(job.status).color"></lucide-icon>
                 </div>
                 <div class="flex-1 min-w-0">
@@ -939,16 +939,16 @@
                     </div>
                     <div v-if="job.last_error" class="text-[10px] text-notion-error truncate mt-0.5" :title="job.last_error">{{ job.last_error }}</div>
                 </div>
-                <button v-if="(job.items_total || 0) > 0" @click="openCompletedJobModal(job)" class="p-1 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="View all items from this job">
+                <button v-if="(job.items_total || 0) > 0" @click="openCompletedJobModal(job)" class="p-1 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="View all items from this job">
                     <lucide-icon name="list" icon-class="w-3.5 h-3.5"></lucide-icon>
                 </button>
-                <button v-if="job.retry_eligible" @click="retryJob(job)" :disabled="isJobActionPending(job.job_id)" class="p-1 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors disabled:opacity-40 flex-shrink-0" title="Retry Failed Job">
+                <button v-if="job.retry_eligible" @click="retryJob(job)" :disabled="isJobActionPending(job.job_id)" class="p-1 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors disabled:opacity-40 shrink-0" title="Retry Failed Job">
                     <lucide-icon name="rotate-ccw" icon-class="w-3.5 h-3.5"></lucide-icon>
                 </button>
-                <button @click="renameJobInline(job)" class="p-1 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Rename Job">
+                <button @click="renameJobInline(job)" class="p-1 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="Rename Job">
                     <lucide-icon name="pencil" icon-class="w-3.5 h-3.5"></lucide-icon>
                 </button>
-                <button @click="deleteJob(job.job_id)" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Dismiss">
+                <button @click="deleteJob(job.job_id)" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="Dismiss">
                     <lucide-icon name="x" icon-class="w-3.5 h-3.5"></lucide-icon>
                 </button>
             </div>
@@ -973,8 +973,8 @@
             </button>
             <div class="border-t border-notion-divider my-1"></div>
             <button v-for="idx in activeIndexers" :key="idx.id" @click="executeForceUpload(idx.id)" class="w-full px-3 py-1.5 text-xs text-notion-text-primary hover:bg-notion-bg-hover text-left flex items-center gap-2.5 transition-colors">
-                <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-3.5 h-3.5 object-contain flex-shrink-0" @error="idx.favicon_url = null" />
-                <lucide-icon v-else :name="idx.icon || 'database'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary flex-shrink-0"></lucide-icon>
+                <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-3.5 h-3.5 object-contain shrink-0" @error="idx.favicon_url = null" />
+                <lucide-icon v-else :name="idx.icon || 'database'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
                 {{ idx.name }}
             </button>
             <div class="border-t border-notion-divider my-1"></div>
@@ -1025,11 +1025,11 @@
         </div>
         <div v-else>
             <div v-if="activeJobModalJob && activeJobModalJob.current_item" class="flex items-center gap-3 px-4 py-2 border-b border-notion-divider bg-notion-accent/8">
-                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">Now</span>
+                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary shrink-0">Now</span>
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 min-w-0">
                         <p class="text-xs text-notion-text-primary truncate" :title="activeJobModalJob.current_item">{{ activeJobModalJob.current_item }}</p>
-                        <span class="px-1.5 py-0.5 rounded bg-notion-accent/15 text-notion-accent text-[10px] font-bold uppercase flex-shrink-0">Current</span>
+                        <span class="px-1.5 py-0.5 rounded bg-notion-accent/15 text-notion-accent text-[10px] font-bold uppercase shrink-0">Current</span>
                     </div>
                     <p class="text-[10px] text-notion-text-tertiary truncate">In progress and not draggable.</p>
                 </div>
@@ -1050,7 +1050,7 @@
                     <span v-else class="p-1 rounded text-notion-text-tertiary/50">
                         <lucide-icon name="list" icon-class="w-3.5 h-3.5"></lucide-icon>
                     </span>
-                    <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
+                    <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary shrink-0">#{{ item.index || (idx + 1) }}</span>
                     <div class="flex-1 min-w-0">
                         <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
                         <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
@@ -1058,7 +1058,7 @@
                     <button
                         @click.stop="removeActiveJobModalItem(item.path)"
                         :disabled="activeJobModalSaving"
-                        class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors flex-shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                        class="p-1 rounded hover:bg-notion-error/10 text-notion-text-placeholder hover:text-notion-error transition-colors shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
                         title="Remove this remaining item from the active job">
                         <lucide-icon name="x" icon-class="w-3.5 h-3.5"></lucide-icon>
                     </button>
@@ -1102,7 +1102,7 @@
             <div v-else class="divide-y divide-notion-divider">
                 <div v-for="(item, idx) in completedJobModalFilteredItems" :key="item.path" class="flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors">
                     <span class="p-1 rounded text-notion-text-tertiary/50"><lucide-icon name="file" icon-class="w-3.5 h-3.5"></lucide-icon></span>
-                    <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
+                    <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary shrink-0">#{{ item.index || (idx + 1) }}</span>
                     <div class="flex-1 min-w-0">
                         <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
                         <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
@@ -1123,7 +1123,7 @@
     @close="closeQueuedJobModal()">
     <div class="px-4 py-2 border-b border-notion-divider bg-notion-bg">
         <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary flex-shrink-0">Job Name</div>
+            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary shrink-0">Job Name</div>
             <div class="flex items-center gap-1.5 flex-1 min-w-0">
                 <input
                     type="text"
@@ -1148,7 +1148,7 @@
         </div>
 
         <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
-            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary flex-shrink-0">Deferred Start</div>
+            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary shrink-0">Deferred Start</div>
             <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
                 <input type="date" v-model="queuedJobModalDate" class="px-2.5 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none" />
                 <label class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-notion-border bg-notion-bg-secondary text-xs text-notion-text-secondary cursor-pointer">
@@ -1209,7 +1209,7 @@
                 <span class="queued-job-drag-handle p-1 rounded text-notion-text-tertiary hover:text-notion-accent cursor-grab active:cursor-grabbing" :class="(queuedJobModalSaving || queuedJobModalSearch) ? 'opacity-40 pointer-events-none' : ''" title="Drag to reorder">
                     <lucide-icon name="grip-vertical" icon-class="w-3.5 h-3.5"></lucide-icon>
                 </span>
-                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary flex-shrink-0">#{{ item.index || (idx + 1) }}</span>
+                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary shrink-0">#{{ item.index || (idx + 1) }}</span>
                 <div class="flex-1 min-w-0">
                     <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
                     <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
@@ -1271,7 +1271,7 @@
             </div>
 
             <div v-if="bulkPreview.duplicate_check_bypassed" class="flex items-start gap-2 rounded-md border border-notion-warning/30 bg-notion-warning/5 px-3 py-2 text-xs text-notion-warning">
-                <lucide-icon name="triangle-alert" icon-class="w-4 h-4 mt-0.5 flex-shrink-0"></lucide-icon>
+                <lucide-icon name="triangle-alert" icon-class="w-4 h-4 mt-0.5 shrink-0"></lucide-icon>
                 Duplicate checking is bypassed for this run; previously uploaded destinations are included in the ready count.
             </div>
 
@@ -1299,7 +1299,7 @@
                 <div class="rounded-md border border-notion-border divide-y divide-notion-divider max-h-64 overflow-y-auto">
                     <div v-for="item in bulkPreviewNonReadyItems" :key="item.path + ':' + item.outcome" class="px-3 py-2 flex items-start gap-3 bg-notion-bg">
                         <span
-                            class="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase flex-shrink-0"
+                            class="mt-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase shrink-0"
                             :class="item.outcome === 'duplicate' ? 'bg-notion-info/15 text-notion-info' : (item.outcome === 'blocked' ? 'bg-notion-error/15 text-notion-error' : (item.outcome === 'invalid' ? 'bg-notion-warning/15 text-notion-warning' : 'bg-notion-bg-hover text-notion-text-secondary'))">
                             {{ item.outcome }}
                         </span>
@@ -1313,7 +1313,7 @@
             </div>
         </div>
 
-        <div class="px-4 py-3 border-t border-notion-divider flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 flex-shrink-0">
+        <div class="px-4 py-3 border-t border-notion-divider flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shrink-0">
             <p class="text-[10px] text-notion-text-tertiary">
                 {{ bulkPreviewMode === 'staging' ? 'Starting removes runnable items from staging after the job is created.' : 'Starting creates one job; upload rules are rechecked when each item runs.' }}
             </p>
@@ -1385,7 +1385,7 @@
     </template>
     <div class="overflow-y-auto divide-y divide-notion-divider">
         <div v-for="job in finished" :key="job.job_id" class="flex items-center gap-4 px-4 py-2 bg-notion-bg hover:bg-notion-bg-hover transition-colors group">
-            <div :class="finishedStatusBg(job)" class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0">
+            <div :class="finishedStatusBg(job)" class="w-7 h-7 rounded-lg flex items-center justify-center shrink-0">
                 <lucide-icon :name="getStatusConfig(job.status).icon" :icon-class="'w-3.5 h-3.5 ' + getStatusConfig(job.status).color"></lucide-icon>
             </div>
             <div class="flex-1 min-w-0">
@@ -1417,13 +1417,13 @@
                 </div>
                 <div v-if="job.last_error" class="text-[10px] text-notion-error truncate mt-0.5" :title="job.last_error">{{ job.last_error }}</div>
             </div>
-            <button v-if="job.retry_eligible" @click="retryJob(job)" :disabled="isJobActionPending(job.job_id)" class="p-1.5 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors disabled:opacity-40 flex-shrink-0" title="Retry Failed Job">
+            <button v-if="job.retry_eligible" @click="retryJob(job)" :disabled="isJobActionPending(job.job_id)" class="p-1.5 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors disabled:opacity-40 shrink-0" title="Retry Failed Job">
                 <lucide-icon name="rotate-ccw" icon-class="w-4 h-4"></lucide-icon>
             </button>
-            <button @click="renameJobInline(job)" class="p-1.5 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Rename Job">
+            <button @click="renameJobInline(job)" class="p-1.5 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="Rename Job">
                 <lucide-icon name="pencil" icon-class="w-4 h-4"></lucide-icon>
             </button>
-            <button @click="deleteJob(job.job_id)" class="p-1.5 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors opacity-0 group-hover:opacity-100 flex-shrink-0" title="Dismiss">
+            <button @click="deleteJob(job.job_id)" class="p-1.5 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="Dismiss">
                 <lucide-icon name="x" icon-class="w-4 h-4"></lucide-icon>
             </button>
         </div>
