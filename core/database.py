@@ -1312,33 +1312,37 @@ def delete_job_history(job_ids: List[str]) -> int:
 # ==============================================================================
 
 
+def _serialize_stats_history_rows(stats: List[Any]) -> Dict[str, List[Any]]:
+    return {
+        "cpu": [s.cpu_percent or 0 for s in stats],
+        "load": [s.load_avg or 0 for s in stats],
+        "memory": [s.memory_percent or 0 for s in stats],
+        "swap": [s.swap_percent or 0 for s in stats],
+        "disk": [s.disk_percent or 0 for s in stats],
+        "free": [s.disk_free_gb or 0 for s in stats],
+        "disk_read": [s.disk_read_mbps or 0 for s in stats],
+        "disk_write": [s.disk_write_mbps or 0 for s in stats],
+        "upload_mbps": [s.upload_mbps or 0 for s in stats],
+        "download_mbps": [s.download_mbps or 0 for s in stats],
+        "total_sent_mb": [s.total_sent_mb or 0 for s in stats],
+        "total_recv_mb": [s.total_recv_mb or 0 for s in stats],
+        "connections": [s.connections or 0 for s in stats],
+        # Errors
+        "network_errors": [
+            (s.errors_in or 0) + (s.errors_out or 0) + (s.drops_in or 0) + (s.drops_out or 0) for s in stats
+        ],
+        # Timestamps
+        "recorded_at": [s.recorded_at.isoformat() for s in stats],
+    }
+
+
 def get_system_stats_history(limit: int = 100) -> Dict[str, List[Any]]:
     """Retrieve history for dashboard charts."""
     try:
         with session_scope() as session:
             stats = session.query(SystemStat).order_by(desc(SystemStat.recorded_at)).limit(limit).all()
             stats.reverse()
-            return {
-                "cpu": [s.cpu_percent or 0 for s in stats],
-                "load": [s.load_avg or 0 for s in stats],
-                "memory": [s.memory_percent or 0 for s in stats],
-                "swap": [s.swap_percent or 0 for s in stats],
-                "disk": [s.disk_percent or 0 for s in stats],
-                "free": [s.disk_free_gb or 0 for s in stats],
-                "disk_read": [s.disk_read_mbps or 0 for s in stats],
-                "disk_write": [s.disk_write_mbps or 0 for s in stats],
-                "upload_mbps": [s.upload_mbps or 0 for s in stats],
-                "download_mbps": [s.download_mbps or 0 for s in stats],
-                "total_sent_mb": [s.total_sent_mb or 0 for s in stats],
-                "total_recv_mb": [s.total_recv_mb or 0 for s in stats],
-                "connections": [s.connections or 0 for s in stats],
-                # Errors
-                "network_errors": [
-                    (s.errors_in or 0) + (s.errors_out or 0) + (s.drops_in or 0) + (s.drops_out or 0) for s in stats
-                ],
-                # Timestamps
-                "recorded_at": [s.recorded_at.isoformat() for s in stats],
-            }
+            return _serialize_stats_history_rows(stats)
     except Exception as e:
         logger.error(f"Failed to fetch system stats history: {e}")
         return _empty_stats_history()

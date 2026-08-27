@@ -317,17 +317,7 @@ class QueueServiceMixin:
             path = Path(path_text) if path_text else Path(".")
             parent = path.parent if path.is_file() else None
             if parent in pack_parents and parent not in inserted:
-                injected.append(
-                    {
-                        "path": str(parent),
-                        "name": parent.name,
-                        "category": "tv",
-                        "detected_category": "tv",
-                        "itype": "TV Show",
-                        "is_dir": True,
-                        "queue_category_source": "inferred-season-pack",
-                    }
-                )
+                injected.append(cls._build_inferred_pack_row(parent))
                 inserted.add(parent)
             injected.append(item)
             # Expand submitted pack folder items with their child episode files
@@ -336,37 +326,64 @@ class QueueServiceMixin:
                 and path.is_dir()
                 and str(item.get("category") or "").strip().lower() in TV_CATS
             ):
-                try:
-                    cat = str(item.get("category") or "tv").strip().lower()
-                    child_eps = sorted(
-                        (
-                            child for child in path.iterdir()
-                            if child.is_file()
-                            and child.suffix.lower() in _VIDEO_EXTS
-                            and _EPISODE_RE.search(child.name)
-                            and os.path.normpath(str(child)) not in episodes_already_included
-                        ),
-                        key=lambda p: p.name.lower(),
-                    )
-                    for ep in child_eps:
-                        injected.append({
-                            "path": str(ep),
-                            "name": ep.name,
-                            "category": cat,
-                            "detected_category": cat,
-                            "itype": "TV Episode",
-                            "is_dir": False,
-                            "queue_category_source": "inferred-from-pack",
-                        })
-                        episodes_already_included.add(os.path.normpath(str(ep)))
-                    if child_eps:
-                        logger.info(f"[QUEUE-START] expanded {path.name}: {len(child_eps)} episode(s) injected")
-                except OSError:
-                    pass
+                cat = str(item.get("category") or "tv").strip().lower()
+                injected.extend(
+                    cls._expand_queue_pack_children(path, cat, _VIDEO_EXTS, _EPISODE_RE, episodes_already_included)
+                )
 
         if inserted:
             logger.info(f"[QUEUE-START] inferred {len(inserted)} TV season pack row(s) from staged episodes")
         return injected
+
+    @staticmethod
+    def _build_inferred_pack_row(parent: Path) -> dict[str, Any]:
+        return {
+            "path": str(parent),
+            "name": parent.name,
+            "category": "tv",
+            "detected_category": "tv",
+            "itype": "TV Show",
+            "is_dir": True,
+            "queue_category_source": "inferred-season-pack",
+        }
+
+    @staticmethod
+    def _expand_queue_pack_children(
+        path: Path,
+        cat: str,
+        video_exts: set[str],
+        episode_re: Any,
+        episodes_already_included: set[str],
+    ) -> list[dict[str, Any]]:
+        """Build injected episode rows for video files under a submitted pack folder."""
+        expanded: list[dict[str, Any]] = []
+        try:
+            child_eps = sorted(
+                (
+                    child for child in path.iterdir()
+                    if child.is_file()
+                    and child.suffix.lower() in video_exts
+                    and episode_re.search(child.name)
+                    and os.path.normpath(str(child)) not in episodes_already_included
+                ),
+                key=lambda p: p.name.lower(),
+            )
+            for ep in child_eps:
+                expanded.append({
+                    "path": str(ep),
+                    "name": ep.name,
+                    "category": cat,
+                    "detected_category": cat,
+                    "itype": "TV Episode",
+                    "is_dir": False,
+                    "queue_category_source": "inferred-from-pack",
+                })
+                episodes_already_included.add(os.path.normpath(str(ep)))
+            if child_eps:
+                logger.info(f"[QUEUE-START] expanded {path.name}: {len(child_eps)} episode(s) injected")
+        except OSError:
+            pass
+        return expanded
 
     @staticmethod
     def _build_processing_request(category: str, kwargs: dict[str, Any], paths: list[str]) -> ProcessingJobRequest:
@@ -721,6 +738,41 @@ class QueueServiceMixin:
             force=request.force,
         )
 
+    @staticmethod
+    def _clone_request_with_paths(
+        request: ProcessingJobRequest,
+        paths: list[str],
+        hints: list[dict[str, Any]],
+    ) -> ProcessingJobRequest:
+        return ProcessingJobRequest(
+            category=request.category,
+            limit=request.limit,
+            skip_packs=request.skip_packs,
+            skip_episodes=request.skip_episodes,
+            test_mode=request.test_mode,
+            target_indexer_id=request.target_indexer_id,
+            target_indexer_ids=request.target_indexer_ids,
+            paths=tuple(paths),
+            item_hints=tuple(hints),
+            enable_duplicate_check=request.enable_duplicate_check,
+            force=request.force,
+        )
+
+    @classmethod
+    def _dedup_result_or_original(
+        cls,
+        request: ProcessingJobRequest,
+        original_paths: list[str],
+        deduped_paths: list[str],
+        deduped_hints: list[dict[str, Any]],
+    ) -> ProcessingJobRequest:
+        if len(deduped_paths) == len(original_paths):
+            return request
+        logger.info(
+            f"[QUEUE-CREATE] collapsed {len(original_paths) - len(deduped_paths)} duplicate path identity(s) before job start"
+        )
+        return cls._clone_request_with_paths(request, deduped_paths, deduped_hints)
+
     @classmethod
     def _collapse_overlapping_tv_request_paths(cls, request: ProcessingJobRequest) -> ProcessingJobRequest:
         """Drop ancestor TV directories when explicit child season folders are also selected."""
@@ -748,24 +800,7 @@ class QueueServiceMixin:
                 deduped_hints.append(hint)
 
         if len(deduped_paths) < 2:
-            if len(deduped_paths) != len(paths):
-                logger.info(
-                    f"[QUEUE-CREATE] collapsed {len(paths) - len(deduped_paths)} duplicate path identity(s) before job start"
-                )
-                return ProcessingJobRequest(
-                    category=request.category,
-                    limit=request.limit,
-                    skip_packs=request.skip_packs,
-                    skip_episodes=request.skip_episodes,
-                    test_mode=request.test_mode,
-                    target_indexer_id=request.target_indexer_id,
-                    target_indexer_ids=request.target_indexer_ids,
-                    paths=tuple(deduped_paths),
-                    item_hints=tuple(deduped_hints),
-                    enable_duplicate_check=request.enable_duplicate_check,
-                    force=request.force,
-                )
-            return request
+            return cls._dedup_result_or_original(request, paths, deduped_paths, deduped_hints)
 
         tv_dir_entries: list[tuple[int, Path]] = []
         for idx, path_text in enumerate(deduped_paths):
@@ -782,24 +817,7 @@ class QueueServiceMixin:
             tv_dir_entries.append((idx, path))
 
         if len(tv_dir_entries) < 2:
-            if len(deduped_paths) != len(paths):
-                logger.info(
-                    f"[QUEUE-CREATE] collapsed {len(paths) - len(deduped_paths)} duplicate path identity(s) before job start"
-                )
-                return ProcessingJobRequest(
-                    category=request.category,
-                    limit=request.limit,
-                    skip_packs=request.skip_packs,
-                    skip_episodes=request.skip_episodes,
-                    test_mode=request.test_mode,
-                    target_indexer_id=request.target_indexer_id,
-                    target_indexer_ids=request.target_indexer_ids,
-                    paths=tuple(deduped_paths),
-                    item_hints=tuple(deduped_hints),
-                    enable_duplicate_check=request.enable_duplicate_check,
-                    force=request.force,
-                )
-            return request
+            return cls._dedup_result_or_original(request, paths, deduped_paths, deduped_hints)
 
         try:
             resolved_entries = [(idx, path.resolve()) for idx, path in tv_dir_entries]
@@ -820,24 +838,7 @@ class QueueServiceMixin:
                     break
 
         if not drop_indices:
-            if len(deduped_paths) != len(paths):
-                logger.info(
-                    f"[QUEUE-CREATE] collapsed {len(paths) - len(deduped_paths)} duplicate path identity(s) before job start"
-                )
-                return ProcessingJobRequest(
-                    category=request.category,
-                    limit=request.limit,
-                    skip_packs=request.skip_packs,
-                    skip_episodes=request.skip_episodes,
-                    test_mode=request.test_mode,
-                    target_indexer_id=request.target_indexer_id,
-                    target_indexer_ids=request.target_indexer_ids,
-                    paths=tuple(deduped_paths),
-                    item_hints=tuple(deduped_hints),
-                    enable_duplicate_check=request.enable_duplicate_check,
-                    force=request.force,
-                )
-            return request
+            return cls._dedup_result_or_original(request, paths, deduped_paths, deduped_hints)
 
         new_paths: list[str] = []
         new_hints: list[dict[str, Any]] = []
@@ -852,19 +853,7 @@ class QueueServiceMixin:
         logger.info(
             f"[QUEUE-CREATE] collapsed {len(paths) - len(new_paths)} overlapping ancestor/duplicate TV path(s) before starting job"
         )
-        return ProcessingJobRequest(
-            category=request.category,
-            limit=request.limit,
-            skip_packs=request.skip_packs,
-            skip_episodes=request.skip_episodes,
-            test_mode=request.test_mode,
-            target_indexer_id=request.target_indexer_id,
-            target_indexer_ids=request.target_indexer_ids,
-            paths=tuple(new_paths),
-            item_hints=tuple(new_hints),
-            enable_duplicate_check=request.enable_duplicate_check,
-            force=request.force,
-        )
+        return cls._clone_request_with_paths(request, new_paths, new_hints)
 
     def start_processing_job_requests(self, requests: list[ProcessingJobRequest], **job_kwargs: Any) -> list[str]:
         """Start multiple normalized processing job requests."""
@@ -991,6 +980,23 @@ class QueueServiceMixin:
         dt = cls._parse_iso_datetime_utc(raw)
         return dt.isoformat() if dt else None
 
+    def _dedupe_recovery_paths(self, job: dict[str, Any]) -> list[str]:
+        """Merge the active item, in-flight items, and remaining targets into one deduped path order."""
+        recovery_paths = [
+            str(job.get("_current_item_path") or "").strip(),
+            *self._normalize_paths(job.get("_inflight_item_paths")),
+            *self._get_job_target_paths(job),
+        ]
+        deduped: list[str] = []
+        seen_path_identities: set[str] = set()
+        for recovery_path in recovery_paths:
+            identity = self._normalize_job_path_identity(recovery_path)
+            if not identity or identity in seen_path_identities:
+                continue
+            seen_path_identities.add(identity)
+            deduped.append(recovery_path)
+        return deduped
+
     def _serialize_job_for_persistence(self, job: dict[str, Any]) -> Optional[dict[str, Any]]:
         status = str(job.get("status", "queued"))
         if status == "stopped":
@@ -1006,20 +1012,7 @@ class QueueServiceMixin:
         if not job_id:
             return None
 
-        paths = self._get_job_target_paths(job)
-        recovery_paths = [
-            str(job.get("_current_item_path") or "").strip(),
-            *self._normalize_paths(job.get("_inflight_item_paths")),
-            *paths,
-        ]
-        paths = []
-        seen_path_identities: set[str] = set()
-        for recovery_path in recovery_paths:
-            identity = self._normalize_job_path_identity(recovery_path)
-            if not identity or identity in seen_path_identities:
-                continue
-            seen_path_identities.add(identity)
-            paths.append(recovery_path)
+        paths = self._dedupe_recovery_paths(job)
 
         payload = {
             "job_id": job_id,
@@ -2617,6 +2610,42 @@ class QueueServiceMixin:
     def start_queue(self, **kwargs: Any) -> list[str]:
         return self.start_queue_with_details(**kwargs)["job_ids"]
 
+    def _raise_no_runnable_queue_items(self, prepared: Any) -> None:
+        skipped_reasons = [
+            f"{self._queue_item_label(item, idx)} ({reason})"
+            for idx, (item, reason) in enumerate(prepared.skipped_items, start=1)
+        ]
+        detail = "Queue start failed: no runnable staged items"
+        if skipped_reasons:
+            detail = f"{detail}. " + "; ".join(skipped_reasons[:5])
+            if len(skipped_reasons) > 5:
+                detail = f"{detail}; and {len(skipped_reasons) - 5} more"
+        log_info(f"[QUEUE-START] {detail}", "ERROR")
+        raise ValueError(detail)
+
+    def _remove_started_queue_items(self, runnable_ids: set[int], job_id: str) -> None:
+        try:
+            removed_count = database.db_remove_queue_items(sorted(runnable_ids))
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning(f"[QUEUE-START] Job {job_id} started but staged-item cleanup failed: {exc}")
+            return
+        if removed_count != len(runnable_ids):
+            logger.warning(
+                f"[QUEUE-START] Expected to remove {len(runnable_ids)} staged item(s) after job creation, "
+                f"but removed {removed_count}"
+            )
+        with self._lock:
+
+            def _queue_item_id(value: Any) -> Optional[int]:
+                text = str(value or "").strip()
+                return int(text) if re.fullmatch(r"\d+", text) else None
+
+            self._queue_items = [
+                queue_item
+                for queue_item in self._queue_items
+                if _queue_item_id(queue_item.get("id")) not in runnable_ids
+            ]
+
     def start_queue_with_details(self, **kwargs: Any) -> dict[str, Any]:
         with self._lock:
             if not self._queue_items:
@@ -2641,17 +2670,7 @@ class QueueServiceMixin:
             )
 
         if not prepared.runnable_items:
-            skipped_reasons = [
-                f"{self._queue_item_label(item, idx)} ({reason})"
-                for idx, (item, reason) in enumerate(prepared.skipped_items, start=1)
-            ]
-            detail = "Queue start failed: no runnable staged items"
-            if skipped_reasons:
-                detail = f"{detail}. " + "; ".join(skipped_reasons[:5])
-                if len(skipped_reasons) > 5:
-                    detail = f"{detail}; and {len(skipped_reasons) - 5} more"
-            log_info(f"[QUEUE-START] {detail}", "ERROR")
-            raise ValueError(detail)
+            self._raise_no_runnable_queue_items(prepared)
 
         runnable_ids = {
             int(item["id"])
@@ -2681,27 +2700,7 @@ class QueueServiceMixin:
             source=str(kwargs.get("source") or "queue-start"),
         )
         if runnable_ids:
-            try:
-                removed_count = database.db_remove_queue_items(sorted(runnable_ids))
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                logger.warning(f"[QUEUE-START] Job {job_id} started but staged-item cleanup failed: {exc}")
-            else:
-                if removed_count != len(runnable_ids):
-                    logger.warning(
-                        f"[QUEUE-START] Expected to remove {len(runnable_ids)} staged item(s) after job creation, "
-                        f"but removed {removed_count}"
-                    )
-                with self._lock:
-
-                    def _queue_item_id(value: Any) -> Optional[int]:
-                        text = str(value or "").strip()
-                        return int(text) if re.fullmatch(r"\d+", text) else None
-
-                    self._queue_items = [
-                        queue_item
-                        for queue_item in self._queue_items
-                        if _queue_item_id(queue_item.get("id")) not in runnable_ids
-                    ]
+            self._remove_started_queue_items(runnable_ids, job_id)
         remaining_staged = len(self.get_queue_items())
         started_items = len(prepared.runnable_items)
         skipped_items = len(prepared.skipped_items)

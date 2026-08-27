@@ -686,16 +686,14 @@ def _video_classification(
     )
 
 
-def classify_video_name_result(
+def _classify_by_explicit_or_anime_hint(
     name: str,
-    folder_category: str = "",
-    *,
-    anime_lookup: Optional[Callable[[str], Optional[bool]]] = None,
-    explicit_category_hint: str = "",
-    explicit_itype_hint: str = "",
-) -> VideoClassificationResult:
-    """Classify one video name without silently converting unknowns to movies."""
-    folder_hint = str(folder_category or "").strip().lower()
+    folder_hint: str,
+    anime_lookup: Optional[Callable[[str], Optional[bool]]],
+    explicit_category_hint: str,
+    explicit_itype_hint: str,
+) -> Optional[VideoClassificationResult]:
+    """Resolve classification from an explicit user category or an anime-cache/folder hint, if any applies."""
     # A category selected by the user is authoritative.  The accompanying
     # display type can be stale after a UI category change, so it must not
     # reverse that explicit choice.
@@ -720,6 +718,24 @@ def classify_video_name_result(
         return _video_classification("anime", "Anime", "strong", "Configured folder", "anime folder")
     if folder_hint in {"movie", "movies"} and not _matches_episode_pattern(name, anime_mode=True):
         return _video_classification("movies", "Movie", "strong", "Configured folder", "movies folder")
+    return None
+
+
+def classify_video_name_result(
+    name: str,
+    folder_category: str = "",
+    *,
+    anime_lookup: Optional[Callable[[str], Optional[bool]]] = None,
+    explicit_category_hint: str = "",
+    explicit_itype_hint: str = "",
+) -> VideoClassificationResult:
+    """Classify one video name without silently converting unknowns to movies."""
+    folder_hint = str(folder_category or "").strip().lower()
+    hinted = _classify_by_explicit_or_anime_hint(
+        name, folder_hint, anime_lookup, explicit_category_hint, explicit_itype_hint
+    )
+    if hinted is not None:
+        return hinted
     if _matches_episode_pattern(name, include_guessit=False):
         return _video_classification("tv", "TV Show", "strong", "Episode pattern", "episode token")
     if _DATE_EPISODE_RE.search(name):
@@ -1600,6 +1616,51 @@ class _ExplicitVideoState:
     series_like: bool
 
 
+def _resolve_strict_tv_pack(
+    entry: Path,
+    video_files: Tuple[Path, ...],
+    explicit_selection: str,
+    folder_hint: str,
+    category_hint: str,
+    itype_hint: str,
+) -> bool:
+    if not (entry.is_dir() and video_files):
+        return False
+    if explicit_selection:
+        return explicit_selection == "tv"
+    return bool(
+        looks_like_tv_name(entry.name)
+        or folder_hint == "tv"
+        or _coerce_category_hint(category_hint) == "tv"
+        or _hint_category_from_itype(itype_hint) == "tv"
+    )
+
+
+def _resolve_series_like(
+    entry: Path,
+    video_files: Tuple[Path, ...],
+    leaf_video_files: Tuple[Path, ...],
+    episodic_files: Tuple[Path, ...],
+    video_names: List[str],
+    video_extensions: Set[str],
+    entry_classification: VideoClassificationResult,
+    tv_context: bool,
+) -> bool:
+    return bool(
+        _matches_episode_pattern(entry.name)
+        or episodic_files
+        or entry_classification.category == "tv"
+        or _has_related_video_files(video_names)
+        or (entry.suffix.lower() in video_extensions and (looks_like_tv_name(entry.name) or tv_context))
+        or _has_nested_tv_context(entry, video_files)
+        or (
+            entry.is_dir()
+            and bool(video_files or leaf_video_files)
+            and (looks_like_tv_name(entry.name) or tv_context)
+        )
+    )
+
+
 def _build_explicit_video_state(
     entry: Path,
     *,
@@ -1623,17 +1684,8 @@ def _build_explicit_video_state(
         if respect_explicit_hint
         else ""
     )
-    strict_tv_pack = bool(
-        entry.is_dir()
-        and video_files
-        and (
-            explicit_selection == "tv"
-            if explicit_selection
-            else looks_like_tv_name(entry.name)
-            or folder_hint == "tv"
-            or _coerce_category_hint(category_hint) == "tv"
-            or _hint_category_from_itype(itype_hint) == "tv"
-        )
+    strict_tv_pack = _resolve_strict_tv_pack(
+        entry, video_files, explicit_selection, folder_hint, category_hint, itype_hint
     )
     episode_queue_paths, non_episode_files = _resolve_series_queue_paths(
         entry,
@@ -1662,18 +1714,9 @@ def _build_explicit_video_state(
         explicit_category_hint=category_hint if respect_explicit_hint else "",
         explicit_itype_hint=itype_hint if respect_explicit_hint else "",
     )
-    series_like = bool(
-        _matches_episode_pattern(entry.name)
-        or episodic_files
-        or entry_classification.category == "tv"
-        or _has_related_video_files(video_names)
-        or (entry.suffix.lower() in video_extensions and (looks_like_tv_name(entry.name) or tv_context))
-        or _has_nested_tv_context(entry, video_files)
-        or (
-            entry.is_dir()
-            and bool(video_files or leaf_video_files)
-            and (looks_like_tv_name(entry.name) or tv_context)
-        )
+    series_like = _resolve_series_like(
+        entry, video_files, leaf_video_files, episodic_files, video_names, video_extensions,
+        entry_classification, tv_context,
     )
     return _ExplicitVideoState(
         entry=entry,

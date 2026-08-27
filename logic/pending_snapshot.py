@@ -789,6 +789,51 @@ def _row_source_exempt(node: Dict[str, Any]) -> bool:
     }
 
 
+def _resolve_node_ignored_reason(node: Dict[str, Any], ignored_reason: Optional[str]) -> str:
+    if (
+        ignored_reason
+        and _row_source_exempt(node)
+        and ignored_reason.lower().startswith("missing media source")
+    ):
+        return ""
+    return ignored_reason or ""
+
+
+def _annotate_selection_node(
+    node: Dict[str, Any],
+    node_identity: str,
+    selectable: Set[str],
+    ignored: Dict[str, str],
+    child_selected: bool,
+) -> bool:
+    """Set auto-select fields on one tree node; returns whether it (or a descendant) is selected."""
+    ignored_reason = _resolve_node_ignored_reason(node, ignored.get(node_identity))
+    node_selected = node_identity in selectable
+    # A pack/folder is valid (selectable) if it has ≥1 valid episode child
+    is_dir = bool(node.get("is_dir"))
+    children = [c for c in node.get("children", []) or [] if isinstance(c, dict)]
+    is_leaf_file = not is_dir and not children
+    leaf_fallback_selected = is_leaf_file and not ignored_reason
+    if is_dir and child_selected and ignored_reason:
+        ignored_reason = ""
+    effectively_selected = node_selected or leaf_fallback_selected or (is_dir and child_selected)
+
+    node["auto_selectable"] = bool(effectively_selected)
+    node["auto_select_ignored"] = bool(ignored_reason)
+    # Track whether this directory became selectable via its children
+    # (pack folder) vs being directly in queue_paths (movie folder).
+    if not node_selected and is_dir and child_selected:
+        node["_pack_via_children"] = True
+    if ignored_reason:
+        node["auto_select_reason"] = ignored_reason
+    elif child_selected and not node_selected and not is_dir:
+        node["auto_select_reason"] = "Selectable descendants only"
+    else:
+        node.pop("auto_select_reason", None)
+
+    return node_selected or child_selected or leaf_fallback_selected
+
+
 def _stamp_tree_selection_state(item: Dict[str, Any], resolution: Any) -> bool:
     """Annotate tree nodes with auto-select metadata from explicit-path resolution."""
     selectable = {_selection_path_identity(path) for path in getattr(resolution, "queue_paths", ())}
@@ -798,39 +843,8 @@ def _stamp_tree_selection_state(item: Dict[str, Any], resolution: Any) -> bool:
         child_selected = False
         for child in node.get("children", []) or []:
             child_selected = visit(child) or child_selected
-
         node_identity = _selection_path_identity(node.get("path", ""))
-        ignored_reason = ignored.get(node_identity)
-        if (
-            ignored_reason
-            and _row_source_exempt(node)
-            and ignored_reason.lower().startswith("missing media source")
-        ):
-            ignored_reason = ""
-        node_selected = node_identity in selectable
-        # A pack/folder is valid (selectable) if it has ≥1 valid episode child
-        is_dir = bool(node.get("is_dir"))
-        children = [c for c in node.get("children", []) or [] if isinstance(c, dict)]
-        is_leaf_file = not is_dir and not children
-        leaf_fallback_selected = is_leaf_file and not ignored_reason
-        if is_dir and child_selected and ignored_reason:
-            ignored_reason = ""
-        effectively_selected = node_selected or leaf_fallback_selected or (is_dir and child_selected)
-
-        node["auto_selectable"] = bool(effectively_selected)
-        node["auto_select_ignored"] = bool(ignored_reason)
-        # Track whether this directory became selectable via its children
-        # (pack folder) vs being directly in queue_paths (movie folder).
-        if not node_selected and is_dir and child_selected:
-            node["_pack_via_children"] = True
-        if ignored_reason:
-            node["auto_select_reason"] = ignored_reason
-        elif child_selected and not node_selected and not is_dir:
-            node["auto_select_reason"] = "Selectable descendants only"
-        else:
-            node.pop("auto_select_reason", None)
-
-        return node_selected or child_selected or leaf_fallback_selected
+        return _annotate_selection_node(node, node_identity, selectable, ignored, child_selected)
 
     has_selectable = visit(item)
     if not has_selectable and ignored:
@@ -877,37 +891,34 @@ def _direct_indexers_of(node: Dict[str, Any]) -> Dict[str, Any]:
     return raw if isinstance(raw, dict) else {}
 
 
-def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
-    children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
-    for child in children:
-        _rollup_external_completion(child, active_ids)
-
-    if node.get("auto_select_ignored"):
-        node["skipped"] = True
-        node["completed"] = False
-        if active_ids:
-            direct_indexers = _direct_indexers_of(node)
-            node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
-        return
-
-    if not children:
+def _rollup_ignored_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
+    node["skipped"] = True
+    node["completed"] = False
+    if active_ids:
         direct_indexers = _direct_indexers_of(node)
-        indexers = direct_indexers or (node.get("indexers", {}) if isinstance(node.get("indexers"), dict) else {})
-        if active_ids:
-            node["indexers"] = {idx_id: bool(indexers.get(idx_id, False)) for idx_id in active_ids}
-        node["completed"] = bool(active_ids) and bool(indexers) and all(indexers.values())
-        return
+        node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
 
+
+def _rollup_leaf_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
     direct_indexers = _direct_indexers_of(node)
-    if node.get("is_dir") and node.get("auto_selectable") and not node.get("_pack_via_children"):
-        if active_ids:
-            node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
-            node["completed"] = bool(node["indexers"]) and all(node["indexers"].values())
-        else:
-            node["completed"] = False
-        return
+    indexers = direct_indexers or (node.get("indexers", {}) if isinstance(node.get("indexers"), dict) else {})
+    if active_ids:
+        node["indexers"] = {idx_id: bool(indexers.get(idx_id, False)) for idx_id in active_ids}
+    node["completed"] = bool(active_ids) and bool(indexers) and all(indexers.values())
 
-    required_children = [child for child in children if not child.get("auto_select_ignored")]
+
+def _rollup_pack_self_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
+    direct_indexers = _direct_indexers_of(node)
+    if active_ids:
+        node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
+        node["completed"] = bool(node["indexers"]) and all(node["indexers"].values())
+    else:
+        node["completed"] = False
+
+
+def _rollup_children_completion(
+    node: Dict[str, Any], required_children: List[Dict[str, Any]], active_ids: List[str]
+) -> None:
     if not required_children:
         if active_ids:
             node["indexers"] = {idx_id: False for idx_id in active_ids}
@@ -924,6 +935,27 @@ def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> 
         node["completed"] = all(node["indexers"].values())
     else:
         node["completed"] = all(bool(child.get("completed")) for child in required_children)
+
+
+def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
+    children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
+    for child in children:
+        _rollup_external_completion(child, active_ids)
+
+    if node.get("auto_select_ignored"):
+        _rollup_ignored_completion(node, active_ids)
+        return
+
+    if not children:
+        _rollup_leaf_completion(node, active_ids)
+        return
+
+    if node.get("is_dir") and node.get("auto_selectable") and not node.get("_pack_via_children"):
+        _rollup_pack_self_completion(node, active_ids)
+        return
+
+    required_children = [child for child in children if not child.get("auto_select_ignored")]
+    _rollup_children_completion(node, required_children, active_ids)
 
 
 def _propagate_pack_completion_down(node: Dict[str, Any], inherited_indexers: Optional[Dict[str, bool]] = None) -> None:
