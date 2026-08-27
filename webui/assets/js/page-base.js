@@ -1074,9 +1074,9 @@ export function createVuePage(pageOptions = {}) {
                 if (isPrompt && typeof target.select === 'function') target.select();
             });
 
-            return new Promise((resolve) => {
-                this._confirmResolver = resolve;
-            });
+            const { promise, resolve } = Promise.withResolvers();
+            this._confirmResolver = resolve;
+            return promise;
         },
 
         _settleConfirmDialog(accepted) {
