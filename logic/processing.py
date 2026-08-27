@@ -2461,6 +2461,49 @@ def _run_single_upload_flow(
                 pass
 
 
+def _item_exceeds_size_limit(path: Path, conf: Any, item_size_gb: float, name: str) -> bool:
+    """Log + report whether `path` exceeds the configured folder/file size
+    limit. Extracted from process_single to keep its own branching down;
+    same behavior (including the log side effect) as before extraction."""
+    if path.is_dir() and getattr(conf, "folder_size_limit_enabled", True):
+        folder_limit = getattr(conf, "folder_size_limit_gb", 99) or 0
+        if folder_limit and item_size_gb > folder_limit:
+            log_info(
+                f"REJECTED: '{name}' ({item_size_gb:.1f} GB) exceeds folder size limit of {folder_limit} GB",
+                "ERROR",
+            )
+            return True
+
+    if path.is_file() and getattr(conf, "file_size_limit_enabled", True):
+        file_limit = getattr(conf, "file_size_limit_gb", 0) or 0
+        if file_limit and item_size_gb > file_limit:
+            log_info(
+                f"REJECTED: '{name}' ({item_size_gb:.1f} GB) exceeds file size limit of {file_limit} GB",
+                "ERROR",
+            )
+            return True
+
+    return False
+
+
+def _resolve_target_indexers_for_single(
+    conf: Any,
+    target_indexer_id: Optional[str],
+    target_indexer_ids: Optional[List[str]],
+):
+    """Resolve + log-on-empty the selected indexers for process_single.
+    Extracted to keep process_single's own branching down; returns None
+    (having already logged) where the caller previously returned 2."""
+    all_indexers = _selected_indexers(conf, target_indexer_id, target_indexer_ids)
+    if not all_indexers:
+        if target_indexer_ids:
+            log_info("Selected indexers were not found or are not enabled.")
+        elif target_indexer_id:
+            log_info(f"Indexer '{target_indexer_id}' not found or not enabled.")
+        return None
+    return all_indexers
+
+
 def process_single(
     path: Path,
     force: bool = False,
@@ -2488,30 +2531,11 @@ def process_single(
     item_size_bytes = validated_item_size_bytes if validated_item_size_bytes is not None else _live_size_bytes(path)
     item_size_gb = item_size_bytes / _ONE_GIB
 
-    if path.is_dir() and getattr(conf, "folder_size_limit_enabled", True):
-        folder_limit = getattr(conf, "folder_size_limit_gb", 99) or 0
-        if folder_limit and item_size_gb > folder_limit:
-            log_info(
-                f"REJECTED: '{name}' ({item_size_gb:.1f} GB) exceeds folder size limit of {folder_limit} GB",
-                "ERROR",
-            )
-            return 1  # treat as skip
+    if _item_exceeds_size_limit(path, conf, item_size_gb, name):
+        return 1  # treat as skip
 
-    if path.is_file() and getattr(conf, "file_size_limit_enabled", True):
-        file_limit = getattr(conf, "file_size_limit_gb", 0) or 0
-        if file_limit and item_size_gb > file_limit:
-            log_info(
-                f"REJECTED: '{name}' ({item_size_gb:.1f} GB) exceeds file size limit of {file_limit} GB",
-                "ERROR",
-            )
-            return 1  # treat as skip
-
-    all_indexers = _selected_indexers(conf, target_indexer_id, target_indexer_ids)
-    if not all_indexers:
-        if target_indexer_ids:
-            log_info("Selected indexers were not found or are not enabled.")
-        elif target_indexer_id:
-            log_info(f"Indexer '{target_indexer_id}' not found or not enabled.")
+    all_indexers = _resolve_target_indexers_for_single(conf, target_indexer_id, target_indexer_ids)
+    if all_indexers is None:
         return 2
 
     indexer_ids = [idx.id for idx in all_indexers]

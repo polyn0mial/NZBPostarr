@@ -19,6 +19,17 @@ var FILTER_MODE_OPTIONS = [
   { value: "hideIgnored", label: "Hide Ignored" }
 ];
 var SESSION_CACHE_MAX_BYTES = 2e6;
+function normalizeExtChild(child, inheritedCategory, normalizePathKey) {
+  if (!child || typeof child !== "object") return;
+  if (!child.key && child.path) {
+    child.key = `path:${normalizePathKey(child.path)}`;
+  }
+  child.files = [];
+  const childCategory = child.detected_category || child.category || inheritedCategory || "";
+  child.assigned_category_safe = childCategory;
+  if (!child.detected_category && childCategory) child.detected_category = childCategory;
+}
+
 function deepFreezePendingTree(items) {
   if (!items || typeof items !== "object") return items;
   const visit = (node) => {
@@ -769,9 +780,20 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         this.manualExternalCategories,
         this.skipFiles
       ];
+      const flatByCat = this._buildFlatByCatIndex(items);
+      const { extTopByGroupKey, extChildrenByKey } = this._buildExtVisibilityIndex(items);
+      return { flatByCat, extTopByGroupKey, extChildrenByKey };
+    }
+  },
+  methods: {
+    /**
+     * Extracted from _visibilityIndex: builds the flat (non-external)
+     * category -> visible items map. Same behavior, split out to keep
+     * _visibilityIndex's own branching down. Must live in `methods`, not
+     * `computed` - it takes an argument and is called imperatively.
+     */
+    _buildFlatByCatIndex(items) {
       const flatByCat = /* @__PURE__ */ new Map();
-      const extTopByGroupKey = /* @__PURE__ */ new Map();
-      const extChildrenByKey = /* @__PURE__ */ new Map();
       for (const [key, val] of Object.entries(items || {})) {
         if (key === "external" || !Array.isArray(val)) continue;
         for (const it2 of val) {
@@ -782,6 +804,16 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
           flatByCat.get(resolvedCategory).push(it2);
         }
       }
+      return flatByCat;
+    },
+    /**
+     * Extracted from _visibilityIndex: builds the external top-level and
+     * external-children visibility maps. Same behavior, split out to keep
+     * _visibilityIndex's own branching down.
+     */
+    _buildExtVisibilityIndex(items) {
+      const extTopByGroupKey = /* @__PURE__ */ new Map();
+      const extChildrenByKey = /* @__PURE__ */ new Map();
       const walkExtChildren = (parent) => {
         const children = parent.children || [];
         if (children.length === 0) {
@@ -808,10 +840,8 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         }
         extTopByGroupKey.set(groupKey, topVisible);
       }
-      return { flatByCat, extTopByGroupKey, extChildrenByKey };
-    }
-  },
-  methods: {
+      return { extTopByGroupKey, extChildrenByKey };
+    },
     destroySortableInstance(instanceKey) {
       const instance = this[instanceKey];
       if (instance) {
@@ -1125,16 +1155,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         const data = await this.apiFetch(`/api/pending/children?${params.toString()}`);
         const children = Array.isArray(data == null ? void 0 : data.children) ? data.children : [];
         const inheritedCategory = node.assigned_category_safe || this.getCategoryForItem(node) || "";
-        children.forEach((child) => {
-          if (!child || typeof child !== "object") return;
-          if (!child.key && child.path) {
-            child.key = `path:${this.normalizePathKey(child.path)}`;
-          }
-          child.files = [];
-          const childCategory = child.detected_category || child.category || inheritedCategory || "";
-          child.assigned_category_safe = childCategory;
-          if (!child.detected_category && childCategory) child.detected_category = childCategory;
-        });
+        children.forEach((child) => normalizeExtChild(child, inheritedCategory, (p) => this.normalizePathKey(p)));
         // Write into Vue-reactive store so visibleExtChildrenOf re-evaluates.
         if (node.key) this.extLoadedChildren[node.key] = children;
       } catch (error) {

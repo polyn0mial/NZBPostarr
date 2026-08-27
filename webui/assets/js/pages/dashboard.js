@@ -1140,46 +1140,7 @@ const dashboard = createVuePage({
             this.isPollingDashboard = true;
             try {
                 const data = await this.apiFetch('/api/dashboard/summary');
-                if (data.uploads) {
-                    const u = data.uploads;
-                    const cat = u.by_category || {};
-                    this.stats.total = u.total || 0;
-                    this.stats.today = u.today || 0;
-                    this.stats.episodes = cat.episodes || 0;
-                    this.stats.seasonPacks = cat.season_packs || 0;
-                }
-                if (data.pending) {
-                    const p = data.pending;
-                    this.stats.tv.pending = p.tv || 0;
-                    this.stats.tv.complete = p.tv_complete || 0;
-                    this.stats.tv.total = (p.tv || 0) + (p.tv_complete || 0);
-                    this.stats.tv.episodes = { uploaded: p.tv_episodes_complete || 0, total: (p.tv_episodes_pending || 0) + (p.tv_episodes_complete || 0) };
-                    this.stats.movies.pending = p.movies || 0;
-                    this.stats.movies.complete = p.movies_complete || 0;
-                    this.stats.movies.total = (p.movies || 0) + (p.movies_complete || 0);
-                    this.stats.totalInventory = {
-                        pending: p.total_tasks ?? ((p.tv || 0) + (p.movies || 0)),
-                        complete: (p.tv_complete || 0) + (p.movies_complete || 0)
-                    };
-                }
-                if (data.performance) {
-                    this.stats.speed = data.performance.avg_speed_bps || 0;
-                    this.stats.gbPerHour = data.performance.gb_per_hour || 0;
-                }
-                if (data.breakdown) {
-                    this.stats.breakdown = data.breakdown;
-                }
-                if (data.poster_name) {
-                    this.poster_name = data.poster_name;
-                }
-
-                // Preserve favicon error states to avoid flickering on failed loads
-                const prevErrors = new Map(this.loadedIndexers.filter(i => i.faviconError).map(i => [i.id, true]));
-                this.loadedIndexers = (data.indexers || []).map(idx => ({
-                    ...idx,
-                    faviconError: prevErrors.has(idx.id)
-                }));
-
+                this._applyDashboardSummary(data);
                 this.refreshIcons();
             } catch (e) {
                 console.error('Failed to load dashboard:', e);
@@ -1188,59 +1149,117 @@ const dashboard = createVuePage({
             }
         },
 
+        // Extracted from loadDashboard: applies one summary payload to
+        // `this.stats`/`this.poster_name`/`this.loadedIndexers`. Same
+        // behavior, split out to keep loadDashboard's own branching down.
+        _applyDashboardSummary(data) {
+            if (data.uploads) {
+                const u = data.uploads;
+                const cat = u.by_category || {};
+                this.stats.total = u.total || 0;
+                this.stats.today = u.today || 0;
+                this.stats.episodes = cat.episodes || 0;
+                this.stats.seasonPacks = cat.season_packs || 0;
+            }
+            if (data.pending) {
+                this._applyPendingStats(data.pending);
+            }
+            if (data.performance) {
+                this.stats.speed = data.performance.avg_speed_bps || 0;
+                this.stats.gbPerHour = data.performance.gb_per_hour || 0;
+            }
+            if (data.breakdown) {
+                this.stats.breakdown = data.breakdown;
+            }
+            if (data.poster_name) {
+                this.poster_name = data.poster_name;
+            }
+
+            // Preserve favicon error states to avoid flickering on failed loads
+            const prevErrors = new Map(this.loadedIndexers.filter(i => i.faviconError).map(i => [i.id, true]));
+            this.loadedIndexers = (data.indexers || []).map(idx => ({
+                ...idx,
+                faviconError: prevErrors.has(idx.id)
+            }));
+        },
+
+        // Extracted from _applyDashboardSummary: applies the `pending` slice
+        // of the dashboard summary payload to `this.stats`. Same behavior,
+        // split out to keep _applyDashboardSummary's own branching down.
+        _applyPendingStats(p) {
+            this.stats.tv.pending = p.tv || 0;
+            this.stats.tv.complete = p.tv_complete || 0;
+            this.stats.tv.total = (p.tv || 0) + (p.tv_complete || 0);
+            this.stats.tv.episodes = { uploaded: p.tv_episodes_complete || 0, total: (p.tv_episodes_pending || 0) + (p.tv_episodes_complete || 0) };
+            this.stats.movies.pending = p.movies || 0;
+            this.stats.movies.complete = p.movies_complete || 0;
+            this.stats.movies.total = (p.movies || 0) + (p.movies_complete || 0);
+            this.stats.totalInventory = {
+                pending: p.total_tasks ?? ((p.tv || 0) + (p.movies || 0)),
+                complete: (p.tv_complete || 0) + (p.movies_complete || 0)
+            };
+        },
+
         async loadUiSettings() {
             try {
                 const settings = await this.apiFetch('/api/settings');
                 if (settings) {
                     this.poster_name = (settings.upload && settings.upload.poster_name) || 'Anonymous';
-                    const ui = settings.ui || settings;
-                    const refreshSeconds = Number(ui.ui_refresh_seconds) > 0 ? Number(ui.ui_refresh_seconds) : 2;
-                    this.uiSettings = {
-                        ...this.uiSettings,
-                        dashboard_stats_enabled: ui.dashboard_stats_enabled ?? true,
-                        stats_page_enabled: ui.stats_page_enabled ?? true,
-                        ui_refresh_seconds: refreshSeconds,
-                        dashboard_stats_modules: (ui.dashboard_stats_modules || []).slice(0, 6)
-                    };
-                    this.uiRefreshRate = refreshSeconds * 1000;
-                    this.dashboardCardOrder = normalizeOrderedIds(this.dashboardCardOrder, DASHBOARD_CARD_IDS);
-                    this.dashboardCardEnabled = normalizeEnabledMap(this.dashboardCardEnabled);
-                    this.dashboardServerStatsOrder = normalizeOrderedIds(this.dashboardServerStatsOrder, SERVER_STATS_MODULES.map(module => module.id));
-                    this.syncEnabledServerStatsModules();
-                    // Hydrate processing filters
-                    if (settings.processing) {
-                        this.processingFilters = {
-                            process_tv_episodes: settings.processing.process_tv_episodes !== undefined ? settings.processing.process_tv_episodes : true,
-                        };
-                    }
-                    // Store dynamic categories from backend
-                    if (Array.isArray(settings.categories) && settings.categories.length > 0) {
-                        this.backendCategories = settings.categories;
-                    }
-                    this.configuredFolderPaths = Array.isArray(settings.folders?.folder_paths)
-                        ? settings.folders.folder_paths.filter(folder => folder && folder.path)
-                        : [];
-                    this.normalizeUploadFormState();
-                    this.nntpServers = Array.isArray(settings.nntp_servers) ? settings.nntp_servers : [];
-                    const validStreamCategories = this.streamCategories.map(c => c.value);
-                    if (this.streamForm.category && !validStreamCategories.includes(this.streamForm.category)) {
-                        this.streamForm.category = '';
-                    }
-                    const serverNames = this.streamPostingServers.map(server => server.name);
-                    if (!serverNames.includes(this.streamForm.posting_server_name)) {
-                        this.streamForm.posting_server_name = serverNames[0] || null;
-                    }
-                    const validCategoryValues = this.uploadCategoryOptions.map(category => category.value);
-                    const nextCategories = this.getNormalizedUploadCategories().filter(value => value === 'all' || validCategoryValues.includes(value));
-                    this.uploadForm.categories = nextCategories.includes('all') || nextCategories.length === 0 ? ['all'] : nextCategories;
-                    const validIndexerIds = this.uploadIndexerOptions.map(indexer => indexer.id);
-                    this.uploadForm.indexer_ids = normalizeStringArray(this.uploadForm.indexer_ids).filter(id => validIndexerIds.includes(id));
-                    const validFolderPaths = this.uploadFolderPathOptions.map(folder => folder.value);
-                    this.uploadForm.folder_paths = normalizeStringArray(this.uploadForm.folder_paths).filter(path => validFolderPaths.includes(path));
+                    this._applyUiSettingsPayload(settings);
                 }
             } catch (e) {
                 console.error('Failed to load UI settings:', e);
             }
+        },
+
+        // Extracted from loadUiSettings: applies the rest of the /api/settings
+        // payload once `settings` is known truthy. Same behavior, split out
+        // to keep loadUiSettings's own branching down.
+        _applyUiSettingsPayload(settings) {
+            const ui = settings.ui || settings;
+            const refreshSeconds = Number(ui.ui_refresh_seconds) > 0 ? Number(ui.ui_refresh_seconds) : 2;
+            this.uiSettings = {
+                ...this.uiSettings,
+                dashboard_stats_enabled: ui.dashboard_stats_enabled ?? true,
+                stats_page_enabled: ui.stats_page_enabled ?? true,
+                ui_refresh_seconds: refreshSeconds,
+                dashboard_stats_modules: (ui.dashboard_stats_modules || []).slice(0, 6)
+            };
+            this.uiRefreshRate = refreshSeconds * 1000;
+            this.dashboardCardOrder = normalizeOrderedIds(this.dashboardCardOrder, DASHBOARD_CARD_IDS);
+            this.dashboardCardEnabled = normalizeEnabledMap(this.dashboardCardEnabled);
+            this.dashboardServerStatsOrder = normalizeOrderedIds(this.dashboardServerStatsOrder, SERVER_STATS_MODULES.map(module => module.id));
+            this.syncEnabledServerStatsModules();
+            // Hydrate processing filters
+            if (settings.processing) {
+                this.processingFilters = {
+                    process_tv_episodes: settings.processing.process_tv_episodes !== undefined ? settings.processing.process_tv_episodes : true,
+                };
+            }
+            // Store dynamic categories from backend
+            if (Array.isArray(settings.categories) && settings.categories.length > 0) {
+                this.backendCategories = settings.categories;
+            }
+            this.configuredFolderPaths = Array.isArray(settings.folders?.folder_paths)
+                ? settings.folders.folder_paths.filter(folder => folder && folder.path)
+                : [];
+            this.normalizeUploadFormState();
+            this.nntpServers = Array.isArray(settings.nntp_servers) ? settings.nntp_servers : [];
+            const validStreamCategories = this.streamCategories.map(c => c.value);
+            if (this.streamForm.category && !validStreamCategories.includes(this.streamForm.category)) {
+                this.streamForm.category = '';
+            }
+            const serverNames = this.streamPostingServers.map(server => server.name);
+            if (!serverNames.includes(this.streamForm.posting_server_name)) {
+                this.streamForm.posting_server_name = serverNames[0] || null;
+            }
+            const validCategoryValues = this.uploadCategoryOptions.map(category => category.value);
+            const nextCategories = this.getNormalizedUploadCategories().filter(value => value === 'all' || validCategoryValues.includes(value));
+            this.uploadForm.categories = nextCategories.includes('all') || nextCategories.length === 0 ? ['all'] : nextCategories;
+            const validIndexerIds = this.uploadIndexerOptions.map(indexer => indexer.id);
+            this.uploadForm.indexer_ids = normalizeStringArray(this.uploadForm.indexer_ids).filter(id => validIndexerIds.includes(id));
+            const validFolderPaths = this.uploadFolderPathOptions.map(folder => folder.value);
+            this.uploadForm.folder_paths = normalizeStringArray(this.uploadForm.folder_paths).filter(path => validFolderPaths.includes(path));
         },
 
         async loadJobs() {
