@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(scriptDir, '..');
+const projectRoot = path.resolve(scriptDir, '../..');
 const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
 );
