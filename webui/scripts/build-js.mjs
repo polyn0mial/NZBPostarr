@@ -1,11 +1,31 @@
 import { mkdir, readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { access } from 'node:fs/promises';
 
 import { build } from 'esbuild';
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-const projectRoot = path.resolve(scriptDir, '../..');
+
+// Walk up from the script's location to find the repo root by looking for package.json
+async function findRepoRoot(startDir) {
+    let currentDir = startDir;
+    while (true) {
+        const packageJsonPath = path.join(currentDir, 'package.json');
+        try {
+            await access(packageJsonPath);
+            return currentDir;
+        } catch {
+            const parentDir = path.dirname(currentDir);
+            if (parentDir === currentDir) {
+                throw new Error(`Could not find package.json walking up from ${startDir}`);
+            }
+            currentDir = parentDir;
+        }
+    }
+}
+
+const projectRoot = await findRepoRoot(scriptDir);
 const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
 );
