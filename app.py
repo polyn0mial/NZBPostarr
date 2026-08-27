@@ -2500,6 +2500,55 @@ async def update_pending_group_order_locked(req: PendingGroupOrderLockedRequest)
     raise HTTPException(status_code=500, detail="Failed to save pending order lock state")
 
 
+def _slim_pending_node(node: Any) -> Any:
+    """Strip a pending-tree node down to its top-level fields.
+
+    Descendants are fetched through the lazy /children route, so copying
+    megabytes of nested data here only to render collapsed rows wastes
+    network, JSON, Vue reactivity, and memory.
+    """
+    if not isinstance(node, dict):
+        return node
+    slim = {key: value for key, value in node.items() if not str(key).startswith("_")}
+    raw_children = node.get("children")
+    raw_files = node.get("files")
+    child_source = raw_children if isinstance(raw_children, list) else raw_files
+    if isinstance(child_source, list):
+        if child_source or "child_count" not in slim:
+            slim["child_count"] = len([child for child in child_source if isinstance(child, dict)])
+        if "children" in slim:
+            slim["children"] = []
+        if "files" in slim:
+            slim["files"] = []
+    return slim
+
+
+def _slim_pending_items(items: Any) -> Any:
+    """Apply `_slim_pending_node` across every section of a pending `items` payload."""
+    if not isinstance(items, dict):
+        return items
+    slim_items: Dict[str, Any] = {}
+    for section_name, section in items.items():
+        if not isinstance(section, list):
+            slim_items[section_name] = section
+            continue
+        if section_name != "external":
+            slim_items[section_name] = [_slim_pending_node(item) for item in section]
+            continue
+        groups = []
+        for group in section:
+            if not isinstance(group, dict):
+                groups.append(group)
+                continue
+            slim_group = dict(group)
+            group_items = group.get("items")
+            if isinstance(group_items, list):
+                slim_group["items"] = [_slim_pending_node(item) for item in group_items]
+            groups.append(slim_group)
+        slim_items[section_name] = groups
+    return slim_items
+
+
 @pending_router.get("/items")
 def get_pending_items(
     search: Optional[str] = None,
@@ -2561,51 +2610,9 @@ def get_pending_items(
     else:
         res = _filter_pending(data, search, category, literal)
 
-    # Return only top-level pending rows. Descendants are fetched through the
-    # lazy /children route, so copying megabytes of nested data here only to
-    # render collapsed rows wastes network, JSON, Vue reactivity, and memory.
+    # Return only top-level pending rows.
     # Build fresh containers so the shared cached snapshot remains untouched.
-    def _slim_node(node: Any) -> Any:
-        if not isinstance(node, dict):
-            return node
-        slim = {key: value for key, value in node.items() if not str(key).startswith("_")}
-        raw_children = node.get("children")
-        raw_files = node.get("files")
-        child_source = raw_children if isinstance(raw_children, list) else raw_files
-        if isinstance(child_source, list):
-            if child_source or "child_count" not in slim:
-                slim["child_count"] = len([child for child in child_source if isinstance(child, dict)])
-            if "children" in slim:
-                slim["children"] = []
-            if "files" in slim:
-                slim["files"] = []
-        return slim
-
-    def _slim_items(items: Any) -> Any:
-        if not isinstance(items, dict):
-            return items
-        slim_items: Dict[str, Any] = {}
-        for section_name, section in items.items():
-            if not isinstance(section, list):
-                slim_items[section_name] = section
-                continue
-            if section_name != "external":
-                slim_items[section_name] = [_slim_node(item) for item in section]
-                continue
-            groups = []
-            for group in section:
-                if not isinstance(group, dict):
-                    groups.append(group)
-                    continue
-                slim_group = dict(group)
-                group_items = group.get("items")
-                if isinstance(group_items, list):
-                    slim_group["items"] = [_slim_node(item) for item in group_items]
-                groups.append(slim_group)
-            slim_items[section_name] = groups
-        return slim_items
-
-    res["items"] = _slim_items(res.get("items"))
+    res["items"] = _slim_pending_items(res.get("items"))
     for private_key in [key for key in res if str(key).startswith("_")]:
         res.pop(private_key, None)
 

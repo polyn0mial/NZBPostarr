@@ -871,6 +871,12 @@ def _clear_non_target_ignored_flags(node: Dict[str, Any]) -> None:
         _clear_non_target_ignored_flags(child)
 
 
+def _direct_indexers_of(node: Dict[str, Any]) -> Dict[str, Any]:
+    """Return `node["_direct_indexers"]` when it's a dict, else `{}`."""
+    raw = node.get("_direct_indexers", {})
+    return raw if isinstance(raw, dict) else {}
+
+
 def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
     children = [child for child in node.get("children", []) or [] if isinstance(child, dict)]
     for child in children:
@@ -880,19 +886,19 @@ def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> 
         node["skipped"] = True
         node["completed"] = False
         if active_ids:
-            direct_indexers = node.get("_direct_indexers", {}) if isinstance(node.get("_direct_indexers"), dict) else {}
+            direct_indexers = _direct_indexers_of(node)
             node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
         return
 
     if not children:
-        direct_indexers = node.get("_direct_indexers", {}) if isinstance(node.get("_direct_indexers"), dict) else {}
+        direct_indexers = _direct_indexers_of(node)
         indexers = direct_indexers or (node.get("indexers", {}) if isinstance(node.get("indexers"), dict) else {})
         if active_ids:
             node["indexers"] = {idx_id: bool(indexers.get(idx_id, False)) for idx_id in active_ids}
         node["completed"] = bool(active_ids) and bool(indexers) and all(indexers.values())
         return
 
-    direct_indexers = node.get("_direct_indexers", {}) if isinstance(node.get("_direct_indexers"), dict) else {}
+    direct_indexers = _direct_indexers_of(node)
     if node.get("is_dir") and node.get("auto_selectable") and not node.get("_pack_via_children"):
         if active_ids:
             node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}

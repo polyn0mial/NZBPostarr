@@ -742,15 +742,139 @@ def collect_instant_system_info(interval_seconds: float = 0.25) -> Dict[str, Any
     return get_full_system_info()
 
 
+def _cached_temps(now: float) -> List[Dict[str, Any]]:
+    """Return sensor temperatures, refreshing the 10s cache when stale."""
+    global _TEMPS_CACHE, _TEMPS_CACHE_TS
+    if not hasattr(psutil, "sensors_temperatures"):
+        return []
+    with _CACHE_LOCK:
+        if _TEMPS_CACHE and (now - _TEMPS_CACHE_TS) < 10:
+            return list(_TEMPS_CACHE)
+        fresh: List[Dict[str, Any]] = []
+        try:
+            raw_temps = psutil.sensors_temperatures()
+            for name, entries in raw_temps.items():
+                for entry in entries:
+                    fresh.append(
+                        {
+                            "name": f"{name} {entry.label}".strip(),
+                            "current": entry.current,
+                        }
+                    )
+        except Exception:
+            fresh = []
+        _TEMPS_CACHE = fresh
+        _TEMPS_CACHE_TS = now
+        return list(fresh)
+
+
+def _cached_battery(now: float) -> Optional[Dict[str, Any]]:
+    """Return battery status, refreshing the 10s cache when stale."""
+    global _BATT_CACHE, _BATT_CACHE_TS
+    if not hasattr(psutil, "sensors_battery"):
+        return None
+    with _CACHE_LOCK:
+        if _BATT_CACHE is not None and (now - _BATT_CACHE_TS) < 10:
+            return dict(_BATT_CACHE) if _BATT_CACHE else None
+        fresh_batt: Optional[Dict[str, Any]] = None
+        try:
+            bi = psutil.sensors_battery()
+            if bi:
+                fresh_batt = {
+                    "percent": bi.percent,
+                    "plugged": bi.power_plugged,
+                    "secs_left": bi.secsleft if bi.secsleft != psutil.POWER_TIME_UNLIMITED else None,
+                }
+        except Exception:
+            fresh_batt = None
+
+        _BATT_CACHE = fresh_batt
+        _BATT_CACHE_TS = now
+        return dict(fresh_batt) if fresh_batt else None
+
+
+def _cached_partitions(now: float) -> List[Dict[str, Any]]:
+    """Return disk partitions, refreshing the 15s cache when stale."""
+    global _PARTITIONS_CACHE, _PARTITIONS_CACHE_TS
+    with _CACHE_LOCK:
+        if _PARTITIONS_CACHE and (now - _PARTITIONS_CACHE_TS) < 15:
+            return list(_PARTITIONS_CACHE)
+        fresh_parts: List[Dict[str, Any]] = []
+        try:
+            for p in psutil.disk_partitions():
+                if not p.fstype or any(x in p.fstype for x in ["tmpfs", "dev", "overlay", "squashfs"]):
+                    continue
+                if "loop" in p.device or "/snap/" in p.mountpoint:
+                    continue
+                try:
+                    usage = psutil.disk_usage(p.mountpoint)
+                    fresh_parts.append(
+                        {
+                            "device": p.device,
+                            "mountpoint": p.mountpoint,
+                            "fstype": p.fstype,
+                            "total": usage.total,
+                            "used": usage.used,
+                            "percent": usage.percent,
+                        }
+                    )
+                except Exception:
+                    continue
+        except Exception:
+            fresh_parts = []
+        _PARTITIONS_CACHE = fresh_parts
+        _PARTITIONS_CACHE_TS = now
+        return list(fresh_parts)
+
+
+def _cached_users(now: float) -> List[Dict[str, Any]]:
+    """Return logged-in users, refreshing the 30s cache when stale."""
+    global _USERS_CACHE, _USERS_CACHE_TS
+    with _CACHE_LOCK:
+        if _USERS_CACHE and (now - _USERS_CACHE_TS) < 30:
+            return list(_USERS_CACHE)
+        fresh_users: List[Dict[str, Any]] = []
+        try:
+            for u in psutil.users():
+                fresh_users.append(
+                    {
+                        "name": u.name,
+                        "terminal": u.terminal or "system",
+                        "host": u.host or "local",
+                        "started": u.started,
+                    }
+                )
+        except Exception:
+            fresh_users = []
+        _USERS_CACHE = fresh_users
+        _USERS_CACHE_TS = now
+        return list(fresh_users)
+
+
+def _cached_iface_ip(now: float) -> Dict[str, str]:
+    """Return the per-interface IPv4 address map, refreshing the 60s cache when stale."""
+    global _IFACE_IP_CACHE, _IFACE_IP_CACHE_TS
+    with _CACHE_LOCK:
+        if _IFACE_IP_CACHE and (now - _IFACE_IP_CACHE_TS) < 60:
+            return dict(_IFACE_IP_CACHE)
+        fresh_ip: Dict[str, str] = {}
+        try:
+            if_addrs = psutil.net_if_addrs()
+            for iface_name, addrs in if_addrs.items():
+                for addr in addrs:
+                    if addr.family == socket.AF_INET:
+                        fresh_ip[iface_name] = addr.address
+                        break
+        except Exception:
+            fresh_ip = {}
+        _IFACE_IP_CACHE = fresh_ip
+        _IFACE_IP_CACHE_TS = now
+        return dict(fresh_ip)
+
+
 def get_full_system_info() -> Dict[str, Any]:
     """Retrieve comprehensive system statistics for the stats page."""
     import os
-
-    global _PARTITIONS_CACHE, _PARTITIONS_CACHE_TS
-    global _USERS_CACHE, _USERS_CACHE_TS
-    global _TEMPS_CACHE, _TEMPS_CACHE_TS
-    global _BATT_CACHE, _BATT_CACHE_TS
-    global _IFACE_IP_CACHE, _IFACE_IP_CACHE_TS
 
     now = time.time()
 
@@ -783,129 +907,22 @@ def get_full_system_info() -> Dict[str, Any]:
     total_conns = _NETWORK_SPEED.get("connections", 0)
 
     # Temperatures
-    temps: List[Dict[str, Any]] = []
-    if hasattr(psutil, "sensors_temperatures"):
-        with _CACHE_LOCK:
-            if _TEMPS_CACHE and (now - _TEMPS_CACHE_TS) < 10:
-                temps = list(_TEMPS_CACHE)
-            else:
-                fresh: List[Dict[str, Any]] = []
-                try:
-                    raw_temps = psutil.sensors_temperatures()
-                    for name, entries in raw_temps.items():
-                        for entry in entries:
-                            fresh.append(
-                                {
-                                    "name": f"{name} {entry.label}".strip(),
-                                    "current": entry.current,
-                                }
-                            )
-                except Exception:
-                    fresh = []
-                _TEMPS_CACHE = fresh
-                _TEMPS_CACHE_TS = now
-                temps = list(fresh)
+    temps = _cached_temps(now)
 
     # Battery
-    batt: Optional[Dict[str, Any]] = None
-    if hasattr(psutil, "sensors_battery"):
-        with _CACHE_LOCK:
-            if _BATT_CACHE is not None and (now - _BATT_CACHE_TS) < 10:
-                batt = dict(_BATT_CACHE) if _BATT_CACHE else None
-            else:
-                fresh_batt: Optional[Dict[str, Any]] = None
-                try:
-                    bi = psutil.sensors_battery()
-                    if bi:
-                        fresh_batt = {
-                            "percent": bi.percent,
-                            "plugged": bi.power_plugged,
-                            "secs_left": bi.secsleft if bi.secsleft != psutil.POWER_TIME_UNLIMITED else None,
-                        }
-                except Exception:
-                    fresh_batt = None
-
-                _BATT_CACHE = fresh_batt
-                _BATT_CACHE_TS = now
-                batt = dict(fresh_batt) if fresh_batt else None
+    batt = _cached_battery(now)
 
     # Partitions
-    partitions: List[Dict[str, Any]] = []
-    with _CACHE_LOCK:
-        if _PARTITIONS_CACHE and (now - _PARTITIONS_CACHE_TS) < 15:
-            partitions = list(_PARTITIONS_CACHE)
-        else:
-            fresh_parts: List[Dict[str, Any]] = []
-            try:
-                for p in psutil.disk_partitions():
-                    if not p.fstype or any(x in p.fstype for x in ["tmpfs", "dev", "overlay", "squashfs"]):
-                        continue
-                    if "loop" in p.device or "/snap/" in p.mountpoint:
-                        continue
-                    try:
-                        usage = psutil.disk_usage(p.mountpoint)
-                        fresh_parts.append(
-                            {
-                                "device": p.device,
-                                "mountpoint": p.mountpoint,
-                                "fstype": p.fstype,
-                                "total": usage.total,
-                                "used": usage.used,
-                                "percent": usage.percent,
-                            }
-                        )
-                    except Exception:
-                        continue
-            except Exception:
-                fresh_parts = []
-            _PARTITIONS_CACHE = fresh_parts
-            _PARTITIONS_CACHE_TS = now
-            partitions = list(fresh_parts)
+    partitions = _cached_partitions(now)
 
     uptime_sec = time.time() - psutil.boot_time()
 
     # Logged-in users
-    users: List[Dict[str, Any]] = []
-    with _CACHE_LOCK:
-        if _USERS_CACHE and (now - _USERS_CACHE_TS) < 30:
-            users = list(_USERS_CACHE)
-        else:
-            fresh_users: List[Dict[str, Any]] = []
-            try:
-                for u in psutil.users():
-                    fresh_users.append(
-                        {
-                            "name": u.name,
-                            "terminal": u.terminal or "system",
-                            "host": u.host or "local",
-                            "started": u.started,
-                        }
-                    )
-            except Exception:
-                fresh_users = []
-            _USERS_CACHE = fresh_users
-            _USERS_CACHE_TS = now
-            users = list(fresh_users)
+    users = _cached_users(now)
 
     # Build interface list for frontend
     interfaces = []
-    with _CACHE_LOCK:
-        if _IFACE_IP_CACHE and (now - _IFACE_IP_CACHE_TS) < 60:
-            iface_ip = dict(_IFACE_IP_CACHE)
-        else:
-            fresh_ip: Dict[str, str] = {}
-            try:
-                if_addrs = psutil.net_if_addrs()
-                for iface_name, addrs in if_addrs.items():
-                    for addr in addrs:
-                        if addr.family == socket.AF_INET:
-                            fresh_ip[iface_name] = addr.address
-                            break
-            except Exception:
-                fresh_ip = {}
-            _IFACE_IP_CACHE = fresh_ip
-            _IFACE_IP_CACHE_TS = now
-            iface_ip = dict(fresh_ip)
+    iface_ip = _cached_iface_ip(now)
 
     for iface_name, speeds in _INTERFACE_SPEEDS.items():
         # Get IP for this interface

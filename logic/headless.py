@@ -208,6 +208,11 @@ def cmd_status(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2, default=str))
         return 1 if missing_required else 0
 
+    return _print_status_report(conf, enabled, all_idx, required_tools, tool_paths, missing_required, resolve_indexer_enabled)
+
+
+def _print_status_report(conf, enabled, all_idx, required_tools, tool_paths, missing_required, resolve_indexer_enabled) -> int:
+    """Print the human-readable status report (non-JSON branch of cmd_status)."""
     print("━" * 60)
     print("  NZBPostarr - System Status")
     print("━" * 60)
