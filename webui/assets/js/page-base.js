@@ -262,6 +262,17 @@ export function categoryIcon(catId) {
  * audiobook, ebook), pass `availableCategories` (an array of {id} objects)
  * so the function can prefer a specific category over falling back to "misc".
  */
+// Extracted from itypeToCategory to keep its own branching down: finds the
+// best available-category match by an optional exact id, then by keyword.
+function findCategoryMatch(availableCategories, exactId, keywordIncludes) {
+    if (exactId) {
+        const exact = availableCategories.find(c => c.id.toLowerCase() === exactId);
+        if (exact) return exact.id;
+    }
+    const found = availableCategories.find(c => c.id.toLowerCase().includes(keywordIncludes));
+    return found ? found.id : '';
+}
+
 export function itypeToCategory(itype, availableCategories = []) {
     if (!itype) return '';
     switch (itype) {
@@ -273,23 +284,12 @@ export function itypeToCategory(itype, availableCategories = []) {
         case 'Movie':
         case 'Movies':
             return 'movies';
-        case 'Music': {
-            const found = availableCategories.find(c =>
-                c.id.toLowerCase().includes('music'));
-            return found ? found.id : '';
-        }
-        case 'Audiobook': {
-            const exact = availableCategories.find(c => c.id.toLowerCase() === 'audiobooks');
-            if (exact) return exact.id;
-            const found = availableCategories.find(c => c.id.toLowerCase().includes('book'));
-            return found ? found.id : '';
-        }
-        case 'Ebook': {
-            const exact = availableCategories.find(c => c.id.toLowerCase() === 'ebooks');
-            if (exact) return exact.id;
-            const found = availableCategories.find(c => c.id.toLowerCase().includes('book'));
-            return found ? found.id : '';
-        }
+        case 'Music':
+            return findCategoryMatch(availableCategories, null, 'music');
+        case 'Audiobook':
+            return findCategoryMatch(availableCategories, 'audiobooks', 'book');
+        case 'Ebook':
+            return findCategoryMatch(availableCategories, 'ebooks', 'book');
         default:
             return '';
     }

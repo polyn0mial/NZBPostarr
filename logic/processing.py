@@ -1657,6 +1657,83 @@ def _validate_queue_item(
     )
 
 
+def _classify_preview_validation(
+    validation: "QueueItemValidation",
+    *,
+    normalized: str,
+    selected_indexer_ids: List[str],
+    resolved_force: bool,
+    oversized_files: Any,
+) -> "tuple[str, str, Dict[str, Dict[str, Any]]]":
+    """Turn one item's validation result into a preview outcome/reason/destinations.
+    Extracted from preview_processing_items to keep its own branching down."""
+    destination_status = {
+        indexer_id: {
+            "status": "uploaded" if (validation.prefetched_dest_status or {}).get(indexer_id) else "pending",
+            "uploaded_at": (validation.prefetched_dest_status or {}).get(indexer_id),
+        }
+        for indexer_id in selected_indexer_ids
+    }
+    all_uploaded = bool(destination_status) and all(
+        destination["status"] == "uploaded" for destination in destination_status.values()
+    )
+    if validation.outcome == "ready":
+        outcome = "ready"
+    elif validation.outcome == "skipped" and all_uploaded and not resolved_force:
+        outcome = "duplicate"
+    elif validation.outcome == "skipped":
+        outcome = "excluded"
+    elif validation.outcome == "stopped":
+        outcome = "blocked"
+    else:
+        outcome = "invalid"
+
+    reason = validation.message
+    if not reason and normalized in oversized_files:
+        reason = "File exceeds the configured size limit"
+    return outcome, reason, destination_status
+
+
+def _summarize_preview_details(
+    details: List[Dict[str, Any]],
+    selected_indexer_ids: List[str],
+) -> "tuple[Dict[str, Dict[str, int]], Dict[str, int], int, int, int]":
+    """Aggregate per-item preview details into summary counters.
+    Extracted from preview_processing_items to keep its own branching down."""
+    destination_summary: Dict[str, Dict[str, int]] = {
+        indexer_id: {"pending": 0, "uploaded": 0}
+        for indexer_id in selected_indexer_ids
+    }
+    outcome_counts = {
+        "ready": 0,
+        "duplicate": 0,
+        "excluded": 0,
+        "invalid": 0,
+        "blocked": 0,
+    }
+    ready_bytes = 0
+    total_bytes = 0
+    partial_duplicates = 0
+    for detail in details:
+        outcome = str(detail["outcome"])
+        if outcome in outcome_counts:
+            outcome_counts[outcome] += 1
+        size_bytes = int(detail.get("size_bytes") or 0)
+        total_bytes += size_bytes
+        if outcome == "ready":
+            ready_bytes += size_bytes
+        destination_values = list((detail.get("destinations") or {}).values())
+        uploaded_destinations = sum(1 for destination in destination_values if destination.get("status") == "uploaded")
+        if outcome == "ready" and 0 < uploaded_destinations < len(destination_values):
+            partial_duplicates += 1
+        for indexer_id, destination in (detail.get("destinations") or {}).items():
+            status = str(destination.get("status") or "pending")
+            destination_summary.setdefault(indexer_id, {"pending": 0, "uploaded": 0})
+            destination_summary[indexer_id][status] = destination_summary[indexer_id].get(status, 0) + 1
+
+    return destination_summary, outcome_counts, ready_bytes, total_bytes, partial_duplicates
+
+
 def preview_processing_items(
     items: List[Dict[str, Any]],
     *,
@@ -1834,30 +1911,13 @@ def preview_processing_items(
             prefetched_dest_status=dest_status,
             prefetched_base_folder=base_folder,
         )
-        destination_status = {
-            indexer_id: {
-                "status": "uploaded" if (validation.prefetched_dest_status or {}).get(indexer_id) else "pending",
-                "uploaded_at": (validation.prefetched_dest_status or {}).get(indexer_id),
-            }
-            for indexer_id in selected_indexer_ids
-        }
-        all_uploaded = bool(destination_status) and all(
-            destination["status"] == "uploaded" for destination in destination_status.values()
+        outcome, reason, destination_status = _classify_preview_validation(
+            validation,
+            normalized=normalized,
+            selected_indexer_ids=selected_indexer_ids,
+            resolved_force=resolved_force,
+            oversized_files=oversized_files,
         )
-        if validation.outcome == "ready":
-            outcome = "ready"
-        elif validation.outcome == "skipped" and all_uploaded and not resolved_force:
-            outcome = "duplicate"
-        elif validation.outcome == "skipped":
-            outcome = "excluded"
-        elif validation.outcome == "stopped":
-            outcome = "blocked"
-        else:
-            outcome = "invalid"
-
-        reason = validation.message
-        if not reason and normalized in oversized_files:
-            reason = "File exceeds the configured size limit"
         append_detail(
             path=str(path),
             name=path.name,
@@ -1868,36 +1928,9 @@ def preview_processing_items(
             destinations=destination_status,
         )
 
-    destination_summary = {
-        indexer_id: {"pending": 0, "uploaded": 0}
-        for indexer_id in selected_indexer_ids
-    }
-    outcome_counts = {
-        "ready": 0,
-        "duplicate": 0,
-        "excluded": 0,
-        "invalid": 0,
-        "blocked": 0,
-    }
-    ready_bytes = 0
-    total_bytes = 0
-    partial_duplicates = 0
-    for detail in details:
-        outcome = str(detail["outcome"])
-        if outcome in outcome_counts:
-            outcome_counts[outcome] += 1
-        size_bytes = int(detail.get("size_bytes") or 0)
-        total_bytes += size_bytes
-        if outcome == "ready":
-            ready_bytes += size_bytes
-        destination_values = list((detail.get("destinations") or {}).values())
-        uploaded_destinations = sum(1 for destination in destination_values if destination.get("status") == "uploaded")
-        if outcome == "ready" and 0 < uploaded_destinations < len(destination_values):
-            partial_duplicates += 1
-        for indexer_id, destination in (detail.get("destinations") or {}).items():
-            status = str(destination.get("status") or "pending")
-            destination_summary.setdefault(indexer_id, {"pending": 0, "uploaded": 0})
-            destination_summary[indexer_id][status] = destination_summary[indexer_id].get(status, 0) + 1
+    destination_summary, outcome_counts, ready_bytes, total_bytes, partial_duplicates = (
+        _summarize_preview_details(details, selected_indexer_ids)
+    )
 
     return {
         "status": "preview",
@@ -2504,6 +2537,78 @@ def _resolve_target_indexers_for_single(
     return all_indexers
 
 
+def _prepare_and_upload_single(
+    *,
+    path: Path,
+    name: str,
+    itype: str,
+    category: str,
+    base_folder: Optional[Path],
+    test_mode: bool,
+    item_size: int,
+    item_size_bytes: int,
+    conf: Any,
+    job: Optional[Dict[str, Any]],
+    submission_category: str,
+    key: str,
+    sets_to_run: Any,
+    upload_state: "_SingleUploadState",
+    support_scan: Any,
+) -> int:
+    """Prepare the item on disk and run its upload flow across sets_to_run.
+    Extracted from process_single to keep that function's own branching down;
+    return codes match what process_single previously returned inline."""
+    if not prepare_item(path, name, itype, support_scan=support_scan, total_bytes=item_size_bytes):
+        if job and job.get("stop_requested"):
+            return 2
+        return 3
+
+    nfo_path, mediainfo_path = _resolve_support_assets(path, conf, name, support_scan=support_scan)
+    if job and not wait_for_job_resume(job):
+        return 2
+    if job and job.get("stop_requested"):
+        return 2
+    upload_context = _SingleUploadContext(
+        conf=conf,
+        name=name,
+        path=path,
+        category=category,
+        itype=itype,
+        base_folder=base_folder,
+        test_mode=test_mode,
+        item_size=item_size,
+        job=job,
+        submission_category=submission_category,
+        nfo_path=nfo_path,
+        mediainfo_path=mediainfo_path,
+        key=key,
+    )
+    with ThreadPoolExecutor(max_workers=len(sets_to_run)) as executor:
+        tasks = [
+            executor.submit(
+                _run_single_upload_flow,
+                upload_set,
+                upload_server,
+                context=upload_context,
+                state=upload_state,
+            )
+            for upload_set, upload_server in sets_to_run
+        ]
+        for task in tasks:
+            task.result()
+    if upload_state.errors and not upload_state.any_success:
+        log_info(
+            f"All upload targets failed for {name}: {'; '.join(upload_state.errors[:3])}"
+            f"{' ...' if len(upload_state.errors) > 3 else ''}",
+            "ERROR",
+        )
+    if job and not wait_for_job_resume(job):
+        return 2
+    if job and job.get("stop_requested"):
+        return 2
+    return 0 if upload_state.any_success else 4  # 4=upload ok, no indexer accepted
+
+
 def process_single(
     path: Path,
     force: bool = False,
@@ -2597,55 +2702,23 @@ def process_single(
     support_scan = _scan_item_support_assets(path) if path.is_dir() else None
 
     try:
-        if prepare_item(path, name, itype, support_scan=support_scan, total_bytes=item_size_bytes):
-            nfo_path, mediainfo_path = _resolve_support_assets(path, conf, name, support_scan=support_scan)
-            if job and not wait_for_job_resume(job):
-                return 2
-            if job and job.get("stop_requested"):
-                return 2
-            upload_context = _SingleUploadContext(
-                conf=conf,
-                name=name,
-                path=path,
-                category=category,
-                itype=itype,
-                base_folder=base_folder,
-                test_mode=test_mode,
-                item_size=item_size,
-                job=job,
-                submission_category=submission_category,
-                nfo_path=nfo_path,
-                mediainfo_path=mediainfo_path,
-                key=key,
-            )
-            with ThreadPoolExecutor(max_workers=len(sets_to_run)) as executor:
-                tasks = [
-                    executor.submit(
-                        _run_single_upload_flow,
-                        upload_set,
-                        upload_server,
-                        context=upload_context,
-                        state=upload_state,
-                    )
-                    for upload_set, upload_server in sets_to_run
-                ]
-                for task in tasks:
-                    task.result()
-            if upload_state.errors and not upload_state.any_success:
-                log_info(
-                    f"All upload targets failed for {name}: {'; '.join(upload_state.errors[:3])}"
-                    f"{' ...' if len(upload_state.errors) > 3 else ''}",
-                    "ERROR",
-                )
-            if job and not wait_for_job_resume(job):
-                return 2
-            if job and job.get("stop_requested"):
-                return 2
-            return 0 if upload_state.any_success else 4  # 4=upload ok, no indexer accepted
-
-        if job and job.get("stop_requested"):
-            return 2
-        return 3
+        return _prepare_and_upload_single(
+            path=path,
+            name=name,
+            itype=itype,
+            category=category,
+            base_folder=base_folder,
+            test_mode=test_mode,
+            item_size=item_size,
+            item_size_bytes=item_size_bytes,
+            conf=conf,
+            job=job,
+            submission_category=submission_category,
+            key=key,
+            sets_to_run=sets_to_run,
+            upload_state=upload_state,
+            support_scan=support_scan,
+        )
     finally:
         prepared_tmp = None
         if job is not None:

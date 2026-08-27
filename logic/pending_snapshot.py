@@ -1183,25 +1183,22 @@ def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Di
     return payload
 
 
-def _build_external_tree_item(
-    external_folder_name: str,
+def _scan_external_children(
     node: Path,
     rel_path: str,
+    external_folder_name: str,
     upload_map: Dict[str, Set[str]],
     completed_lookup: Set[str],
     active_ids: List[str],
-    *,
-    folder_category_hint: str = "",
-    top_level: bool = False,
-    include_children: bool = True,
-    _seen_dirs: Optional[Set[str]] = None,
-) -> tuple[Dict[str, Any], int]:
+    folder_category_hint: str,
+    include_children: bool,
+    seen_dirs: Set[str],
+) -> "tuple[bool, List[Dict[str, Any]], bool, int]":
+    """Determine directory-ness and recursively build child tree items.
+    Extracted from _build_external_tree_item to keep its own branching down.
+    Returns (is_dir, children, fully_scanned, size)."""
     is_dir = node.is_dir()
-    children: List[Dict[str, Any]] = []
-    size = 0
     fully_scanned = True
-    resolution = None
-    seen_dirs = _seen_dirs if _seen_dirs is not None else set()
 
     if is_dir:
         try:
@@ -1210,10 +1207,11 @@ def _build_external_tree_item(
             resolved_key = str(node)
         if resolved_key in seen_dirs:
             fully_scanned = False
-            is_dir = True
         else:
             seen_dirs.add(resolved_key)
 
+    children: List[Dict[str, Any]] = []
+    size = 0
     if is_dir and fully_scanned and include_children:
         try:
             for child in sorted(node.iterdir(), key=lambda path: path.name.lower()):
@@ -1237,6 +1235,36 @@ def _build_external_tree_item(
         except OSError:
             children = []
             fully_scanned = False
+
+    return is_dir, children, fully_scanned, size
+
+
+def _build_external_tree_item(
+    external_folder_name: str,
+    node: Path,
+    rel_path: str,
+    upload_map: Dict[str, Set[str]],
+    completed_lookup: Set[str],
+    active_ids: List[str],
+    *,
+    folder_category_hint: str = "",
+    top_level: bool = False,
+    include_children: bool = True,
+    _seen_dirs: Optional[Set[str]] = None,
+) -> tuple[Dict[str, Any], int]:
+    resolution = None
+    seen_dirs = _seen_dirs if _seen_dirs is not None else set()
+    is_dir, children, fully_scanned, size = _scan_external_children(
+        node,
+        rel_path,
+        external_folder_name,
+        upload_map,
+        completed_lookup,
+        active_ids,
+        folder_category_hint,
+        include_children,
+        seen_dirs,
+    )
 
     if not is_dir:
         try:
@@ -1305,45 +1333,59 @@ def _build_external_tree_item(
         item["detection_confidence"] = "strong" if nested_category != "misc" else "unknown"
     _force_video_processing_state(item, folder_category_hint)
     if top_level:
-        item["itype"] = resolution.itype
-        forced_category = _classify_standalone_file_category(node)
-        resolved_category = forced_category or resolution.category
-        item["detected_category"] = resolved_category or "misc"
-        if item["detected_category"]:
-            item["category"] = item["detected_category"]
-        if item["detected_category"] == "anime":
-            item["itype"] = "Anime"
-        item["detection_method"] = resolution.detection_method
-        item["detection_confidence"] = resolution.detection_confidence
-        item["detection_evidence"] = list(resolution.detection_evidence)
-        item["detection_flags"] = list(getattr(resolution, "content_flags", ()) or ())
-        if resolution.override_note:
-            item["detection_override"] = resolution.override_note
-        # Parent DISC inheritance shield: once resolved as DISC, force all descendants
-        # to DISC before validation so they never drift into video source checks.
-        if str(item.get("detected_category") or "").strip().lower() == "disc":
-            _force_tree_category(item, "disc")
-        # Normalize child rows first so parent promotion sees final child categories
-        # (especially NCOP/NCED => ANIME bonus rows).
-        _validate_child_video_items(item)
-        if item["detected_category"] == "anime":
-            _inherit_anime_context_to_children(item)
-        _inherit_category_from_children(item)
-        _inherit_anime_context_to_children(item)
-        # Re-run promotion after anime-context inheritance for stable parent lock.
-        _inherit_category_from_children(item)
-        if str(item.get("detected_category") or item.get("category") or "").strip().lower() != "anime":
-            _force_video_processing_state(item, folder_category_hint)
-        _apply_source_matrix_guard(item)
-        _stamp_tree_selection_state(item, resolution)
-        _clear_non_target_ignored_flags(item)
-        _inherit_parent_valid_state(item)
-        _mark_ignored_tree_nodes_completed(item, active_ids)
-        _rollup_external_completion(item, active_ids)
-        _strip_external_helper_fields(item)
-        if is_dir:
-            _log_pack_completion_state(item)
+        _finalize_top_level_external_item(item, node, resolution, folder_category_hint, active_ids, is_dir)
     return item, size
+
+
+def _finalize_top_level_external_item(
+    item: Dict[str, Any],
+    node: Path,
+    resolution: Any,
+    folder_category_hint: str,
+    active_ids: List[str],
+    is_dir: bool,
+) -> None:
+    """Populate detection/category fields and run the validation cascade for a
+    top-level external tree item. Extracted from _build_external_tree_item to
+    keep its own branching down; mutates item in place."""
+    item["itype"] = resolution.itype
+    forced_category = _classify_standalone_file_category(node)
+    resolved_category = forced_category or resolution.category
+    item["detected_category"] = resolved_category or "misc"
+    if item["detected_category"]:
+        item["category"] = item["detected_category"]
+    if item["detected_category"] == "anime":
+        item["itype"] = "Anime"
+    item["detection_method"] = resolution.detection_method
+    item["detection_confidence"] = resolution.detection_confidence
+    item["detection_evidence"] = list(resolution.detection_evidence)
+    item["detection_flags"] = list(getattr(resolution, "content_flags", ()) or ())
+    if resolution.override_note:
+        item["detection_override"] = resolution.override_note
+    # Parent DISC inheritance shield: once resolved as DISC, force all descendants
+    # to DISC before validation so they never drift into video source checks.
+    if str(item.get("detected_category") or "").strip().lower() == "disc":
+        _force_tree_category(item, "disc")
+    # Normalize child rows first so parent promotion sees final child categories
+    # (especially NCOP/NCED => ANIME bonus rows).
+    _validate_child_video_items(item)
+    if item["detected_category"] == "anime":
+        _inherit_anime_context_to_children(item)
+    _inherit_category_from_children(item)
+    _inherit_anime_context_to_children(item)
+    # Re-run promotion after anime-context inheritance for stable parent lock.
+    _inherit_category_from_children(item)
+    if str(item.get("detected_category") or item.get("category") or "").strip().lower() != "anime":
+        _force_video_processing_state(item, folder_category_hint)
+    _apply_source_matrix_guard(item)
+    _stamp_tree_selection_state(item, resolution)
+    _clear_non_target_ignored_flags(item)
+    _inherit_parent_valid_state(item)
+    _mark_ignored_tree_nodes_completed(item, active_ids)
+    _rollup_external_completion(item, active_ids)
+    _strip_external_helper_fields(item)
+    if is_dir:
+        _log_pack_completion_state(item)
 
 
 def _iter_pending_summary_rows(items: Dict[str, Any]) -> List[tuple[str, Dict[str, Any]]]:
@@ -1433,6 +1475,135 @@ def scan_pending_snapshot() -> Dict[str, Any]:
         end_scan_cache(_scan_cache_token)
 
 
+def _scan_external_category_folder(
+    category: str,
+    folder: Path,
+    upload_map: Dict[str, Set[str]],
+    completed_lookup: Set[str],
+    active_ids: List[str],
+    indexer_status_available: bool,
+    bulk_selection_by_folder: Dict[str, bool],
+) -> Optional[Dict[str, Any]]:
+    """Build one tv/external-folder group of top-level tree items.
+    Extracted from _scan_pending_snapshot_inner to keep its own branching down."""
+    # Do not hard-bind by watch-folder path; classify from item naming/signatures.
+    folder_category_hint = ""
+    folder_items: List[Dict[str, Any]] = []
+    try:
+        entries = sorted(folder.iterdir(), key=lambda entry: entry.name.lower())
+    except OSError:
+        entries = []
+    immediate_dirs: List[Path] = []
+    loose_files: List[Path] = []
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        if entry.is_dir():
+            immediate_dirs.append(entry)
+        else:
+            loose_files.append(entry)
+
+    # Treat immediate sub-directories as absolute top-level queue parents.
+    for entry in immediate_dirs:
+        item, _size = _build_external_tree_item(
+            folder.name,
+            entry,
+            entry.name,
+            upload_map,
+            completed_lookup,
+            active_ids if indexer_status_available else [],
+            folder_category_hint=folder_category_hint,
+            top_level=True,
+        )
+        folder_items.append(item)
+
+    # Keep loose files as independent top-level rows.
+    for file_entry in loose_files:
+        file_item, _file_size = _build_external_tree_item(
+            folder.name,
+            file_entry,
+            file_entry.name,
+            upload_map,
+            completed_lookup,
+            active_ids if indexer_status_available else [],
+            folder_category_hint=folder_category_hint,
+            top_level=True,
+        )
+        folder_items.append(file_item)
+
+    if not folder_items:
+        return None
+    return {
+        "source_category": category,
+        "key": str(folder),
+        "folder_name": folder.name,
+        "folder_path": str(folder),
+        "allow_bulk_selection": bulk_selection_by_folder.get(_selection_path_identity(folder), True),
+        "items": folder_items,
+    }
+
+
+def _scan_regular_category_folder(
+    category: str,
+    folder: Path,
+    upload_map: Dict[str, Set[str]],
+    active_ids: List[str],
+    indexer_status_available: bool,
+) -> List[Dict[str, Any]]:
+    """Build the flat item rows for one non-tv/external category folder.
+    Extracted from _scan_pending_snapshot_inner to keep its own branching down."""
+    try:
+        entries = sorted(folder.iterdir(), key=lambda entry: entry.name.lower())
+    except OSError:
+        entries = []
+
+    items: List[Dict[str, Any]] = []
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        item_key = relative_key(entry, folder)
+        item_indexers = _lookup_upload_map_indexers(
+            upload_map,
+            item_key,
+            entry.name,
+            entry,
+        )
+        item_status: Dict[str, bool] = (
+            {idx_id: (idx_id in item_indexers) for idx_id in active_ids} if indexer_status_available else {}
+        )
+        if entry.is_dir():
+            size = compute_size_uncached(entry)
+        else:
+            try:
+                size = entry.stat().st_size
+            except OSError:
+                size = 0
+        detected_meta = _build_detected_item_metadata(entry, category_hint=category)
+        detected_category = str(detected_meta.get("detected_category") or category or "misc")
+        items.append(
+            {
+                "name": entry.name,
+                "key": item_key,
+                "path": str(entry),
+                "size": size,
+                "itype": detect_content_itype(entry.name, entry, detected_category),
+                "detected_category": detected_meta.get("detected_category", ""),
+                "detection_method": detected_meta.get("detection_method", ""),
+                "detection_confidence": detected_meta.get("detection_confidence", "unknown"),
+                "detection_evidence": detected_meta.get("detection_evidence", []),
+                "detection_flags": detected_meta.get("detection_flags", []),
+                "detection_override": detected_meta.get("detection_override", ""),
+                "auto_selectable": detected_meta.get("auto_selectable", True),
+                "auto_select_ignored": detected_meta.get("auto_select_ignored", False),
+                "auto_select_reason": detected_meta.get("auto_select_reason", ""),
+                "indexers": item_status,
+                "completed": bool(active_ids) and bool(item_status) and all(item_status.values()),
+                "_anime_lookup_candidates": list(anime_lookup_candidates(entry)),
+            }
+        )
+    return items
+
+
 def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     """Inner snapshot builder, wrapped by ``scan_pending_snapshot`` for caching."""
     started = time.perf_counter()
@@ -1492,114 +1663,22 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     external_groups: List[Dict[str, Any]] = []
     for category, folder in categories_cfg:
         if category in ("tv", "external"):
-            # Do not hard-bind by watch-folder path; classify from item naming/signatures.
-            folder_category_hint = ""
-            folder_items: List[Dict[str, Any]] = []
-            try:
-                entries = sorted(folder.iterdir(), key=lambda entry: entry.name.lower())
-            except OSError:
-                entries = []
-            immediate_dirs: List[Path] = []
-            loose_files: List[Path] = []
-            for entry in entries:
-                if entry.name.startswith("."):
-                    continue
-                if entry.is_dir():
-                    immediate_dirs.append(entry)
-                else:
-                    loose_files.append(entry)
-
-            # Treat immediate sub-directories as absolute top-level queue parents.
-            for entry in immediate_dirs:
-                item, _size = _build_external_tree_item(
-                    folder.name,
-                    entry,
-                    entry.name,
-                    upload_map,
-                    completed_lookup,
-                    active_ids if indexer_status_available else [],
-                    folder_category_hint=folder_category_hint,
-                    top_level=True,
-                )
-                folder_items.append(item)
-
-            # Keep loose files as independent top-level rows.
-            if loose_files:
-                for file_entry in loose_files:
-                    file_item, _file_size = _build_external_tree_item(
-                        folder.name,
-                        file_entry,
-                        file_entry.name,
-                        upload_map,
-                        completed_lookup,
-                        active_ids if indexer_status_available else [],
-                        folder_category_hint=folder_category_hint,
-                        top_level=True,
-                    )
-                    folder_items.append(file_item)
-            if folder_items:
-                external_groups.append(
-                    {
-                        "source_category": category,
-                        "key": str(folder),
-                        "folder_name": folder.name,
-                        "folder_path": str(folder),
-                        "allow_bulk_selection": bulk_selection_by_folder.get(
-                            _selection_path_identity(folder), True
-                        ),
-                        "items": folder_items,
-                    }
-                )
+            group = _scan_external_category_folder(
+                category,
+                folder,
+                upload_map,
+                completed_lookup,
+                active_ids,
+                indexer_status_available,
+                bulk_selection_by_folder,
+            )
+            if group is not None:
+                external_groups.append(group)
             continue
 
-        try:
-            entries = sorted(folder.iterdir(), key=lambda entry: entry.name.lower())
-        except OSError:
-            entries = []
-
-        for entry in entries:
-            if entry.name.startswith("."):
-                continue
-            item_key = relative_key(entry, folder)
-            item_indexers = _lookup_upload_map_indexers(
-                upload_map,
-                item_key,
-                entry.name,
-                entry,
-            )
-            item_status: Dict[str, bool] = (
-                {idx_id: (idx_id in item_indexers) for idx_id in active_ids} if indexer_status_available else {}
-            )
-            if entry.is_dir():
-                size = compute_size_uncached(entry)
-            else:
-                try:
-                    size = entry.stat().st_size
-                except OSError:
-                    size = 0
-            detected_meta = _build_detected_item_metadata(entry, category_hint=category)
-            detected_category = str(detected_meta.get("detected_category") or category or "misc")
-            result[category].append(
-                {
-                    "name": entry.name,
-                    "key": item_key,
-                    "path": str(entry),
-                    "size": size,
-                    "itype": detect_content_itype(entry.name, entry, detected_category),
-                    "detected_category": detected_meta.get("detected_category", ""),
-                    "detection_method": detected_meta.get("detection_method", ""),
-                    "detection_confidence": detected_meta.get("detection_confidence", "unknown"),
-                    "detection_evidence": detected_meta.get("detection_evidence", []),
-                    "detection_flags": detected_meta.get("detection_flags", []),
-                    "detection_override": detected_meta.get("detection_override", ""),
-                    "auto_selectable": detected_meta.get("auto_selectable", True),
-                    "auto_select_ignored": detected_meta.get("auto_select_ignored", False),
-                    "auto_select_reason": detected_meta.get("auto_select_reason", ""),
-                    "indexers": item_status,
-                    "completed": bool(active_ids) and bool(item_status) and all(item_status.values()),
-                    "_anime_lookup_candidates": list(anime_lookup_candidates(entry)),
-                }
-            )
+        result[category].extend(
+            _scan_regular_category_folder(category, folder, upload_map, active_ids, indexer_status_available)
+        )
 
     result["external"] = _sort_external_groups(external_groups)
     skip_config = getattr(conf, "skip_files", None)
