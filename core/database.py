@@ -1312,7 +1312,7 @@ def delete_job_history(job_ids: List[str]) -> int:
 # ==============================================================================
 
 
-def _serialize_stats_history_rows(stats: List[Any]) -> Dict[str, List[Any]]:
+def _serialize_stats_resource_series(stats: List[Any]) -> Dict[str, List[Any]]:
     return {
         "cpu": [s.cpu_percent or 0 for s in stats],
         "load": [s.load_avg or 0 for s in stats],
@@ -1322,6 +1322,11 @@ def _serialize_stats_history_rows(stats: List[Any]) -> Dict[str, List[Any]]:
         "free": [s.disk_free_gb or 0 for s in stats],
         "disk_read": [s.disk_read_mbps or 0 for s in stats],
         "disk_write": [s.disk_write_mbps or 0 for s in stats],
+    }
+
+
+def _serialize_stats_network_series(stats: List[Any]) -> Dict[str, List[Any]]:
+    return {
         "upload_mbps": [s.upload_mbps or 0 for s in stats],
         "download_mbps": [s.download_mbps or 0 for s in stats],
         "total_sent_mb": [s.total_sent_mb or 0 for s in stats],
@@ -1333,6 +1338,13 @@ def _serialize_stats_history_rows(stats: List[Any]) -> Dict[str, List[Any]]:
         ],
         # Timestamps
         "recorded_at": [s.recorded_at.isoformat() for s in stats],
+    }
+
+
+def _serialize_stats_history_rows(stats: List[Any]) -> Dict[str, List[Any]]:
+    return {
+        **_serialize_stats_resource_series(stats),
+        **_serialize_stats_network_series(stats),
     }
 
 

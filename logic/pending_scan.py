@@ -2175,6 +2175,33 @@ def _scan_content_extensions(entry_path: Path) -> tuple[dict[str, int], list[str
     return ext_counts, video_names
 
 
+def _is_anime_directory(
+    anime_status: Optional[bool],
+    folder_category: str,
+    video_names: list[str],
+) -> bool:
+    if anime_status is True:
+        return True
+    if anime_status is None and str(folder_category or "").strip().lower() == "anime":
+        return True
+    if any(_ANIME_EXTRA_RE.search(video_name) for video_name in video_names):
+        return True
+    return False
+
+
+def _is_tv_show_directory(video_count: int, video_names: list[str]) -> bool:
+    if video_count >= 1 and (
+        _has_tv_episode_like_video(video_names)
+        or any(_looks_like_source_bearing_tv_episode(video_name) for video_name in video_names)
+    ):
+        return True
+    if video_count >= 2 and has_multi_file_episode_pattern(video_names):
+        return True
+    if video_count >= 2 and _has_related_video_files(video_names):
+        return True
+    return False
+
+
 def _detect_directory_content_itype(
     name: str,
     entry_path: Path,
@@ -2195,22 +2222,11 @@ def _detect_directory_content_itype(
     anime_status = _lookup_anime_status(entry_path, video_files, lookup)
     audio_count = audiobook_count + music_count
 
-    if anime_status is True:
-        return "Anime"
-    if anime_status is None and str(folder_category or "").strip().lower() == "anime":
-        return "Anime"
-    if any(_ANIME_EXTRA_RE.search(video_name) for video_name in video_names):
+    if _is_anime_directory(anime_status, folder_category, video_names):
         return "Anime"
     if _looks_like_sports_event(name):
         return "TV Show"
-    if video_count >= 1 and (
-        _has_tv_episode_like_video(video_names)
-        or any(_looks_like_source_bearing_tv_episode(video_name) for video_name in video_names)
-    ):
-        return "TV Show"
-    if video_count >= 2 and has_multi_file_episode_pattern(video_names):
-        return "TV Show"
-    if video_count >= 2 and _has_related_video_files(video_names):
+    if _is_tv_show_directory(video_count, video_names):
         return "TV Show"
     if audio_count > video_count:
         audio_category = classify_audio_folder(entry_path)

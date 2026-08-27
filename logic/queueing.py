@@ -1014,7 +1014,23 @@ class QueueServiceMixin:
 
         paths = self._dedupe_recovery_paths(job)
 
-        payload = {
+        payload = self._build_job_persistence_payload(job, job_id, status, kwargs, paths)
+        if status in _TERMINAL_JOB_STATUSES or (
+            status == "stopped" and not self._is_resumable_stopped_job_locked(job)
+        ):
+            payload["kwargs"] = {}
+            payload["paths"] = []
+        return payload
+
+    def _build_job_persistence_payload(
+        self,
+        job: dict[str, Any],
+        job_id: str,
+        status: str,
+        kwargs: dict[str, Any],
+        paths: list[str],
+    ) -> dict[str, Any]:
+        return {
             "job_id": job_id,
             "category": str(job.get("category", "misc")),
             "source": self._normalize_job_source(job.get("source")),
@@ -1048,12 +1064,6 @@ class QueueServiceMixin:
             "kwargs": kwargs,
             "paths": paths,
         }
-        if status in _TERMINAL_JOB_STATUSES or (
-            status == "stopped" and not self._is_resumable_stopped_job_locked(job)
-        ):
-            payload["kwargs"] = {}
-            payload["paths"] = []
-        return payload
 
     def _prune_finished_jobs_locked(self) -> None:
         cutoff = datetime.now(timezone.utc) - timedelta(days=_FINISHED_JOB_RETENTION_DAYS)

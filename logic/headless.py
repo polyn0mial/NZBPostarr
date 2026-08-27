@@ -33,7 +33,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any, List
+from typing import Any, List, Optional
 
 # ============================================================
 #  CLI COMMANDS
@@ -250,6 +250,57 @@ def _print_status_report(conf, enabled, all_idx, required_tools, tool_paths, mis
     return 1 if missing_required else 0
 
 
+def _filter_pending_scan_items(
+    scanned_items: list[tuple[str, Path, Path]],
+    filter_cat: Optional[str],
+    filter_folder: str,
+) -> list[tuple[str, Path, Path]]:
+    """Narrow scanned items down to the requested category/folder, if any."""
+    if filter_cat:
+        scanned_items = [item for item in scanned_items if item[0] == filter_cat]
+    if filter_folder:
+        normalized_folder = str(Path(filter_folder))
+        scanned_items = [
+            item
+            for item in scanned_items
+            if str(item[1]) == normalized_folder or item[1].name == filter_folder
+        ]
+    return scanned_items
+
+
+def _emit_pending_category(
+    cat: str,
+    items: list[tuple[Path, Path, str]],
+    uploaded_names: set,
+    result_limit: Optional[int],
+    args: argparse.Namespace,
+    categories_payload: dict[str, Any],
+) -> tuple[int, int]:
+    """Print/record one category's pending summary; returns (total, pending)."""
+    pending = [
+        (folder, item, rel)
+        for folder, item, rel in items
+        if rel not in uploaded_names and item.name not in uploaded_names
+    ]
+
+    displayed_pending = pending[:result_limit] if result_limit is not None else pending
+
+    if args.json:
+        entry: dict[str, Any] = {"pending": len(pending), "total": len(items)}
+        if args.verbose:
+            entry["items"] = [f"{folder.name}/{rel}" for folder, _item, rel in displayed_pending]
+        categories_payload[cat] = entry
+    else:
+        print(f"\n  [{cat.upper()}] {len(pending)} pending / {len(items)} total")
+        if args.verbose and pending:
+            for folder, _item, rel in displayed_pending:
+                print(f"    • {folder.name}/{rel}")
+            if len(displayed_pending) < len(pending):
+                print(f"    ... and {len(pending) - len(displayed_pending)} more")
+
+    return len(items), len(pending)
+
+
 def cmd_pending(args: argparse.Namespace) -> int:
     """Show items pending upload across all categories."""
     from core import database
@@ -275,16 +326,7 @@ def cmd_pending(args: argparse.Namespace) -> int:
     filter_folder = str(getattr(args, "folder", "") or "").strip()
     result_limit = getattr(args, "limit", None)
 
-    scanned_items = collect_configured_scan_items(conf)
-    if filter_cat:
-        scanned_items = [item for item in scanned_items if item[0] == filter_cat]
-    if filter_folder:
-        normalized_folder = str(Path(filter_folder))
-        scanned_items = [
-            item
-            for item in scanned_items
-            if str(item[1]) == normalized_folder or item[1].name == filter_folder
-        ]
+    scanned_items = _filter_pending_scan_items(collect_configured_scan_items(conf), filter_cat, filter_folder)
 
     if not scanned_items:
         if args.json:
@@ -310,30 +352,11 @@ def cmd_pending(args: argparse.Namespace) -> int:
 
     categories_payload: dict[str, Any] = {}
     for cat in sorted(grouped.keys()):
-        items = grouped[cat]
-        pending = [
-            (folder, item, rel)
-            for folder, item, rel in items
-            if rel not in uploaded_names and item.name not in uploaded_names
-        ]
-
-        grand_total += len(items)
-        grand_pending += len(pending)
-
-        displayed_pending = pending[:result_limit] if result_limit is not None else pending
-
-        if args.json:
-            entry: dict[str, Any] = {"pending": len(pending), "total": len(items)}
-            if args.verbose:
-                entry["items"] = [f"{folder.name}/{rel}" for folder, _item, rel in displayed_pending]
-            categories_payload[cat] = entry
-        else:
-            print(f"\n  [{cat.upper()}] {len(pending)} pending / {len(items)} total")
-            if args.verbose and pending:
-                for folder, _item, rel in displayed_pending:
-                    print(f"    • {folder.name}/{rel}")
-                if len(displayed_pending) < len(pending):
-                    print(f"    ... and {len(pending) - len(displayed_pending)} more")
+        total, pending = _emit_pending_category(
+            cat, grouped[cat], uploaded_names, result_limit, args, categories_payload
+        )
+        grand_total += total
+        grand_pending += pending
 
     if args.json:
         payload = {

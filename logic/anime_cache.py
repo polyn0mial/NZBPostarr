@@ -337,6 +337,81 @@ def _wait_for_slot() -> bool:
 # ── Jikan lookup ────────────────────────────────────────────────────────────
 
 
+def _jikan_short_title_hit(
+    entry: dict,
+    candidates: list,
+    title: str,
+    q_norm: str,
+    q_cwords: set,
+    release_year: Optional[int],
+) -> bool:
+    """Evaluate the 2-content-word matching path for one Jikan search result.
+
+    Require an exact string match, then gate on popularity/score to reject
+    obscure OVAs while still catching major titles. Returns True only when
+    *entry* itself is a confirmed hit; False means keep looking at the next
+    entry (mirrors the original loop's ``continue``/fall-through behavior).
+    """
+    # 2-content-word path: require an exact string match, then gate
+    # on popularity to reject obscure OVAs.
+    exact_hit = any(q_norm == _strip_punc(c.lower()) for c in candidates if c)
+    if not exact_hit:
+        return False
+
+    # Tiered score threshold: if the primary (romanized) title has
+    # at least one content word in common with our query, this is a
+    # genuine romaji-echoing title (e.g. "Trigun Stampede") - use
+    # the standard 7.0 bar.  If the match came only from a translated
+    # English or alt title with no overlap on the primary title (e.g.
+    # an anime whose English alt title is "Beauty and the Beast" but
+    # whose Japanese title is "Katsute Mahou Shoujo..."), require a
+    # stricter 8.0 bar so only franchise-level hits pass.
+    primary_words = _content_words(_strip_punc((entry.get("title") or "").lower()))
+    has_primary_overlap = bool(set(q_cwords) & set(primary_words))
+    if not has_primary_overlap and release_year is not None:
+        entry_year = _jikan_entry_year(entry)
+        if entry_year is not None and entry_year != release_year:
+            logger.debug(
+                f"Anime: '{title}' matched translated title '{entry.get('title')}' "
+                f"but release year {release_year} != anime year {entry_year} -> skipping"
+            )
+            return False
+    score_threshold = _MIN_SCORE_2WORD if has_primary_overlap else _MIN_SCORE_2WORD_ENG_ONLY
+    members_threshold = _MIN_MEMBERS_2WORD_UNSCORED if has_primary_overlap else _MIN_MEMBERS_2WORD_ENG_ONLY
+
+    score = entry.get("score")  # float or None
+    members = entry.get("members") or 0
+
+    if score is not None:
+        if score >= score_threshold:
+            logger.debug(
+                f"Anime: '{title}' matched '{entry.get('title')}' "
+                f"score={score:.1f} >= {score_threshold} "
+                f"(primary_overlap={has_primary_overlap}) → anime"
+            )
+            return True
+        logger.debug(
+            f"Anime: '{title}' matched '{entry.get('title')}' "
+            f"but score={score:.1f} < {score_threshold} "
+            f"(primary_overlap={has_primary_overlap}) → skipping"
+        )
+        # Don't return False from the caller yet - another entry might score higher.
+        return False
+
+    # No score yet (new/niche anime). Fall back to member count.
+    if members >= members_threshold:
+        logger.debug(
+            f"Anime: '{title}' matched '{entry.get('title')}' "
+            f"(unscored, members={members:,} >= {members_threshold:,}) → anime"
+        )
+        return True
+    logger.debug(
+        f"Anime: '{title}' matched '{entry.get('title')}' "
+        f"(unscored, members={members:,} < {members_threshold:,}) → skipping"
+    )
+    return False
+
+
 def _query_jikan(title: str, *, release_year: Optional[int] = None) -> Optional[bool]:
     """Query Jikan to determine if *title* is an anime.
 
@@ -392,62 +467,8 @@ def _query_jikan(title: str, *, release_year: Optional[int] = None) -> Optional[
                 candidates.append(alt.get("title") or "")
 
             if is_short:
-                # 2-content-word path: require an exact string match, then gate
-                # on popularity to reject obscure OVAs.
-                exact_hit = any(q_norm == _strip_punc(c.lower()) for c in candidates if c)
-                if not exact_hit:
-                    continue
-
-                # Tiered score threshold: if the primary (romanized) title has
-                # at least one content word in common with our query, this is a
-                # genuine romaji-echoing title (e.g. "Trigun Stampede") - use
-                # the standard 7.0 bar.  If the match came only from a translated
-                # English or alt title with no overlap on the primary title (e.g.
-                # an anime whose English alt title is "Beauty and the Beast" but
-                # whose Japanese title is "Katsute Mahou Shoujo..."), require a
-                # stricter 8.0 bar so only franchise-level hits pass.
-                primary_words = _content_words(_strip_punc((entry.get("title") or "").lower()))
-                has_primary_overlap = bool(set(q_cwords) & set(primary_words))
-                if not has_primary_overlap and release_year is not None:
-                    entry_year = _jikan_entry_year(entry)
-                    if entry_year is not None and entry_year != release_year:
-                        logger.debug(
-                            f"Anime: '{title}' matched translated title '{entry.get('title')}' "
-                            f"but release year {release_year} != anime year {entry_year} -> skipping"
-                        )
-                        continue
-                score_threshold = _MIN_SCORE_2WORD if has_primary_overlap else _MIN_SCORE_2WORD_ENG_ONLY
-                members_threshold = _MIN_MEMBERS_2WORD_UNSCORED if has_primary_overlap else _MIN_MEMBERS_2WORD_ENG_ONLY
-
-                score = entry.get("score")  # float or None
-                members = entry.get("members") or 0
-
-                if score is not None:
-                    if score >= score_threshold:
-                        logger.debug(
-                            f"Anime: '{title}' matched '{entry.get('title')}' "
-                            f"score={score:.1f} >= {score_threshold} "
-                            f"(primary_overlap={has_primary_overlap}) → anime"
-                        )
-                        return True
-                    logger.debug(
-                        f"Anime: '{title}' matched '{entry.get('title')}' "
-                        f"but score={score:.1f} < {score_threshold} "
-                        f"(primary_overlap={has_primary_overlap}) → skipping"
-                    )
-                    # Don't return False yet - another entry might score higher.
-                else:
-                    # No score yet (new/niche anime). Fall back to member count.
-                    if members >= members_threshold:
-                        logger.debug(
-                            f"Anime: '{title}' matched '{entry.get('title')}' "
-                            f"(unscored, members={members:,} >= {members_threshold:,}) → anime"
-                        )
-                        return True
-                    logger.debug(
-                        f"Anime: '{title}' matched '{entry.get('title')}' "
-                        f"(unscored, members={members:,} < {members_threshold:,}) → skipping"
-                    )
+                if _jikan_short_title_hit(entry, candidates, title, q_norm, q_cwords, release_year):
+                    return True
             else:
                 # 3+-word path: use the strict bidirectional word-overlap matcher.
                 if any(_title_matches(title, c) for c in candidates if c):

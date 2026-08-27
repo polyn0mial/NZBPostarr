@@ -1261,6 +1261,26 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     // ============================================================
     //  Queue Awareness
     // ============================================================
+    _collectQueuedPathStats(items) {
+      const paths = /* @__PURE__ */ new Set();
+      const normalizedSet = /* @__PURE__ */ new Set();
+      const normalizedPrefixes = [];
+      let movieCount = 0, tvCount = 0;
+      for (const qi2 of items || []) {
+        if (qi2.path) {
+          paths.add(qi2.path);
+          const norm = qi2.path.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
+          if (norm) {
+            normalizedSet.add(norm);
+            normalizedPrefixes.push(norm + "/");
+          }
+        }
+        const cat = (qi2.category || "").toLowerCase();
+        if (cat === "movies") movieCount++;
+        else if (cat === "tv") tvCount++;
+      }
+      return { paths, normalizedSet, normalizedPrefixes, movieCount, tvCount };
+    },
     async loadQueuedPaths() {
       if (this._loadQueuedPathsPromise) return this._loadQueuedPathsPromise;
       this._loadQueuedPathsPromise = (async () => {
@@ -1268,23 +1288,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
           // Hard safety: never let /api/uploads/queue/items failures destabilize queue page.
           // We only derive queued paths from already-loaded in-memory queueItems here.
           const data = { items: Array.isArray(this.queueItems) ? this.queueItems : [] };
-          const paths = /* @__PURE__ */ new Set();
-          const normalizedSet = /* @__PURE__ */ new Set();
-          const normalizedPrefixes = [];
-          let movieCount = 0, tvCount = 0;
-          for (const qi2 of data.items || []) {
-            if (qi2.path) {
-              paths.add(qi2.path);
-              const norm = qi2.path.replace(/\\/g, "/").replace(/\/$/, "").toLowerCase();
-              if (norm) {
-                normalizedSet.add(norm);
-                normalizedPrefixes.push(norm + "/");
-              }
-            }
-            const cat = (qi2.category || "").toLowerCase();
-            if (cat === "movies") movieCount++;
-            else if (cat === "tv") tvCount++;
-          }
+          const { paths, normalizedSet, normalizedPrefixes, movieCount, tvCount } = this._collectQueuedPathStats(data.items);
           this._queuedNormalizedSet = normalizedSet;
           this._queuedNormalizedPrefixes = normalizedPrefixes;
           this.queuedPaths = paths;
@@ -3896,12 +3900,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         this.showToast("error", "Error", "Failed to update job name");
       }
     },
-    async scheduleJobInline(job) {
-      if (!job || !job.job_id) return;
-      const current = job.run_after ? new Date(job.run_after) : null;
-      const hasCurrent = !!(current && !Number.isNaN(current.getTime()));
-      const currentDate = hasCurrent ? `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}` : "";
-      const currentTime = hasCurrent ? `${String(current.getHours()).padStart(2, "0")}:${String(current.getMinutes()).padStart(2, "0")}` : "12:00";
+    async _resolveScheduleRunAfter(job, currentDate, currentTime) {
       const dateText = await this.promptDialog(`Set a deferred date for job ${job.job_id}.`, {
         title: "Schedule Job",
         detail: "Leave blank to run the job immediately.",
@@ -3911,45 +3910,53 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
         inputType: "date",
         confirmLabel: "Continue"
       });
-      if (dateText === null) return;
+      if (dateText === null) return void 0;
       const date = dateText.trim();
-      let runAfter = null;
-      if (date) {
-        const useTime = await this.confirmDialog("Set a specific time for this job?", {
+      if (!date) return null;
+
+      const useTime = await this.confirmDialog("Set a specific time for this job?", {
+        title: "Schedule Time",
+        detail: `Choose "Use 12:00 PM" to run at noon on ${date}.`,
+        confirmLabel: "Pick a Time",
+        cancelLabel: "Use 12:00 PM"
+      });
+      let time = "12:00";
+      if (useTime) {
+        const timeText = await this.promptDialog(`Time to start job ${job.job_id} on ${date}.`, {
           title: "Schedule Time",
-          detail: `Choose "Use 12:00 PM" to run at noon on ${date}.`,
-          confirmLabel: "Pick a Time",
-          cancelLabel: "Use 12:00 PM"
+          detail: "24-hour format (HH:MM).",
+          icon: "clock",
+          value: currentTime,
+          placeholder: "HH:MM",
+          inputType: "time",
+          confirmLabel: "Set Time"
         });
-        let time = "12:00";
-        if (useTime) {
-          const timeText = await this.promptDialog(`Time to start job ${job.job_id} on ${date}.`, {
-            title: "Schedule Time",
-            detail: "24-hour format (HH:MM).",
-            icon: "clock",
-            value: currentTime,
-            placeholder: "HH:MM",
-            inputType: "time",
-            confirmLabel: "Set Time"
-          });
-          if (timeText === null) return;
-          time = timeText.trim() || "12:00";
-        }
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-          this.showToast("error", "Invalid date", "Use YYYY-MM-DD format.");
-          return;
-        }
-        if (!/^\d{2}:\d{2}$/.test(time)) {
-          this.showToast("error", "Invalid time", "Use HH:MM format (24-hour).");
-          return;
-        }
-        const dt2 = /* @__PURE__ */ new Date(`${date}T${time}:00`);
-        if (Number.isNaN(dt2.getTime())) {
-          this.showToast("error", "Invalid date/time", "Please enter a valid date and optional time.");
-          return;
-        }
-        runAfter = dt2.toISOString();
+        if (timeText === null) return void 0;
+        time = timeText.trim() || "12:00";
       }
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+        this.showToast("error", "Invalid date", "Use YYYY-MM-DD format.");
+        return void 0;
+      }
+      if (!/^\d{2}:\d{2}$/.test(time)) {
+        this.showToast("error", "Invalid time", "Use HH:MM format (24-hour).");
+        return void 0;
+      }
+      const dt2 = /* @__PURE__ */ new Date(`${date}T${time}:00`);
+      if (Number.isNaN(dt2.getTime())) {
+        this.showToast("error", "Invalid date/time", "Please enter a valid date and optional time.");
+        return void 0;
+      }
+      return dt2.toISOString();
+    },
+    async scheduleJobInline(job) {
+      if (!job || !job.job_id) return;
+      const current = job.run_after ? new Date(job.run_after) : null;
+      const hasCurrent = !!(current && !Number.isNaN(current.getTime()));
+      const currentDate = hasCurrent ? `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, "0")}-${String(current.getDate()).padStart(2, "0")}` : "";
+      const currentTime = hasCurrent ? `${String(current.getHours()).padStart(2, "0")}:${String(current.getMinutes()).padStart(2, "0")}` : "12:00";
+      const runAfter = await this._resolveScheduleRunAfter(job, currentDate, currentTime);
+      if (runAfter === void 0) return;
       try {
         const res = await this.apiFetch(`/api/uploads/queue/${job.job_id}/schedule`, {
           method: "PATCH",

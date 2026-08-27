@@ -427,59 +427,83 @@ const vm = createVuePage({
             return String(corpus || '').toLowerCase().includes(q);
         },
 
+        _globalSectionVisible() {
+            return (
+                this.matchesSearch('theme light dark mode appearance') ||
+                this.matchesSearch('verbose logging debug logs') ||
+                this.matchesSearch('dynamic packs virtual season auto generate unsorted') ||
+                this.matchesSearch('enable duplicate checking fast processing') ||
+                this.matchesSearch('enable anime checking jikan myanimelist identification') ||
+                this.matchesSearch('stats page system stats page disable history collector navigation') ||
+                this.matchesSearch('dashboard stats server stats modules sparkline') ||
+                this.matchesSearch('ui refresh rate seconds polling') ||
+                this.matchesSearch('folder size limit pack skip tv season') ||
+                this.matchesSearch('file size limit movie skip individual')
+            );
+        },
+
+        _skipFilesSectionVisible() {
+            return (
+                this.matchesSearch('skip files display mode hidden disabled queue') ||
+                (this.settings?.skip_files?.patterns || []).some(r =>
+                    this.matchesSearch(`skip files pattern filename glob wildcard ${r.pattern || ''} ${(r.categories || []).join(' ')}`)
+                )
+            );
+        },
+
+        _updatesSectionVisible() {
+            return (
+                this.matchesSearch('updates update updater github release rollback backup zip restart') ||
+                this.matchesSearch('check for updates install latest upload zip')
+            );
+        },
+
+        _serviceControlsSectionVisible() {
+            return (
+                this.matchesSearch('stop all jobs uploads emergency halt kill abort cancel clear queue') ||
+                this.matchesSearch('restart service reboot process danger zone')
+            );
+        },
+
+        _destinationsSectionVisible() {
+            return (
+                this.matchesSearch('enable backfill global master switch') ||
+                this.matchesSearch('duplicate error bypass retry indexer repeat') ||
+                (this.indexers || []).some(idx => this.matchesSearch(`${idx.name || ''} ${idx.id || ''} indexer api`))
+            );
+        },
+
+        _uploadSectionVisible() {
+            return (
+                this.matchesSearch('poster username uploader name') ||
+                this.matchesSearch('poster email') ||
+                this.matchesSearch('rar size split volume bits') ||
+                this.matchesSearch('article size chunk segment') ||
+                this.matchesSearch('max retries upload failure attempts') ||
+                this.matchesSearch('retry delay wait time seconds') ||
+                this.matchesSearch('include readme branding file info')
+            );
+        },
+
         sectionVisible(sectionId) {
             const q = this._normQuery();
             if (!q) return true;
 
             switch (sectionId) {
                 case 'global':
-                    return (
-                        this.matchesSearch('theme light dark mode appearance') ||
-                        this.matchesSearch('verbose logging debug logs') ||
-                        this.matchesSearch('dynamic packs virtual season auto generate unsorted') ||
-                        this.matchesSearch('enable duplicate checking fast processing') ||
-                        this.matchesSearch('enable anime checking jikan myanimelist identification') ||
-                        this.matchesSearch('stats page system stats page disable history collector navigation') ||
-                        this.matchesSearch('dashboard stats server stats modules sparkline') ||
-                        this.matchesSearch('ui refresh rate seconds polling') ||
-                        this.matchesSearch('folder size limit pack skip tv season') ||
-                        this.matchesSearch('file size limit movie skip individual')
-                    );
+                    return this._globalSectionVisible();
                 case 'tv-pack-ignore':
                     return this.matchesSearch('tv pack ignore seasonal pack sxxexx source resolution sample nfo extras subtitles sidecar proof screens nced ncop');
                 case 'skip-files':
-                    return (
-                        this.matchesSearch('skip files display mode hidden disabled queue') ||
-                        (this.settings?.skip_files?.patterns || []).some(r =>
-                            this.matchesSearch(`skip files pattern filename glob wildcard ${r.pattern || ''} ${(r.categories || []).join(' ')}`)
-                        )
-                    );
+                    return this._skipFilesSectionVisible();
                 case 'updates':
-                    return (
-                        this.matchesSearch('updates update updater github release rollback backup zip restart') ||
-                        this.matchesSearch('check for updates install latest upload zip')
-                    );
+                    return this._updatesSectionVisible();
                 case 'service-controls':
-                    return (
-                        this.matchesSearch('stop all jobs uploads emergency halt kill abort cancel clear queue') ||
-                        this.matchesSearch('restart service reboot process danger zone')
-                    );
+                    return this._serviceControlsSectionVisible();
                 case 'destinations':
-                    return (
-                        this.matchesSearch('enable backfill global master switch') ||
-                        this.matchesSearch('duplicate error bypass retry indexer repeat') ||
-                        (this.indexers || []).some(idx => this.matchesSearch(`${idx.name || ''} ${idx.id || ''} indexer api`))
-                    );
+                    return this._destinationsSectionVisible();
                 case 'upload':
-                    return (
-                        this.matchesSearch('poster username uploader name') ||
-                        this.matchesSearch('poster email') ||
-                        this.matchesSearch('rar size split volume bits') ||
-                        this.matchesSearch('article size chunk segment') ||
-                        this.matchesSearch('max retries upload failure attempts') ||
-                        this.matchesSearch('retry delay wait time seconds') ||
-                        this.matchesSearch('include readme branding file info')
-                    );
+                    return this._uploadSectionVisible();
                 default:
                     // Sections without item-level filtering (NNTP/Folders/Raw) stay hidden during searches,
                     // matching the previous behavior.
