@@ -2177,28 +2177,140 @@ class QueueServiceMixin:
                 self._persist_jobs_locked()
         return True, new_job_id, "queued"
 
+    def _snapshot_revalidation_targets(self, include_paused: bool) -> list[dict[str, Any]]:
+        """Collect snapshots of queued/paused processing jobs. Caller holds self._lock."""
+        snapshots: list[dict[str, Any]] = []
+        for job in self._jobs.values():
+            status = str(job.get("status") or "")
+            if status not in ("queued", "paused"):
+                continue
+            if not include_paused and status == "paused":
+                continue
+            if str(job.get("job_type") or "processing") != "processing":
+                continue
+            snapshots.append(
+                {
+                    "job_id": str(job.get("job_id") or ""),
+                    "status": status,
+                    "category": str(job.get("category") or "misc"),
+                    "display_name": job.get("display_name"),
+                    "paths": self._get_job_target_paths(job),
+                    "kwargs": dict(job.get("_kwargs") or {}),
+                }
+            )
+        return snapshots
+
+    def _revalidation_hint_map(self, snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
+        hint_map: dict[str, dict[str, Any]] = {}
+        for hint in snapshot.get("kwargs", {}).get("item_hints") or []:
+            if not isinstance(hint, dict):
+                continue
+            identity = self._normalize_job_path_identity(hint.get("path"))
+            if not identity:
+                continue
+            hint_map[identity] = {
+                k: v
+                for k, v in dict(hint).items()
+                if k
+                not in {
+                    "auto_select_ignored",
+                    "skipped",
+                    "completed",
+                    "indexers",
+                    "indexer_errors",
+                }
+            }
+        return hint_map
+
+    def _build_revalidation_candidates(self, snapshot: dict[str, Any]) -> list[dict[str, Any]]:
+        current_paths = [p for p in snapshot.get("paths", []) if str(p or "").strip()]
+        hint_map = self._revalidation_hint_map(snapshot)
+        candidates: list[dict[str, Any]] = []
+        for path_text in current_paths:
+            identity = self._normalize_job_path_identity(path_text)
+            hint = dict(hint_map.get(identity, {}))
+            hint["path"] = path_text
+            if "category" not in hint and snapshot.get("category"):
+                hint["category"] = snapshot["category"]
+            candidates.append(hint)
+        return candidates
+
+    def _apply_revalidation_result(
+        self, snapshot: dict[str, Any], prepared: Any
+    ) -> Optional[tuple[str, dict[str, Any]]]:
+        """Apply one job's revalidation outcome. Returns ("updated"|"cancelled", job_update) or None."""
+        new_paths = [
+            str(item.get("path") or "").strip()
+            for item in prepared.runnable_items
+            if str(item.get("path") or "").strip()
+        ]
+        new_hints = [dict(item) for item in prepared.runnable_items if isinstance(item, dict)]
+        new_categories = sorted(
+            {
+                str(item.get("category") or "").strip().lower()
+                for item in new_hints
+                if str(item.get("category") or "").strip()
+            }
+        )
+        new_category = new_categories[0] if len(new_categories) == 1 else ("mixed" if new_categories else "")
+
+        with self._lock:
+            job = self._jobs.get(snapshot["job_id"])
+            if not job:
+                return None
+            current_status = str(job.get("status") or "")
+            if current_status not in ("queued", "paused"):
+                return None
+
+            if new_paths:
+                self._set_job_target_paths(job, new_paths)
+                kwargs = dict(job.get("_kwargs") or {})
+                kwargs["item_hints"] = tuple(new_hints)
+                job["_kwargs"] = kwargs
+                if new_category:
+                    job["category"] = new_category
+                if not str(job.get("display_name") or "").strip():
+                    job["display_name"] = self._default_job_name(
+                        str(job.get("category") or "misc"),
+                        len(new_paths),
+                        new_paths,
+                    )
+                job["progress"] = "Revalidated against current rules"
+                outcome = (
+                    "updated",
+                    {
+                        "job_id": snapshot["job_id"],
+                        "status": current_status,
+                        "changed": True,
+                        "kept": len(new_paths),
+                        "skipped": len(prepared.skipped_items),
+                    },
+                )
+            else:
+                job["status"] = "cancelled"
+                job["progress"] = "Cancelled after revalidation"
+                job["stop_requested"] = False
+                job["pause_requested"] = False
+                job.pop("_kwargs", None)
+                job.pop("_paths", None)
+                self._cleanup_job_artifacts_locked(job)
+                outcome = (
+                    "cancelled",
+                    {
+                        "job_id": snapshot["job_id"],
+                        "status": current_status,
+                        "changed": True,
+                        "kept": 0,
+                        "skipped": len(prepared.skipped_items),
+                    },
+                )
+            self._persist_jobs_locked()
+            return outcome
+
     def revalidate_queued_jobs(self, *, include_paused: bool = True) -> dict[str, Any]:
         """Re-scan queued/paused processing jobs against the current rules."""
         with self._lock:
-            snapshots: list[dict[str, Any]] = []
-            for job in self._jobs.values():
-                status = str(job.get("status") or "")
-                if status not in ("queued", "paused"):
-                    continue
-                if not include_paused and status == "paused":
-                    continue
-                if str(job.get("job_type") or "processing") != "processing":
-                    continue
-                snapshots.append(
-                    {
-                        "job_id": str(job.get("job_id") or ""),
-                        "status": status,
-                        "category": str(job.get("category") or "misc"),
-                        "display_name": job.get("display_name"),
-                        "paths": self._get_job_target_paths(job),
-                        "kwargs": dict(job.get("_kwargs") or {}),
-                    }
-                )
+            snapshots = self._snapshot_revalidation_targets(include_paused)
 
         if not snapshots:
             return {"inspected": 0, "updated": 0, "cancelled": 0, "jobs": []}
@@ -2213,103 +2325,17 @@ class QueueServiceMixin:
         try:
             for snapshot in snapshots:
                 inspected += 1
-                current_paths = [p for p in snapshot.get("paths", []) if str(p or "").strip()]
-                hint_map: dict[str, dict[str, Any]] = {}
-                for hint in snapshot.get("kwargs", {}).get("item_hints") or []:
-                    if not isinstance(hint, dict):
-                        continue
-                    identity = self._normalize_job_path_identity(hint.get("path"))
-                    if not identity:
-                        continue
-                    hint_map[identity] = {
-                        k: v
-                        for k, v in dict(hint).items()
-                        if k
-                        not in {
-                            "auto_select_ignored",
-                            "skipped",
-                            "completed",
-                            "indexers",
-                            "indexer_errors",
-                        }
-                    }
-
-                candidates: list[dict[str, Any]] = []
-                for path_text in current_paths:
-                    identity = self._normalize_job_path_identity(path_text)
-                    hint = dict(hint_map.get(identity, {}))
-                    hint["path"] = path_text
-                    if "category" not in hint and snapshot.get("category"):
-                        hint["category"] = snapshot["category"]
-                    candidates.append(hint)
-
+                candidates = self._build_revalidation_candidates(snapshot)
                 prepared = self._prepare_queue_start_items(candidates)
-                new_paths = [
-                    str(item.get("path") or "").strip()
-                    for item in prepared.runnable_items
-                    if str(item.get("path") or "").strip()
-                ]
-                new_hints = [dict(item) for item in prepared.runnable_items if isinstance(item, dict)]
-                new_categories = sorted(
-                    {
-                        str(item.get("category") or "").strip().lower()
-                        for item in new_hints
-                        if str(item.get("category") or "").strip()
-                    }
-                )
-                new_category = new_categories[0] if len(new_categories) == 1 else ("mixed" if new_categories else "")
-
-                with self._lock:
-                    job = self._jobs.get(snapshot["job_id"])
-                    if not job:
-                        continue
-                    current_status = str(job.get("status") or "")
-                    if current_status not in ("queued", "paused"):
-                        continue
-
-                    if new_paths:
-                        self._set_job_target_paths(job, new_paths)
-                        kwargs = dict(job.get("_kwargs") or {})
-                        kwargs["item_hints"] = tuple(new_hints)
-                        job["_kwargs"] = kwargs
-                        if new_category:
-                            job["category"] = new_category
-                        if not str(job.get("display_name") or "").strip():
-                            job["display_name"] = self._default_job_name(
-                                str(job.get("category") or "misc"),
-                                len(new_paths),
-                                new_paths,
-                            )
-                        job["progress"] = "Revalidated against current rules"
-                        updated += 1
-                        job_updates.append(
-                            {
-                                "job_id": snapshot["job_id"],
-                                "status": current_status,
-                                "changed": True,
-                                "kept": len(new_paths),
-                                "skipped": len(prepared.skipped_items),
-                            }
-                        )
-                    else:
-                        job["status"] = "cancelled"
-                        job["progress"] = "Cancelled after revalidation"
-                        job["stop_requested"] = False
-                        job["pause_requested"] = False
-                        job.pop("_kwargs", None)
-                        job.pop("_paths", None)
-                        self._cleanup_job_artifacts_locked(job)
-                        cancelled += 1
-                        job_updates.append(
-                            {
-                                "job_id": snapshot["job_id"],
-                                "status": current_status,
-                                "changed": True,
-                                "kept": 0,
-                                "skipped": len(prepared.skipped_items),
-                            }
-                        )
-                    self._persist_jobs_locked()
+                outcome = self._apply_revalidation_result(snapshot, prepared)
+                if outcome is None:
+                    continue
+                kind, job_update = outcome
+                if kind == "updated":
+                    updated += 1
+                else:
+                    cancelled += 1
+                job_updates.append(job_update)
         finally:
             end_scan_cache(cache_token)
 

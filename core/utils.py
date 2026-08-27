@@ -211,6 +211,130 @@ def _process_output_line(
             logger.log("VERBOSE", f"[{log_prefix}] {line}")
 
 
+def _run_command_terminate(process: "subprocess.Popen[bytes]", log_prefix: str, reason: str) -> None:
+    process.terminate()
+    try:
+        process.wait(timeout=0.5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+    logger.info(f"Process terminated by user{reason}: {log_prefix}")
+
+
+def _run_command_process_text(
+    data: str,
+    remainder: str,
+    output_lines: Deque[str],
+    log_prefix: str,
+    parser: Optional[Callable[[str], Optional[str]]],
+    quiet: bool,
+    job: Optional[Dict[str, Any]],
+) -> str:
+    combined = remainder + data
+    ends_with_newline = bool(combined) and combined[-1] in ("\n", "\r")
+    parts = combined.splitlines()
+    next_remainder = "" if ends_with_newline else (parts.pop() if parts else "")
+    for raw_line in parts:
+        line = strip_ansi(raw_line.strip())
+        if line:
+            _process_output_line(line, output_lines, log_prefix, parser, quiet, job)
+    return next_remainder
+
+
+def _run_command_read_stdout(stdout_pipe: Any, chunks: "queue.Queue[Optional[bytes]]") -> None:
+    try:
+        while True:
+            chunk = stdout_pipe.read(64 * 1024)
+            if not chunk:
+                break
+            if isinstance(chunk, str):
+                chunk = chunk.encode("utf-8", errors="replace")
+            chunks.put(chunk)
+    finally:
+        chunks.put(None)
+
+
+_RUN_COMMAND_STOPPED = object()
+
+
+def _run_command_stream_output(
+    process: "subprocess.Popen[bytes]",
+    job: Optional[Dict[str, Any]],
+    output_lines: Deque[str],
+    log_prefix: str,
+    parser: Optional[Callable[[str], Optional[str]]],
+    quiet: bool,
+) -> Tuple[Optional[threading.Thread], Any]:
+    """Read/process live stdout for `run_command`.
+
+    Returns ``(reader_thread, _RUN_COMMAND_STOPPED)`` if a stop/pause caused
+    early termination, else ``(reader_thread, None)``.
+    """
+    if not process.stdout:
+        return None, None
+
+    # Keep blocking pipe reads off the orchestration thread.  A quiet
+    # child process must not delay stop/pause checks until it emits 4KB
+    # or exits.  The unbuffered binary pipe also lets each read return
+    # whatever is currently available.
+    chunks: "queue.Queue[Optional[bytes]]" = queue.Queue()
+    # Bind the pipe locally: the `if process.stdout` guard above does not
+    # narrow the attribute inside the closure.
+    stdout_pipe = process.stdout
+
+    reader = threading.Thread(
+        target=_run_command_read_stdout,
+        args=(stdout_pipe, chunks),
+        name=f"{log_prefix}-stdout",
+        daemon=True,
+    )
+    reader.start()
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    remainder = ""
+    reader_done = False
+    while True:
+        if job and not wait_for_job_resume(job):
+            _run_command_terminate(process, log_prefix, " while paused")
+            return reader, _RUN_COMMAND_STOPPED
+
+        if job and job.get("stop_requested"):
+            _run_command_terminate(process, log_prefix, "")
+            return reader, _RUN_COMMAND_STOPPED
+
+        try:
+            chunk = chunks.get(timeout=0.1)
+        except queue.Empty:
+            if process.poll() is not None and (reader_done or not reader.is_alive()):
+                break
+            continue
+
+        if chunk is None:
+            reader_done = True
+            remainder = _run_command_process_text(
+                decoder.decode(b"", final=True), remainder, output_lines, log_prefix, parser, quiet, job
+            )
+            if process.poll() is not None:
+                break
+            continue
+
+        remainder = _run_command_process_text(
+            decoder.decode(chunk), remainder, output_lines, log_prefix, parser, quiet, job
+        )
+
+    if remainder.strip():
+        line = strip_ansi(remainder.strip())
+        if line:
+            _process_output_line(
+                line,
+                output_lines,
+                log_prefix,
+                parser,
+                quiet,
+                job,
+            )
+
+    return reader, None
+
+
 def run_command(
     cmd: List[str],
     log_prefix: str,
@@ -249,91 +373,11 @@ def run_command(
     if job_id:
         service.register_process(job_id, process)
 
-    def terminate_process(reason: str) -> None:
-        process.terminate()
-        try:
-            process.wait(timeout=0.5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-        logger.info(f"Process terminated by user{reason}: {log_prefix}")
-
-    def process_text(data: str, remainder: str) -> str:
-        combined = remainder + data
-        ends_with_newline = bool(combined) and combined[-1] in ("\n", "\r")
-        parts = combined.splitlines()
-        next_remainder = "" if ends_with_newline else (parts.pop() if parts else "")
-        for raw_line in parts:
-            line = strip_ansi(raw_line.strip())
-            if line:
-                _process_output_line(line, output_lines, log_prefix, parser, quiet, job)
-        return next_remainder
-
     reader: Optional[threading.Thread] = None
     try:
-        if process.stdout:
-            # Keep blocking pipe reads off the orchestration thread.  A quiet
-            # child process must not delay stop/pause checks until it emits 4KB
-            # or exits.  The unbuffered binary pipe also lets each read return
-            # whatever is currently available.
-            chunks: queue.Queue[Optional[bytes]] = queue.Queue()
-            # Bind the pipe locally: the `if process.stdout` guard above does not
-            # narrow the attribute inside the closure.
-            stdout_pipe = process.stdout
-
-            def read_stdout() -> None:
-                try:
-                    while True:
-                        chunk = stdout_pipe.read(64 * 1024)
-                        if not chunk:
-                            break
-                        if isinstance(chunk, str):
-                            chunk = chunk.encode("utf-8", errors="replace")
-                        chunks.put(chunk)
-                finally:
-                    chunks.put(None)
-
-            reader = threading.Thread(target=read_stdout, name=f"{log_prefix}-stdout", daemon=True)
-            reader.start()
-            decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-            remainder = ""
-            reader_done = False
-            while True:
-                if job and not wait_for_job_resume(job):
-                    terminate_process(" while paused")
-                    return False, output_lines
-
-                if job and job.get("stop_requested"):
-                    terminate_process("")
-                    return False, output_lines
-
-                try:
-                    chunk = chunks.get(timeout=0.1)
-                except queue.Empty:
-                    if process.poll() is not None and (reader_done or not reader.is_alive()):
-                        break
-                    continue
-
-                if chunk is None:
-                    reader_done = True
-                    remainder = process_text(decoder.decode(b"", final=True), remainder)
-                    if process.poll() is not None:
-                        break
-                    continue
-
-                remainder = process_text(decoder.decode(chunk), remainder)
-
-            if remainder.strip():
-                line = strip_ansi(remainder.strip())
-                if line:
-                    _process_output_line(
-                        line,
-                        output_lines,
-                        log_prefix,
-                        parser,
-                        quiet,
-                        job,
-                    )
-
+        reader, stopped = _run_command_stream_output(process, job, output_lines, log_prefix, parser, quiet)
+        if stopped is _RUN_COMMAND_STOPPED:
+            return False, output_lines
     finally:
         process.wait()
         if reader is not None:
