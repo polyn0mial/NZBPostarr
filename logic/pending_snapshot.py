@@ -1271,6 +1271,54 @@ def _scan_external_children(
     return is_dir, children, fully_scanned, size
 
 
+def _compute_external_item_indexer_status(
+    upload_map: Dict[str, Set[str]],
+    node: Path,
+    rel_path: str,
+    active_ids: List[str],
+    is_dir: bool,
+    children: List[Dict[str, Any]],
+) -> tuple[Dict[str, bool], Dict[str, bool]]:
+    """Return (indexer_status, direct_indexer_status) for one external tree item.
+
+    A directory with children is "done" for an indexer only when every child is
+    done for it. Extracted from _build_external_tree_item to keep its own
+    branching down.
+    """
+    node_indexers = _lookup_upload_map_indexers(
+        upload_map,
+        node.name,
+        rel_path,
+        node,
+    )
+    direct_indexer_status: Dict[str, bool] = {idx_id: (idx_id in node_indexers) for idx_id in active_ids}
+    indexer_status: Dict[str, bool] = dict(direct_indexer_status)
+    if is_dir and children:
+        indexer_status = {idx_id: True for idx_id in active_ids}
+        for child in children:
+            for idx_id, done in child.get("indexers", {}).items():
+                if not done:
+                    indexer_status[idx_id] = False
+    return indexer_status, direct_indexer_status
+
+
+def _apply_nested_external_item_category(item: Dict[str, Any], node: Path, folder_category_hint: str) -> None:
+    """Populate detection/category fields for a non-top-level external tree item.
+
+    Extracted from _build_external_tree_item to keep its own branching down;
+    mutates item in place.
+    """
+    if node.is_file():
+        item["itype"] = detect_content_itype(node.name, node, folder_category_hint)
+        nested_category = category_from_itype(item["itype"])
+    else:
+        nested_category = str(folder_category_hint or "misc").strip().lower()
+    item["detected_category"] = nested_category
+    item["category"] = nested_category
+    item["detection_method"] = "Configured folder" if folder_category_hint else "Shared classifier"
+    item["detection_confidence"] = "strong" if nested_category != "misc" else "unknown"
+
+
 def _build_external_tree_item(
     external_folder_name: str,
     node: Path,
@@ -1316,20 +1364,9 @@ def _build_external_tree_item(
             anime_lookup=_anime_cache_lookup,
         )
 
-    node_indexers = _lookup_upload_map_indexers(
-        upload_map,
-        node.name,
-        rel_path,
-        node,
+    indexer_status, direct_indexer_status = _compute_external_item_indexer_status(
+        upload_map, node, rel_path, active_ids, is_dir, children
     )
-    direct_indexer_status: Dict[str, bool] = {idx_id: (idx_id in node_indexers) for idx_id in active_ids}
-    indexer_status: Dict[str, bool] = dict(direct_indexer_status)
-    if is_dir and children:
-        indexer_status = {idx_id: True for idx_id in active_ids}
-        for child in children:
-            for idx_id, done in child.get("indexers", {}).items():
-                if not done:
-                    indexer_status[idx_id] = False
 
     item = {
         "name": node.name,
@@ -1354,15 +1391,7 @@ def _build_external_tree_item(
         except OSError:
             item["child_count"] = 0
     if not top_level:
-        if node.is_file():
-            item["itype"] = detect_content_itype(node.name, node, folder_category_hint)
-            nested_category = category_from_itype(item["itype"])
-        else:
-            nested_category = str(folder_category_hint or "misc").strip().lower()
-        item["detected_category"] = nested_category
-        item["category"] = nested_category
-        item["detection_method"] = "Configured folder" if folder_category_hint else "Shared classifier"
-        item["detection_confidence"] = "strong" if nested_category != "misc" else "unknown"
+        _apply_nested_external_item_category(item, node, folder_category_hint)
     _force_video_processing_state(item, folder_category_hint)
     if top_level:
         _finalize_top_level_external_item(item, node, resolution, folder_category_hint, active_ids, is_dir)

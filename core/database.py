@@ -1461,6 +1461,46 @@ def get_recent_uploads(
         raise DatabaseOperationalError("Recent uploads fetch failed") from e
 
 
+def _build_grouped_upload_filters(
+    search: Optional[str],
+    literal: bool,
+    destination: Optional[str],
+) -> List[Any]:
+    """Build the WHERE-clause filters for get_grouped_uploads.
+
+    Extracted from get_grouped_uploads to keep its own branching down.
+    """
+    filters: List[Any] = []
+    if search:
+        if literal:
+            like_pattern = f"%{search}%"
+            filters.append(Upload.item_name.like(like_pattern))
+        else:
+            # Smart matching logic
+            q_clean = search
+            for c in "._-[]()":
+                q_clean = q_clean.replace(c, " ")
+            words = [w for w in q_clean.split() if w]
+            like_pattern = f"%{'%'.join(words)}%" if words else "%%"
+
+            filters.append(
+                or_(
+                    Upload.item_name.like(like_pattern),
+                    Upload.parsed_title.like(like_pattern),
+                )
+            )
+    if destination and destination not in ("all", "incomplete"):
+        filters.append(
+            Upload.results.any(
+                and_(
+                    UploadResult.indexer_id == destination,
+                    UploadResult.status == "success",
+                )
+            )
+        )
+    return filters
+
+
 def get_grouped_uploads(
     page: int = 1,
     per_page: int = 50,
@@ -1480,34 +1520,7 @@ def get_grouped_uploads(
     try:
         with session_scope() as session:
             # ── WHERE filters ──
-            filters: List[Any] = []
-            if search:
-                if literal:
-                    like_pattern = f"%{search}%"
-                    filters.append(Upload.item_name.like(like_pattern))
-                else:
-                    # Smart matching logic
-                    q_clean = search
-                    for c in "._-[]()":
-                        q_clean = q_clean.replace(c, " ")
-                    words = [w for w in q_clean.split() if w]
-                    like_pattern = f"%{'%'.join(words)}%" if words else "%%"
-
-                    filters.append(
-                        or_(
-                            Upload.item_name.like(like_pattern),
-                            Upload.parsed_title.like(like_pattern),
-                        )
-                    )
-            if destination and destination not in ("all", "incomplete"):
-                filters.append(
-                    Upload.results.any(
-                        and_(
-                            UploadResult.indexer_id == destination,
-                            UploadResult.status == "success",
-                        )
-                    )
-                )
+            filters: List[Any] = _build_grouped_upload_filters(search, literal, destination)
 
             title_key = func.lower(func.coalesce(Upload.parsed_title, Upload.item_name))
 

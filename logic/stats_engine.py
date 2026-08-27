@@ -301,6 +301,32 @@ def _collect_top_processes() -> None:
         _TOP_PROCS.update(snapshot)
 
 
+def _refresh_active_connection_count(connections_tracking_enabled: bool) -> None:
+    """Update _NETWORK_SPEED["connections"] for the mini-mode (non stats-page) path.
+
+    Extracted from _stats_collector to keep its own branching down.
+    """
+    if not connections_tracking_enabled:
+        _NETWORK_SPEED["connections"] = 0
+        return
+    if platform.system() == "Linux":
+        try:
+            with open("/proc/net/sockstat", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("TCP:"):
+                        parts = line.split()
+                        if len(parts) > 2:
+                            _NETWORK_SPEED["connections"] = int(parts[2])
+                            break
+        except Exception:
+            pass
+    else:
+        try:
+            _NETWORK_SPEED["connections"] = len(psutil.net_connections(kind="inet"))
+        except Exception:
+            _NETWORK_SPEED["connections"] = 0
+
+
 async def _stats_collector() -> None:
     """Background task to collect system resources and network I/O."""
     global _INTERFACE_SPEEDS, _NET_DELTA_1H, _UI_MODE
@@ -356,25 +382,7 @@ async def _stats_collector() -> None:
                 _collect_top_processes()
             else:
                 _TOP_PROCS.update({"cpu": [], "memory": [], "network": [], "disk": [], "total": 0})
-                if connections_tracking_enabled:
-                    if platform.system() == "Linux":
-                        try:
-                            with open("/proc/net/sockstat", "r", encoding="utf-8") as f:
-                                for line in f:
-                                    if line.startswith("TCP:"):
-                                        parts = line.split()
-                                        if len(parts) > 2:
-                                            _NETWORK_SPEED["connections"] = int(parts[2])
-                                            break
-                        except Exception:
-                            pass
-                    else:
-                        try:
-                            _NETWORK_SPEED["connections"] = len(psutil.net_connections(kind="inet"))
-                        except Exception:
-                            _NETWORK_SPEED["connections"] = 0
-                else:
-                    _NETWORK_SPEED["connections"] = 0
+                _refresh_active_connection_count(connections_tracking_enabled)
 
             # Network - Only call pernic=True to get both total and per-interface in one pass
             current_net_io = psutil.net_io_counters(pernic=True)

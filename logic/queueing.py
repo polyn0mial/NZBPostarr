@@ -1884,29 +1884,23 @@ class QueueServiceMixin:
     def stop_and_clear_job(self, job_id: str) -> bool:
         return self.stop_job(job_id, clear_after_stop=True)
 
-    def start_upload_job(self, category: str, **kwargs: Any) -> str:
-        reuse_running = bool(kwargs.pop("reuse_running", True))
-        raw_paths = kwargs.pop("paths", None)
-        targeted_request = raw_paths is not None or kwargs.get("item_hints") is not None
-        paths = self._normalize_paths(raw_paths)
-        display_name = self._normalize_job_name(kwargs.pop("job_name", None))
-        run_after = self._normalize_run_after(kwargs.pop("run_after", None))
-        retry_of = str(kwargs.pop("retry_of", "") or "") or None
-        attempt_count_base = max(0, int(kwargs.pop("attempt_count_base", 0) or 0))
-        job_type = str(kwargs.get("job_type") or "processing")
-        source = self._normalize_job_source(kwargs.pop("source", None))
-        run_after_dt = self._parse_iso_datetime_utc(run_after)
-        if job_type == "processing" and targeted_request and not paths:
-            raise ValueError("No valid items remained after queue filtering")
-        if not display_name and paths:
-            display_name = self._default_job_name(category, len(paths), paths)
+    def _find_reusable_running_job(self, category: str) -> Optional[str]:
+        """Return the job_id of an existing running/paused job in this category, if any.
 
+        Extracted from start_upload_job to keep its own branching down.
+        """
         with self._lock:
-            if reuse_running:
-                for job in self._jobs.values():
-                    if job["category"] == category and job["status"] in ("running", "paused"):
-                        return str(job["job_id"])
+            for job in self._jobs.values():
+                if job["category"] == category and job["status"] in ("running", "paused"):
+                    return str(job["job_id"])
+        return None
 
+    def _determine_job_wait_state(self, run_after_dt: Optional[datetime]) -> tuple[bool, bool, str, str]:
+        """Return (has_running, deferred, wait_msg, schedule_label) for a job about to be created.
+
+        schedule_label is "" unless the job is deferred. Extracted from
+        start_upload_job to keep its own branching down.
+        """
         with self._lock:
             deferred = bool(run_after_dt and run_after_dt > datetime.now(timezone.utc))
             has_running = (
@@ -1915,6 +1909,7 @@ class QueueServiceMixin:
                 or deferred
             )
 
+        schedule_label = ""
         if deferred and run_after_dt:
             schedule_label = run_after_dt.astimezone().strftime("%Y-%m-%d %H:%M")
             wait_msg = f"Scheduled for {schedule_label}"
@@ -1922,7 +1917,27 @@ class QueueServiceMixin:
             wait_msg = "Queued - waiting for current job to finish..."
         else:
             wait_msg = "Starting..."
+        return has_running, deferred, wait_msg, schedule_label
 
+    def _build_new_job_state(
+        self,
+        category: str,
+        has_running: bool,
+        wait_msg: str,
+        display_name: str,
+        run_after: str,
+        attempt_count_base: int,
+        retry_of: Optional[str],
+        job_type: str,
+        source: str,
+        paths: list,
+        kwargs: dict,
+    ) -> tuple[str, dict]:
+        """Build, register, and persist the in-memory job dict for a new upload job.
+
+        Returns (job_id, job). Extracted from start_upload_job to keep its own
+        branching down.
+        """
         job_id = str(uuid.uuid4())[:8]
         created_at = datetime.now(timezone.utc).isoformat()
         job: dict[str, Any] = JobState(
@@ -1962,6 +1977,36 @@ class QueueServiceMixin:
         with self._lock:
             self._jobs[job_id] = job
             self._persist_jobs_locked()
+        return job_id, job
+
+    def start_upload_job(self, category: str, **kwargs: Any) -> str:
+        reuse_running = bool(kwargs.pop("reuse_running", True))
+        raw_paths = kwargs.pop("paths", None)
+        targeted_request = raw_paths is not None or kwargs.get("item_hints") is not None
+        paths = self._normalize_paths(raw_paths)
+        display_name = self._normalize_job_name(kwargs.pop("job_name", None))
+        run_after = self._normalize_run_after(kwargs.pop("run_after", None))
+        retry_of = str(kwargs.pop("retry_of", "") or "") or None
+        attempt_count_base = max(0, int(kwargs.pop("attempt_count_base", 0) or 0))
+        job_type = str(kwargs.get("job_type") or "processing")
+        source = self._normalize_job_source(kwargs.pop("source", None))
+        run_after_dt = self._parse_iso_datetime_utc(run_after)
+        if job_type == "processing" and targeted_request and not paths:
+            raise ValueError("No valid items remained after queue filtering")
+        if not display_name and paths:
+            display_name = self._default_job_name(category, len(paths), paths)
+
+        if reuse_running:
+            existing_job_id = self._find_reusable_running_job(category)
+            if existing_job_id:
+                return existing_job_id
+
+        has_running, deferred, wait_msg, schedule_label = self._determine_job_wait_state(run_after_dt)
+
+        job_id, job = self._build_new_job_state(
+            category, has_running, wait_msg, display_name, run_after,
+            attempt_count_base, retry_of, job_type, source, paths, kwargs,
+        )
 
         if has_running:
             if deferred and run_after_dt:

@@ -1042,6 +1042,40 @@ def _submission_category_label(category: str) -> str:
     }.get(category, category or "Unknown")
 
 
+def _resolve_ambiguous_submission_category(path: Path, normalized_category: str, normalized_itype: str) -> str:
+    """Disambiguate a tv/movies/misc category against cached anime status.
+
+    Extracted from _resolve_submission_category to keep its own branching down.
+    """
+    if normalized_itype in {"anime", "music", "audiobooks", "books", "apps"}:
+        return normalized_itype
+
+    from logic.anime_cache import get_cached
+
+    candidates = [path.name]
+    if path.suffix:
+        candidates.append(path.stem)
+    candidates.extend(parent.name for parent in path.parents[:2] if parent.name)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        if not candidate or candidate in seen:
+            continue
+        seen.add(candidate)
+        try:
+            if get_cached(candidate) is True:
+                return "anime"
+        except Exception:
+            return normalized_category
+    else:
+        if normalized_itype in {"tv", "tv_episode"} and normalized_category != "movies":
+            return "tv"
+        if normalized_itype == "movie" and normalized_category != "tv":
+            return "movies"
+
+    return normalized_category
+
+
 def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
     """Validate and preserve the detected category used for indexer submission."""
     normalized_category = _normalize_processing_category(category)
@@ -1073,32 +1107,7 @@ def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
 
     resolved_category = normalized_category
     if normalized_category in {"tv", "movies", "misc"}:
-        if normalized_itype in {"anime", "music", "audiobooks", "books", "apps"}:
-            resolved_category = normalized_itype
-        else:
-            from logic.anime_cache import get_cached
-
-            candidates = [path.name]
-            if path.suffix:
-                candidates.append(path.stem)
-            candidates.extend(parent.name for parent in path.parents[:2] if parent.name)
-
-            seen: set[str] = set()
-            for candidate in candidates:
-                if not candidate or candidate in seen:
-                    continue
-                seen.add(candidate)
-                try:
-                    if get_cached(candidate) is True:
-                        resolved_category = "anime"
-                        break
-                except Exception:
-                    break
-            else:
-                if normalized_itype in {"tv", "tv_episode"} and normalized_category != "movies":
-                    resolved_category = "tv"
-                elif normalized_itype == "movie" and normalized_category != "tv":
-                    resolved_category = "movies"
+        resolved_category = _resolve_ambiguous_submission_category(path, normalized_category, normalized_itype)
 
     has_video = media_counts["video"] > 0
     if resolved_category == "misc" and has_video:
@@ -1734,6 +1743,34 @@ def _summarize_preview_details(
     return destination_summary, outcome_counts, ready_bytes, total_bytes, partial_duplicates
 
 
+def _classify_preview_source_item(
+    item: Dict[str, Any],
+    seen_paths: set[str],
+) -> tuple[Optional[Path], str, str, str, Optional[str], str]:
+    """Validate one raw preview item.
+
+    Returns (path, display_path, name, category, reject_reason, outcome). reject_reason
+    is None when the item is valid and should be queued. Extracted from
+    preview_processing_items to keep its own branching down.
+    """
+    path_text = str(item.get("path") or "").strip()
+    category = str(item.get("category") or item.get("detected_category") or "").strip().lower()
+    name = str(item.get("name") or (Path(path_text).name if path_text else "") or "Unknown item")
+    if not path_text:
+        return None, "", name, category, "Missing source path", "invalid"
+    path = Path(path_text)
+    if not path.is_absolute():
+        return path, path_text, name, category, "Source path must be absolute", "invalid"
+    if not path.exists():
+        return path, path_text, name, category, "Source path was not found", "invalid"
+    if not category or category in {"all", "both", "mixed", "selected", "external"}:
+        return path, str(path), name, category, "A concrete upload category is required", "invalid"
+    normalized = _normalize_runtime_path(path)
+    if normalized in seen_paths:
+        return path, str(path), name, category, "Duplicate source path in selection", "excluded"
+    return path, str(path), name, category, None, "valid"
+
+
 def preview_processing_items(
     items: List[Dict[str, Any]],
     *,
@@ -1787,50 +1824,13 @@ def preview_processing_items(
         )
 
     for item in items:
-        path_text = str(item.get("path") or "").strip()
-        category = str(item.get("category") or item.get("detected_category") or "").strip().lower()
-        name = str(item.get("name") or (Path(path_text).name if path_text else "") or "Unknown item")
-        if not path_text:
-            append_detail(path="", name=name, category=category, outcome="invalid", reason="Missing source path")
-            continue
-        path = Path(path_text)
-        if not path.is_absolute():
-            append_detail(
-                path=path_text,
-                name=name,
-                category=category,
-                outcome="invalid",
-                reason="Source path must be absolute",
-            )
-            continue
-        if not path.exists():
-            append_detail(
-                path=path_text,
-                name=name,
-                category=category,
-                outcome="invalid",
-                reason="Source path was not found",
-            )
-            continue
-        if not category or category in {"all", "both", "mixed", "selected", "external"}:
-            append_detail(
-                path=str(path),
-                name=name,
-                category=category,
-                outcome="invalid",
-                reason="A concrete upload category is required",
-            )
+        path, display_path, name, category, reject_reason, outcome = _classify_preview_source_item(
+            item, seen_paths
+        )
+        if reject_reason:
+            append_detail(path=display_path, name=name, category=category, outcome=outcome, reason=reject_reason)
             continue
         normalized = _normalize_runtime_path(path)
-        if normalized in seen_paths:
-            append_detail(
-                path=str(path),
-                name=name,
-                category=category,
-                outcome="excluded",
-                reason="Duplicate source path in selection",
-            )
-            continue
         seen_paths.add(normalized)
         raw_items.append((path, category))
 
@@ -3195,17 +3195,8 @@ def run_job(
         )
 
     if not raw_items:
-        if paths:
-            selected_count = len(paths)
-            reason = (
-                f"No valid items remained after filtering: selected={selected_count} "
-                f"filtered=0 final_queued=0"
-            )
-            logger.error(f"[QUEUE-RUN] {reason}")
-            update_job_progress(msg=reason, status="failed", total=selected_count, processed=0, percent=0)
-            raise ValueError(reason)
-        log_info(f"No items found to process for category: {category}")
-        return
+        if _guard_no_raw_items(category, paths):
+            return
 
     # Size limits from config
     folder_limit = getattr(conf, "folder_size_limit_gb", 99)
@@ -3312,6 +3303,32 @@ def run_job(
         skipped=run_state.duplicate_count,
     )
 
+    _log_job_completion(category, test_mode, run_state)
+
+
+def _guard_no_raw_items(category: str, paths: Optional[List[str]]) -> bool:
+    """Handle the empty-raw_items case for run_job.
+
+    Raises ValueError when a targeted (paths-based) run found nothing valid.
+    Returns True to signal the caller should return early for an untargeted
+    scan that simply found no items. Extracted from run_job to keep its own
+    branching down.
+    """
+    if paths:
+        selected_count = len(paths)
+        reason = f"No valid items remained after filtering: selected={selected_count} filtered=0 final_queued=0"
+        logger.error(f"[QUEUE-RUN] {reason}")
+        update_job_progress(msg=reason, status="failed", total=selected_count, processed=0, percent=0)
+        raise ValueError(reason)
+    log_info(f"No items found to process for category: {category}")
+    return True
+
+
+def _log_job_completion(category: str, test_mode: bool, run_state: "_JobRunState") -> None:
+    """Log the end-of-job summary and per-indexer totals for run_job.
+
+    Extracted from run_job to keep its own branching down.
+    """
     from core.database import get_all_upload_stats
 
     stats = get_all_upload_stats() or {}

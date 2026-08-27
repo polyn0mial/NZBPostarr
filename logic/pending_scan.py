@@ -1854,36 +1854,83 @@ def _resolve_explicit_series(state: _ExplicitVideoState) -> ExplicitPathResoluti
     detection_confidence = classification.confidence if classification.category == "tv" else "strong"
     detection_evidence = classification.evidence if classification.category == "tv" else ()
     if state.entry.is_file() and state.entry.suffix.lower() not in state.video_extensions:
-        return ExplicitPathResolution(
-            source_path=state.entry,
-            category="anime" if is_anime else "tv",
-            itype="Anime" if is_anime else "TV Episode",
-            detection_method=anime_method if is_anime else detection_method,
-            queue_paths=(),
-            ignored_paths=(IgnoredScanPath(path=state.entry, reason="No recognized video extension"),),
-            detection_confidence=anime_confidence if is_anime else detection_confidence,
-            detection_evidence=anime_evidence if is_anime else detection_evidence,
+        return _resolve_explicit_series_non_video(
+            state, is_anime, anime_method, anime_confidence, anime_evidence,
+            detection_method, detection_confidence, detection_evidence,
         )
 
     if is_anime:
-        anime_selected_paths = (
-            state.anime_relaxed_queue_paths
-            if state.entry.is_dir()
-            else (state.episode_queue_paths or state.anime_queue_paths or state.anime_episode_files)
-        )
-        anime_rejected_paths = state.anime_relaxed_ignored if state.entry.is_dir() else state.anime_ignored
-        return ExplicitPathResolution(
-            source_path=state.entry,
-            category="anime",
-            itype="Anime",
-            detection_method=anime_method,
-            queue_paths=anime_selected_paths,
-            ignored_paths=anime_rejected_paths,
-            override_note=_anime_override_note(state),
-            detection_confidence=anime_confidence,
-            detection_evidence=anime_evidence,
-        )
+        return _resolve_explicit_series_anime(state, anime_method, anime_confidence, anime_evidence)
 
+    return _resolve_explicit_series_tv(state, anime_status, detection_method, detection_confidence, detection_evidence)
+
+
+def _resolve_explicit_series_non_video(
+    state: _ExplicitVideoState,
+    is_anime: bool,
+    anime_method: str,
+    anime_confidence: str,
+    anime_evidence: Tuple[str, ...],
+    detection_method: str,
+    detection_confidence: str,
+    detection_evidence: Tuple[str, ...],
+) -> ExplicitPathResolution:
+    """Resolve the no-recognized-video-extension branch of _resolve_explicit_series.
+
+    Extracted to keep the parent's branching down.
+    """
+    return ExplicitPathResolution(
+        source_path=state.entry,
+        category="anime" if is_anime else "tv",
+        itype="Anime" if is_anime else "TV Episode",
+        detection_method=anime_method if is_anime else detection_method,
+        queue_paths=(),
+        ignored_paths=(IgnoredScanPath(path=state.entry, reason="No recognized video extension"),),
+        detection_confidence=anime_confidence if is_anime else detection_confidence,
+        detection_evidence=anime_evidence if is_anime else detection_evidence,
+    )
+
+
+def _resolve_explicit_series_anime(
+    state: _ExplicitVideoState,
+    anime_method: str,
+    anime_confidence: str,
+    anime_evidence: Tuple[str, ...],
+) -> ExplicitPathResolution:
+    """Resolve the is_anime branch of _resolve_explicit_series.
+
+    Extracted to keep the parent's branching down.
+    """
+    anime_selected_paths = (
+        state.anime_relaxed_queue_paths
+        if state.entry.is_dir()
+        else (state.episode_queue_paths or state.anime_queue_paths or state.anime_episode_files)
+    )
+    anime_rejected_paths = state.anime_relaxed_ignored if state.entry.is_dir() else state.anime_ignored
+    return ExplicitPathResolution(
+        source_path=state.entry,
+        category="anime",
+        itype="Anime",
+        detection_method=anime_method,
+        queue_paths=anime_selected_paths,
+        ignored_paths=anime_rejected_paths,
+        override_note=_anime_override_note(state),
+        detection_confidence=anime_confidence,
+        detection_evidence=anime_evidence,
+    )
+
+
+def _resolve_explicit_series_tv(
+    state: _ExplicitVideoState,
+    anime_status: Optional[bool],
+    detection_method: str,
+    detection_confidence: str,
+    detection_evidence: Tuple[str, ...],
+) -> ExplicitPathResolution:
+    """Resolve the non-anime TV branch of _resolve_explicit_series.
+
+    Extracted to keep the parent's branching down.
+    """
     raw_hint = str(state.category_hint or state.folder_hint).strip().lower()
     override = "Jikan rejected anime hint; treating as TV" if raw_hint == "anime" and anime_status is False else ""
     if (
