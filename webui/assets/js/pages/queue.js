@@ -61,6 +61,66 @@ function deepFreezePendingTree(items) {
   }
   return Object.freeze(items);
 }
+// Pick which job the queue-control panel should track after a refresh:
+// keep the current selection if it is still present, otherwise prefer the
+// running job, then the paused one, then whatever is first in either list.
+function resolvePreferredJobId(currentId, running, queued) {
+  const availableJobIds = new Set([...running, ...queued].map((job) => job.job_id));
+  if (currentId && !availableJobIds.has(currentId)) {
+    currentId = null;
+  }
+  if (!currentId) {
+    const preferredJob = running.find((job) => job.status === "running")
+      || running.find((job) => job.status === "paused")
+      || running[0]
+      || queued[0];
+    currentId = preferredJob?.job_id || null;
+  }
+  return currentId;
+}
+// Kick off one revalidation of queued jobs after a refresh lands while the
+// queue is paused and non-empty; only ever once per pause, until it unpauses.
+function maybeRevalidateQueuedJobs(self) {
+  if (!self.queueControl?.paused) {
+    self._pendingQueuedJobRevalidationDone = false;
+    return;
+  }
+  if (!self._pendingQueuedJobRevalidationDone && ((self.counts?.queued || 0) > 0 || (self.counts?.running || 0) > 0)) {
+    self._pendingQueuedJobRevalidationDone = true;
+    void self.revalidateQueuedJobs();
+  }
+}
+// Keep the open "active job" modal in sync with a fresh queue snapshot, or
+// close it if the job it was showing is gone.
+function syncActiveJobModal(self) {
+  if (!self.showActiveJobModal || !self.activeJobModalJob) return;
+  const updatedActive = self.running.find((j2) => j2.job_id === self.activeJobModalJob.job_id);
+  if (updatedActive) {
+    self.activeJobModalJob = updatedActive;
+    if (!self.activeJobModalSaving) {
+      void self.loadActiveJobModalItems(updatedActive.job_id, true);
+    }
+  } else {
+    self.closeActiveJobModal();
+  }
+}
+// Keep the open "queued job" modal in sync with a fresh queue snapshot, or
+// close it if the job it was showing is gone.
+function syncQueuedJobModal(self) {
+  if (!self.showQueuedJobModal || !self.queuedJobModalJob) return;
+  const updated = self.queued.find((j2) => j2.job_id === self.queuedJobModalJob.job_id);
+  if (updated) {
+    self.queuedJobModalJob = updated;
+    if (!self.queuedJobModalRenaming) {
+      self.queuedJobModalName = updated.display_name || "";
+    }
+    if (!self.queuedJobModalScheduling) {
+      self.hydrateQueuedJobSchedule(updated.run_after || null);
+    }
+  } else {
+    self.closeQueuedJobModal();
+  }
+}
 var vm = createVuePage({
 persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterMode", "ignoredPaths", "unignoredPaths", "queueSectionExpanded", "manualExternalCategories", "bulkSelectCategoriesSelected"],
 revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
@@ -3183,49 +3243,10 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
           this.finished = data.finished || [];
           this.counts = data.counts || { running: 0, queued: 0, finished: 0 };
           this.queueControl = data.control || { paused: false, active: null };
-          const availableJobIds = new Set([...this.running, ...this.queued].map((job) => job.job_id));
-          if (this.jobQueueControlJobId && !availableJobIds.has(this.jobQueueControlJobId)) {
-            this.jobQueueControlJobId = null;
-          }
-          if (!this.jobQueueControlJobId) {
-            const preferredJob = this.running.find((job) => job.status === "running")
-              || this.running.find((job) => job.status === "paused")
-              || this.running[0]
-              || this.queued[0];
-            this.jobQueueControlJobId = preferredJob?.job_id || null;
-          }
-          if (!(this.queueControl == null ? void 0 : this.queueControl.paused)) {
-            this._pendingQueuedJobRevalidationDone = false;
-          }
-          if (!this._pendingQueuedJobRevalidationDone && (this.queueControl == null ? void 0 : this.queueControl.paused) && (((this.counts == null ? void 0 : this.counts.queued) || 0) > 0 || ((this.counts == null ? void 0 : this.counts.running) || 0) > 0)) {
-            this._pendingQueuedJobRevalidationDone = true;
-            void this.revalidateQueuedJobs();
-          }
-          if (this.showActiveJobModal && this.activeJobModalJob) {
-            const updatedActive = this.running.find((j2) => j2.job_id === this.activeJobModalJob.job_id);
-            if (updatedActive) {
-              this.activeJobModalJob = updatedActive;
-              if (!this.activeJobModalSaving) {
-                void this.loadActiveJobModalItems(updatedActive.job_id, true);
-              }
-            } else {
-              this.closeActiveJobModal();
-            }
-          }
-          if (this.showQueuedJobModal && this.queuedJobModalJob) {
-            const updated = this.queued.find((j2) => j2.job_id === this.queuedJobModalJob.job_id);
-            if (updated) {
-              this.queuedJobModalJob = updated;
-              if (!this.queuedJobModalRenaming) {
-                this.queuedJobModalName = updated.display_name || "";
-              }
-              if (!this.queuedJobModalScheduling) {
-                this.hydrateQueuedJobSchedule(updated.run_after || null);
-              }
-            } else {
-              this.closeQueuedJobModal();
-            }
-          }
+          this.jobQueueControlJobId = resolvePreferredJobId(this.jobQueueControlJobId, this.running, this.queued);
+          maybeRevalidateQueuedJobs(this);
+          syncActiveJobModal(this);
+          syncQueuedJobModal(this);
         } catch (e2) {
           if (!e2.isOffline) {
             this.showToast("error", "Error", "Failed to load jobs");
