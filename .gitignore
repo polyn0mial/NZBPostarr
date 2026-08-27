@@ -133,3 +133,6 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
+
+# Local AI memory for this repo. Deliberately NOT published.
+/.claude/memory/
