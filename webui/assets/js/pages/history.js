@@ -9,6 +9,206 @@ dayjs.extend(utc);
 //  UPLOADS PAGE - Full Vue Reactive Implementation
 // ============================================================
 
+// Per-season completeness stats for one TV season bucket built by buildUploadGroupSeasons:
+// total size, the missing-episode list (when there are at least 2 known episode numbers to
+// bound a range), and whether the whole season looks entirely absent.
+function computeUploadSeasonStats(season) {
+    season.totalSize = season.items.reduce((sum, it) => sum + (Number(it.filesize) || 0), 0);
+    season.missingCount = 0;
+    season.missingList = [];
+    season.expectedEps = 0;
+    season.foundEps = 0;
+    season.firstEp = 0;
+    season.lastEp = 0;
+    season.allEpMissing = false;
+
+    if (season.epNumbers.length === 0 && season.items.length > 0) {
+        // Season 0 (specials) are inherently incomplete - never flag them as "All EP Missing".
+        if (season.num !== 0) {
+            season.allEpMissing = true;
+        }
+    } else if (season.epNumbers.length >= 2) {
+        season.epNumbers.sort((a, b) => a - b);
+        const first = season.epNumbers[0];
+        const last = season.epNumbers[season.epNumbers.length - 1];
+        const epSet = new Set(season.epNumbers);
+        const missing = [];
+        for (let e = first; e <= last; e++) {
+            if (!epSet.has(e)) missing.push(e);
+        }
+        season.firstEp = first;
+        season.lastEp = last;
+        season.expectedEps = last - first + 1;
+        season.foundEps = epSet.size;
+        season.missingCount = missing.length;
+        season.missingList = missing.slice(0, 20);
+    }
+}
+
+// Bucket a TV group's items into season sub-groups (or its stray movie-item bucket), expand
+// multi-episode ranges (e.g. E05-E06 -> [5, 6]), then compute per-season stats. Fills in
+// `group.movieItems`, `.seasonList`, `.missingCount`, and `.allEpMissingSeasonsCount` in place.
+function buildUploadGroupSeasons(group) {
+    const seasonsMap = new Map();
+    for (const item of group.items) {
+        // Items individually classified as movies shouldn't be jammed into Season 0 - keep
+        // them in a separate bucket.
+        if (isMovieType(item.media_type) && !item.season_number && !item.episode_number) {
+            group.movieItems.push(item);
+            continue;
+        }
+
+        const seasonNum = item.season_number || 0;
+        const epNum = item.episode_number || null;
+        const epEnd = item.episode_end_number || null;
+
+        if (!seasonsMap.has(seasonNum)) {
+            seasonsMap.set(seasonNum, {
+                num: seasonNum,
+                label: 'S' + String(seasonNum).padStart(2, '0'),
+                items: [],
+                epNumbers: [],
+            });
+        }
+        const season = seasonsMap.get(seasonNum);
+        season.items.push(item);
+        if (epNum !== null) {
+            if (epEnd !== null && epEnd > epNum) {
+                for (let e = epNum; e <= epEnd; e++) {
+                    season.epNumbers.push(e);
+                }
+            } else {
+                season.epNumbers.push(epNum);
+            }
+        }
+    }
+
+    group.seasonList = Array.from(seasonsMap.values()).sort((a, b) => a.num - b.num);
+
+    group.missingCount = 0;
+    group.allEpMissingSeasonsCount = 0;
+    for (const season of group.seasonList) {
+        computeUploadSeasonStats(season);
+        if (season.allEpMissing) group.allEpMissingSeasonsCount++;
+        group.missingCount += season.missingCount;
+    }
+}
+
+// One server-side group -> one row for the grouped-uploads view. A summary-only group (details
+// not loaded yet) and a movie group both short-circuit before season analysis; only a loaded TV
+// group needs buildUploadGroupSeasons.
+function buildUploadGroupFromServerGroup(sg) {
+    const rawItems = Array.isArray(sg.items) ? sg.items : [];
+    const detailsLoaded = Array.isArray(sg.items) && !sg.summary_only;
+    const itemCount = Number(sg.item_count ?? rawItems.length) || 0;
+    const titleKey = sg.title_key || (sg.show_name || '').toLowerCase();
+
+    if (!detailsLoaded) {
+        return {
+            key: titleKey,
+            titleKey,
+            name: sg.show_name,
+            items: rawItems,
+            itemCount,
+            mediaType: (sg.media_type || 'other').toLowerCase(),
+            isMovie: isMovieType(sg.media_type || ''),
+            movieItems: [],
+            seasonList: [],
+            missingCount: 0,
+            allEpMissingSeasonsCount: 0,
+            totalSize: Number(sg.total_size || 0),
+            latestDate: sg.latest_date || null,
+            detailsLoaded,
+        };
+    }
+
+    // Determine media type: use server-provided value, or vote across items for the most
+    // common type.
+    const rawType = (sg.media_type || '').toLowerCase();
+    const isMovie = isMovieType(rawType);
+
+    const group = {
+        key: titleKey,
+        titleKey,
+        name: sg.show_name,
+        items: rawItems,
+        itemCount,
+        mediaType: rawType || 'other',
+        isMovie: isMovie,
+        movieItems: [],   // movie-typed items inside a TV group
+        detailsLoaded,
+    };
+
+    group.totalSize = group.items.reduce((sum, it) => sum + (Number(it.filesize) || 0), 0);
+    group.latestDate = group.items.reduce((latest, it) => {
+        return it.updated_at > latest ? it.updated_at : latest;
+    }, group.items[0].updated_at);
+
+    // Movies: skip season/episode analysis entirely
+    if (isMovie) {
+        group.seasonList = [];
+        group.missingCount = 0;
+        group.allEpMissingSeasonsCount = 0;
+        return group;
+    }
+
+    buildUploadGroupSeasons(group);
+    return group;
+}
+
+// Grouped-view fetch branch of loadUploads: pull one page of server-side upload groups.
+// Returns false when a newer request has already superseded this one (`self._uploadsRequestSeq`
+// moved on), matching the original inline `return;` that used to skip the post-fetch cleanup too.
+async function fetchGroupedUploadsPage(self, requestSeq) {
+    const params = new URLSearchParams({
+        page: self.currentPage,
+        per_page: self.pageSize,
+        sort_by: self.sortColumn,
+        order: self.sortOrder,
+        summary_only: 'true',
+    });
+    if (self.searchQuery) params.append('search', self.searchQuery);
+    if (self.filterDestination !== 'all') params.append('destination', self.filterDestination);
+    if (self.literalSearch) params.append('literal', 'true');
+
+    const result = await self.apiFetch(`/api/uploads/grouped?${params}`);
+    if (requestSeq !== self._uploadsRequestSeq) return false;
+    self.serverGroups = result.groups || [];
+    self.totalGroups = result.total_groups || 0;
+    self.totalCount = self.totalGroups;
+
+    self.uploads = [];
+    return true;
+}
+
+// Flat-view fetch branch of loadUploads: pull one page of the plain upload list. Same
+// stale-request contract as fetchGroupedUploadsPage - see its comment.
+async function fetchFlatUploadsPage(self, requestSeq) {
+    const offset = (self.currentPage - 1) * self.pageSize;
+    const params = new URLSearchParams({
+        limit: self.pageSize,
+        offset: offset,
+        sort_by: self.sortColumn,
+        order: self.sortOrder,
+    });
+
+    if (self.searchQuery) params.append('search', self.searchQuery);
+    if (self.filterDestination !== 'all') params.append('destination', self.filterDestination);
+    if (self.literalSearch) params.append('literal', 'true');
+
+    const result = await self.apiFetch(`/api/uploads/recent?${params}`);
+    if (requestSeq !== self._uploadsRequestSeq) return false;
+
+    if (Array.isArray(result)) {
+        self.uploads = result;
+        self.totalCount = result.length;
+    } else {
+        self.uploads = result.items || [];
+        self.totalCount = result.total !== undefined ? result.total : self.uploads.length;
+    }
+    return true;
+}
+
 const vm = createVuePage({
     persist: ['literalSearch', 'filterDestination', 'sortColumn', 'sortOrder', 'pageSize', 'viewMode'],
     data() {
@@ -142,148 +342,7 @@ const vm = createVuePage({
         // Grouped uploads computed - processes server-side groups into season tree
         groupedUploads() {
             if (!this.serverGroups || this.serverGroups.length === 0) return [];
-
-            const result = [];
-
-            for (const sg of this.serverGroups) {
-                const rawItems = Array.isArray(sg.items) ? sg.items : [];
-                const detailsLoaded = Array.isArray(sg.items) && !sg.summary_only;
-                const itemCount = Number(sg.item_count ?? rawItems.length) || 0;
-                const titleKey = sg.title_key || (sg.show_name || '').toLowerCase();
-                const summaryGroup = {
-                    key: titleKey,
-                    titleKey,
-                    name: sg.show_name,
-                    items: rawItems,
-                    itemCount,
-                    mediaType: (sg.media_type || 'other').toLowerCase(),
-                    isMovie: isMovieType(sg.media_type || ''),
-                    movieItems: [],
-                    seasonList: [],
-                    missingCount: 0,
-                    allEpMissingSeasonsCount: 0,
-                    totalSize: Number(sg.total_size || 0),
-                    latestDate: sg.latest_date || null,
-                    detailsLoaded,
-                };
-                if (!detailsLoaded) {
-                    result.push(summaryGroup);
-                    continue;
-                }
-
-                // Determine media type: use server-provided value, or vote
-                // across items for the most common type.
-                const rawType = (sg.media_type || '').toLowerCase();
-                const isMovie = isMovieType(rawType);
-
-                const group = {
-                    key: titleKey,
-                    titleKey,
-                    name: sg.show_name,
-                    items: rawItems,
-                    itemCount,
-                    mediaType: rawType || 'other',
-                    isMovie: isMovie,
-                    movieItems: [],   // movie-typed items inside a TV group
-                    _seasonsMap: new Map(),
-                    detailsLoaded,
-                };
-
-                group.totalSize = group.items.reduce((sum, it) => sum + (Number(it.filesize) || 0), 0);
-                group.latestDate = group.items.reduce((latest, it) => {
-                    return it.updated_at > latest ? it.updated_at : latest;
-                }, group.items[0].updated_at);
-
-                // Movies: skip season/episode analysis entirely
-                if (isMovie) {
-                    group.seasonList = [];
-                    group.missingCount = 0;
-                    group.allEpMissingSeasonsCount = 0;
-                    result.push(group);
-                    continue;
-                }
-
-                // Build season sub-groups (TV shows only)
-                for (const item of group.items) {
-                    // Items individually classified as movies shouldn't be
-                    // jammed into Season 0 - keep them in a separate bucket.
-                    if (isMovieType(item.media_type) && !item.season_number && !item.episode_number) {
-                        group.movieItems.push(item);
-                        continue;
-                    }
-
-                    const seasonNum = item.season_number || 0;
-                    const epNum = item.episode_number || null;
-                    const epEnd = item.episode_end_number || null;
-
-                    if (!group._seasonsMap.has(seasonNum)) {
-                        group._seasonsMap.set(seasonNum, {
-                            num: seasonNum,
-                            label: 'S' + String(seasonNum).padStart(2, '0'),
-                            items: [],
-                            epNumbers: [],
-                        });
-                    }
-                    const season = group._seasonsMap.get(seasonNum);
-                    season.items.push(item);
-                    // Expand multi-episode ranges (e.g. E05-E06 -> [5, 6])
-                    if (epNum !== null) {
-                        if (epEnd !== null && epEnd > epNum) {
-                            for (let e = epNum; e <= epEnd; e++) {
-                                season.epNumbers.push(e);
-                            }
-                        } else {
-                            season.epNumbers.push(epNum);
-                        }
-                    }
-                }
-
-                group.seasonList = Array.from(group._seasonsMap.values()).sort((a, b) => a.num - b.num);
-                delete group._seasonsMap;
-
-                // Per-season stats
-                group.missingCount = 0;
-                group.allEpMissingSeasonsCount = 0;
-                for (const season of group.seasonList) {
-                    season.totalSize = season.items.reduce((sum, it) => sum + (Number(it.filesize) || 0), 0);
-                    season.missingCount = 0;
-                    season.missingList = [];
-                    season.expectedEps = 0;
-                    season.foundEps = 0;
-                    season.firstEp = 0;
-                    season.lastEp = 0;
-                    season.allEpMissing = false;
-
-                    if (season.epNumbers.length === 0 && season.items.length > 0) {
-                        // Season 0 (specials) are inherently incomplete - never
-                        // flag them as "All EP Missing".
-                        if (season.num !== 0) {
-                            season.allEpMissing = true;
-                            group.allEpMissingSeasonsCount++;
-                        }
-                    } else if (season.epNumbers.length >= 2) {
-                        season.epNumbers.sort((a, b) => a - b);
-                        const first = season.epNumbers[0];
-                        const last = season.epNumbers[season.epNumbers.length - 1];
-                        const expected = last - first + 1;
-                        const epSet = new Set(season.epNumbers);
-                        const missing = [];
-                        for (let e = first; e <= last; e++) {
-                            if (!epSet.has(e)) missing.push(e);
-                        }
-                        season.firstEp = first;
-                        season.lastEp = last;
-                        season.expectedEps = expected;
-                        season.foundEps = epSet.size;
-                        season.missingCount = missing.length;
-                        season.missingList = missing.slice(0, 20);
-                    }
-                    group.missingCount += season.missingCount;
-                }
-
-                result.push(group);
-            }
-            return result;
+            return this.serverGroups.map(buildUploadGroupFromServerGroup);
         },
 
         // Flattened row list for grouped view - handles expand/collapse state
@@ -631,51 +690,10 @@ const vm = createVuePage({
             }
 
             try {
-                if (this.viewMode === 'grouped') {
-                    // Grouped mode - fetch from server-side grouped endpoint
-                    const params = new URLSearchParams({
-                        page: this.currentPage,
-                        per_page: this.pageSize,
-                        sort_by: this.sortColumn,
-                        order: this.sortOrder,
-                        summary_only: 'true',
-                    });
-                    if (this.searchQuery) params.append('search', this.searchQuery);
-                    if (this.filterDestination !== 'all') params.append('destination', this.filterDestination);
-                    if (this.literalSearch) params.append('literal', 'true');
-
-                    const result = await this.apiFetch(`/api/uploads/grouped?${params}`);
-                    if (requestSeq !== this._uploadsRequestSeq) return;
-                    this.serverGroups = result.groups || [];
-                    this.totalGroups = result.total_groups || 0;
-                    this.totalCount = this.totalGroups;
-
-                    this.uploads = [];
-                } else {
-                    // Flat mode - unchanged
-                    const offset = (this.currentPage - 1) * this.pageSize;
-                    const params = new URLSearchParams({
-                        limit: this.pageSize,
-                        offset: offset,
-                        sort_by: this.sortColumn,
-                        order: this.sortOrder,
-                    });
-
-                    if (this.searchQuery) params.append('search', this.searchQuery);
-                    if (this.filterDestination !== 'all') params.append('destination', this.filterDestination);
-                    if (this.literalSearch) params.append('literal', 'true');
-
-                    const result = await this.apiFetch(`/api/uploads/recent?${params}`);
-                    if (requestSeq !== this._uploadsRequestSeq) return;
-
-                    if (Array.isArray(result)) {
-                        this.uploads = result;
-                        this.totalCount = result.length;
-                    } else {
-                        this.uploads = result.items || [];
-                        this.totalCount = result.total !== undefined ? result.total : this.uploads.length;
-                    }
-                }
+                const fetched = this.viewMode === 'grouped'
+                    ? await fetchGroupedUploadsPage(this, requestSeq)
+                    : await fetchFlatUploadsPage(this, requestSeq);
+                if (!fetched) return;
 
                 // Clamp current page if needed
                 if (this.currentPage > this.totalPages) {

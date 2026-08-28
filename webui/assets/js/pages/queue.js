@@ -121,6 +121,178 @@ function syncQueuedJobModal(self) {
     self.closeQueuedJobModal();
   }
 }
+function normalizePendingCategory(value) {
+  const raw = (value || "").toString().trim().toLowerCase();
+  if (!raw) return "";
+  if (/^tv\d*$/.test(raw) || /^series\d*$/.test(raw) || /^shows?\d*$/.test(raw)) return "tv";
+  if (/^movies?\d*$/.test(raw) || /^films?\d*$/.test(raw)) return "movies";
+  if (/^anime\d*$/.test(raw)) return "anime";
+  if (/^ebooks?\d*$/.test(raw)) return "ebooks";
+  if (/^audiobooks?\d*$/.test(raw)) return "audiobooks";
+  if (/^books?\d*$/.test(raw)) return "books";
+  if (/^music\d*$/.test(raw)) return "music";
+  if (/^apps?\d*$/.test(raw) || /^games?\d*$/.test(raw)) return "apps";
+  if (/^disc\d*$/.test(raw)) return "disc";
+  if (/^misc\d*$/.test(raw) || /^other\d*$/.test(raw)) return "misc";
+  return raw;
+}
+
+function isSyntheticPendingRootFilesNode(node) {
+  if (!node || typeof node !== "object") return false;
+  const rawName = String(node.name || node.title || "").toLowerCase();
+  if (!rawName.includes("(root files)")) return false;
+  const hasPath = !!node.path;
+  const hasNested = Array.isArray(node.children) && node.children.length > 0 || Array.isArray(node.files) && node.files.length > 0;
+  return hasPath && hasNested;
+}
+
+// `self` is the Vue page instance (the `_normalizePendingItemsForState` caller passes `this`).
+// Kept as a free-standing recursive function - a nested closure here would keep rolling its
+// branches up into whichever method calls it, which is exactly what this split is undoing.
+function normalizePendingNode(self, node, parentCategory = "") {
+  if (!node || typeof node !== "object") return;
+  if (node.__normalizing) return;
+  node.__normalizing = true;
+  if (!node.key && node.path) {
+    node.key = `path:${self.normalizePathKey(node.path)}`;
+  }
+  const inferredSelfCategory = normalizePendingCategory(node.itype ? self.itypeToCategory(node.itype) : "");
+  const detectedSelfCategory = normalizePendingCategory(node.detected_category);
+  const explicitSelfCategory = normalizePendingCategory(node.category);
+  const inheritedCategory = normalizePendingCategory(parentCategory);
+  const safeCategory = detectedSelfCategory || explicitSelfCategory || inheritedCategory || inferredSelfCategory || "";
+  node.assigned_category_safe = safeCategory;
+  if (!node.detected_category && safeCategory) node.detected_category = safeCategory;
+  if ((!Array.isArray(node.children) || node.children.length === 0) && Array.isArray(node.files) && node.files.length > 0) {
+    node.children = node.files;
+    if (typeof node.is_dir === "undefined") node.is_dir = true;
+  }
+  if (Array.isArray(node.children)) {
+    node.children.forEach((child) => normalizePendingNode(self, child, safeCategory));
+  }
+  delete node.__normalizing;
+}
+
+// `self` is the Vue page instance. Both success paths in loadPending toggle the same anime
+// watcher interval; this used to be copy-pasted with two different completion messages, which
+// is why the message stays a parameter instead of being folded into one literal string.
+function syncPendingAnimeWatcher(self, data, completeMessage) {
+  const wasDetecting = self.animeDetecting;
+  self.animeDetecting = !!data.anime_detecting;
+  if (self.animeDetecting && !self._animeWatcher) {
+    self._animeWatcher = setInterval(() => self.loadPending(false, true), 5e3);
+  } else if (!self.animeDetecting && self._animeWatcher) {
+    clearInterval(self._animeWatcher);
+    self._animeWatcher = null;
+    if (wasDetecting) {
+      self.showToast("success", "Anime Check Complete", completeMessage);
+    }
+  }
+}
+
+// The body loadPending used to run as an inline async IIFE, kept only so `_loadPendingPromise`
+// can be set to an in-flight promise for de-duplication. Pulled out to a module-level function
+// so the nesting inside that IIFE stops counting against loadPending's own complexity.
+async function runPendingLoad(self, forceRefresh, silent) {
+  if (!silent) {
+    self.loading = true;
+    self.loadingElapsed = 0;
+    clearInterval(self._loadingTimer);
+    self._loadingTimer = setInterval(() => {
+      self.loadingElapsed++;
+    }, 1e3);
+  }
+  try {
+    const selectedSig = self.normalizedSelectedCategories.slice().sort().join(",");
+    const sig = `${selectedSig}|${self.literalSearch ? "1" : "0"}|${self.searchQuery || ""}`;
+    const params = new URLSearchParams({ category: "all" });
+    if (self.searchQuery) params.append("search", self.searchQuery);
+    if (self.literalSearch) params.append("literal", "true");
+    if (forceRefresh) params.append("refresh", "true");
+    if (!forceRefresh && self._lastLoadSig === sig && self.cachedAt != null) {
+      params.append("known_cached_at", String(self.cachedAt));
+    }
+    const data = await self.apiFetch(`/api/pending/items?${params}`, { timeoutMs: 15e3 });
+    if (data?.not_modified) {
+      syncPendingAnimeWatcher(self, data, "Titles identified - badges updated");
+      return;
+    }
+    if (!forceRefresh && self._lastLoadSig === sig && data?.cached_at && self.cachedAt && data.cached_at === self.cachedAt) {
+      return;
+    }
+    await applyLoadedPendingItems(self, data, forceRefresh, sig);
+  } catch (e2) {
+    if (!e2.isOffline) {
+      self.showToast("error", "Error", "Failed to load pending items");
+    }
+  } finally {
+    if (!silent) {
+      self.loading = false;
+      clearInterval(self._loadingTimer);
+      self.loadingElapsed = 0;
+    }
+    self._loadPendingPromise = null;
+  }
+}
+
+// The bulk of a successful /api/pending/items response: swap in the new tree, refresh derived
+// UI state, and persist the session cache. Split out of loadPending so its try-block doesn't
+// carry all of this branching itself.
+async function applyLoadedPendingItems(self, data, forceRefresh, sig) {
+  const rawItems = data.items || { movies: [], misc: [], external: [] };
+  self._lastRawItems = rawItems;
+  self.skipFiles = data.skip_files || { enabled: false, display_mode: "disabled" };
+  const itemsForState = self.skipFiles.enabled && self.skipFiles.display_mode === "hidden" ? self._stripHiddenSkippedItems(rawItems) : rawItems;
+  self._normalizePendingItemsForState(itemsForState);
+  self.items = deepFreezePendingTree(itemsForState);
+  if (forceRefresh) self.extLoadedChildren = {};
+  self.activeIndexers = (data.indexers || []).slice();
+  self.summary = data.summary || { movies: 0, misc: 0, external: 0, total: 0 };
+  self.cachedAt = data.cached_at || null;
+  self._lastLoadSig = sig;
+  if (Array.isArray(data.categories) && data.categories.length > 0) {
+    self.categories = data.categories;
+  }
+  await self.loadExternalGroupOrderState();
+  self._applyDetectedCategories();
+  self.syncExternalGroupOrder();
+  self.$nextTick(() => self.initPendingExternalGroupsSortable());
+  self.categorySelectionReady = true;
+  self._normalizeSelectedCategories();
+  syncPendingAnimeWatcher(self, data, "Titles identified — badges updated");
+  const sel = {};
+  self.activeIndexers.forEach((idx) => {
+    sel[idx.id] = true;
+  });
+  self.markIndexerSelection = sel;
+  self._saveSessionCache(data);
+}
+
+function normalizePendingExternalGroups(self, items) {
+  if (!Array.isArray(items.external)) return;
+  items.external.forEach((group, index2) => {
+    if (!group || typeof group !== "object") return;
+    const firstPath = group.items && group.items[0] && group.items[0].path ? String(group.items[0].path).replace(/\\/g, "/") : "";
+    const inferredFolder = firstPath ? firstPath.split("/").slice(0, -1).join("/") : "";
+    const rawKey = group.key || group.id || group.label || group.folder_name || inferredFolder || `external-${index2}`;
+    group.__ui_key = `external:${index2}:${self.normalizePathKey(rawKey)}`;
+    if (!group.folder_name) {
+      group.folder_name = group.label || (inferredFolder.split("/").pop() || `External ${index2 + 1}`);
+    }
+    group.items = group.items || [];
+    const groupCatHint = "";
+    (group.items || []).forEach((node) => normalizePendingNode(self, node, groupCatHint));
+    if (group.items.length === 1 && isSyntheticPendingRootFilesNode(group.items[0])) {
+      const synthetic = group.items[0];
+      const extracted = Array.isArray(synthetic.children) && synthetic.children.length > 0 ? synthetic.children : Array.isArray(synthetic.files) ? synthetic.files : [];
+      if (extracted.length > 0) {
+        group.items = extracted;
+        group.items.forEach((node) => normalizePendingNode(self, node, groupCatHint));
+      }
+    }
+  });
+}
+
 var vm = createVuePage({
 persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterMode", "ignoredPaths", "unignoredPaths", "queueSectionExpanded", "manualExternalCategories", "bulkSelectCategoriesSelected"],
 revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
@@ -1436,169 +1608,15 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       if (!silent && !forceRefresh && this.loading && Object.values(this.items).every((v2) => !Array.isArray(v2) || v2.length === 0)) {
         this._restoreSessionCache();
       }
-      this._loadPendingPromise = (async () => {
-        if (!silent) {
-          this.loading = true;
-          this.loadingElapsed = 0;
-          clearInterval(this._loadingTimer);
-          this._loadingTimer = setInterval(() => {
-            this.loadingElapsed++;
-          }, 1e3);
-        }
-        try {
-          const selectedSig = this.normalizedSelectedCategories.slice().sort().join(",");
-          const sig = `${selectedSig}|${this.literalSearch ? "1" : "0"}|${this.searchQuery || ""}`;
-          const params = new URLSearchParams({ category: "all" });
-          if (this.searchQuery) params.append("search", this.searchQuery);
-          if (this.literalSearch) params.append("literal", "true");
-          if (forceRefresh) params.append("refresh", "true");
-          if (!forceRefresh && this._lastLoadSig === sig && this.cachedAt != null) {
-            params.append("known_cached_at", String(this.cachedAt));
-          }
-          const data = await this.apiFetch(`/api/pending/items?${params}`, { timeoutMs: 15e3 });
-          if (data?.not_modified) {
-            const wasDetecting = this.animeDetecting;
-            this.animeDetecting = !!data.anime_detecting;
-            if (this.animeDetecting && !this._animeWatcher) {
-              this._animeWatcher = setInterval(() => this.loadPending(false, true), 5e3);
-            } else if (!this.animeDetecting && this._animeWatcher) {
-              clearInterval(this._animeWatcher);
-              this._animeWatcher = null;
-              if (wasDetecting) {
-                this.showToast("success", "Anime Check Complete", "Titles identified - badges updated");
-              }
-            }
-            return;
-          }
-          if (!forceRefresh && this._lastLoadSig === sig && data?.cached_at && this.cachedAt && data.cached_at === this.cachedAt) {
-            return;
-          }
-          const rawItems = data.items || { movies: [], misc: [], external: [] };
-          this._lastRawItems = rawItems;
-          this.skipFiles = data.skip_files || { enabled: false, display_mode: "disabled" };
-          const itemsForState = this.skipFiles.enabled && this.skipFiles.display_mode === "hidden" ? this._stripHiddenSkippedItems(rawItems) : rawItems;
-          this._normalizePendingItemsForState(itemsForState);
-          this.items = deepFreezePendingTree(itemsForState);
-          if (forceRefresh) this.extLoadedChildren = {};
-          this.activeIndexers = (data.indexers || []).slice();
-          this.summary = data.summary || { movies: 0, misc: 0, external: 0, total: 0 };
-          this.cachedAt = data.cached_at || null;
-          this._lastLoadSig = sig;
-      if (Array.isArray(data.categories) && data.categories.length > 0) {
-        this.categories = data.categories;
-      }
-      await this.loadExternalGroupOrderState();
-      this._applyDetectedCategories();
-      this.syncExternalGroupOrder();
-          this.$nextTick(() => this.initPendingExternalGroupsSortable());
-          this.categorySelectionReady = true;
-          this._normalizeSelectedCategories();
-          const wasDetecting = this.animeDetecting;
-          this.animeDetecting = !!data.anime_detecting;
-          if (this.animeDetecting && !this._animeWatcher) {
-            this._animeWatcher = setInterval(() => this.loadPending(false, true), 5e3);
-          } else if (!this.animeDetecting && this._animeWatcher) {
-            clearInterval(this._animeWatcher);
-            this._animeWatcher = null;
-            if (wasDetecting) {
-              this.showToast("success", "Anime Check Complete", "Titles identified \u2014 badges updated");
-            }
-          }
-          const sel = {};
-          this.activeIndexers.forEach((idx) => {
-            sel[idx.id] = true;
-          });
-          this.markIndexerSelection = sel;
-          this._saveSessionCache(data);
-        } catch (e2) {
-          if (!e2.isOffline) {
-            this.showToast("error", "Error", "Failed to load pending items");
-          }
-        } finally {
-          if (!silent) {
-            this.loading = false;
-            clearInterval(this._loadingTimer);
-            this.loadingElapsed = 0;
-          }
-          this._loadPendingPromise = null;
-        }
-      })();
+      this._loadPendingPromise = runPendingLoad(this, forceRefresh, silent);
       return this._loadPendingPromise;
     },
     _normalizePendingItemsForState(items) {
       if (!items || typeof items !== "object") return items;
-      const normalizeCategory = (value) => {
-        const raw = (value || "").toString().trim().toLowerCase();
-        if (!raw) return "";
-        if (/^tv\d*$/.test(raw) || /^series\d*$/.test(raw) || /^shows?\d*$/.test(raw)) return "tv";
-        if (/^movies?\d*$/.test(raw) || /^films?\d*$/.test(raw)) return "movies";
-        if (/^anime\d*$/.test(raw)) return "anime";
-        if (/^ebooks?\d*$/.test(raw)) return "ebooks";
-        if (/^audiobooks?\d*$/.test(raw)) return "audiobooks";
-        if (/^books?\d*$/.test(raw)) return "books";
-        if (/^music\d*$/.test(raw)) return "music";
-        if (/^apps?\d*$/.test(raw) || /^games?\d*$/.test(raw)) return "apps";
-        if (/^disc\d*$/.test(raw)) return "disc";
-        if (/^misc\d*$/.test(raw) || /^other\d*$/.test(raw)) return "misc";
-        return raw;
-      };
-      const isSyntheticRootFilesNode = (node) => {
-        if (!node || typeof node !== "object") return false;
-        const rawName = String(node.name || node.title || "").toLowerCase();
-        if (!rawName.includes("(root files)")) return false;
-        const hasPath = !!node.path;
-        const hasNested = Array.isArray(node.children) && node.children.length > 0 || Array.isArray(node.files) && node.files.length > 0;
-        return hasPath && hasNested;
-      };
-      const normalizeNode = (node, parentCategory = "") => {
-        if (!node || typeof node !== "object") return;
-        if (node.__normalizing) return;
-        node.__normalizing = true;
-        if (!node.key && node.path) {
-          node.key = `path:${this.normalizePathKey(node.path)}`;
-        }
-        const inferredSelfCategory = normalizeCategory(node.itype ? this.itypeToCategory(node.itype) : "");
-        const detectedSelfCategory = normalizeCategory(node.detected_category);
-        const explicitSelfCategory = normalizeCategory(node.category);
-        const inheritedCategory = normalizeCategory(parentCategory);
-        const safeCategory = detectedSelfCategory || explicitSelfCategory || inheritedCategory || inferredSelfCategory || "";
-        node.assigned_category_safe = safeCategory;
-        if (!node.detected_category && safeCategory) node.detected_category = safeCategory;
-        if ((!Array.isArray(node.children) || node.children.length === 0) && Array.isArray(node.files) && node.files.length > 0) {
-          node.children = node.files;
-          if (typeof node.is_dir === "undefined") node.is_dir = true;
-        }
-        if (Array.isArray(node.children)) {
-          node.children.forEach((child) => normalizeNode(child, safeCategory));
-        }
-        delete node.__normalizing;
-      };
-      if (Array.isArray(items.external)) {
-        items.external.forEach((group, index2) => {
-          if (!group || typeof group !== "object") return;
-          const firstPath = group.items && group.items[0] && group.items[0].path ? String(group.items[0].path).replace(/\\/g, "/") : "";
-          const inferredFolder = firstPath ? firstPath.split("/").slice(0, -1).join("/") : "";
-          const rawKey = group.key || group.id || group.label || group.folder_name || inferredFolder || `external-${index2}`;
-          group.__ui_key = `external:${index2}:${this.normalizePathKey(rawKey)}`;
-          if (!group.folder_name) {
-            group.folder_name = group.label || (inferredFolder.split("/").pop() || `External ${index2 + 1}`);
-          }
-          group.items = group.items || [];
-          const groupCatHint = "";
-          (group.items || []).forEach((node) => normalizeNode(node, groupCatHint));
-          if (group.items.length === 1 && isSyntheticRootFilesNode(group.items[0])) {
-            const synthetic = group.items[0];
-            const extracted = Array.isArray(synthetic.children) && synthetic.children.length > 0 ? synthetic.children : Array.isArray(synthetic.files) ? synthetic.files : [];
-            if (extracted.length > 0) {
-              group.items = extracted;
-              group.items.forEach((node) => normalizeNode(node, groupCatHint));
-            }
-          }
-        });
-      }
+      normalizePendingExternalGroups(this, items);
       for (const [key, val] of Object.entries(items)) {
         if (key === "external" || !Array.isArray(val)) continue;
-        val.forEach((node) => normalizeNode(node));
+        val.forEach((node) => normalizePendingNode(this, node));
       }
       return items;
     },

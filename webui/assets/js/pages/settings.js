@@ -5,6 +5,107 @@ import debounce from 'lodash.debounce';
 //  SETTINGS PAGE - Full Vue Reactive Implementation
 // ============================================================
 
+// loadSettings() below hands each section of the /api/settings response to one of these -
+// `self` is the Vue page instance. Splitting by section (rather than leaving one long sequence
+// of defaulting assignments) is what keeps each piece's branch count - one per `||`/`??`/ternary
+// default - clear of the complexity gate; the sections themselves are independent of each other.
+function applySettingsDestinations(self, data) {
+    self.settings.destinations.enable_backfill = data.destinations.enable_backfill || false;
+    self.settings.destinations.enable_duplicate_bypass = data.destinations.enable_duplicate_bypass || false;
+    self.indexers.forEach(indexer => {
+        self.settings.destinations[`enable_${indexer.id}`] = data.destinations[`enable_${indexer.id}`] || false;
+        self.settings.destinations[`backfill_${indexer.id}`] = data.destinations[`backfill_${indexer.id}`] || false;
+        self.settings.destinations[`priority_${indexer.id}`] = data.destinations[`priority_${indexer.id}`] || (indexer.priority || false);
+    });
+}
+
+function applySettingsProcessing(self, data) {
+    self.settings.processing = {
+        verbose: data.processing.verbose || false,
+        process_tv_episodes: data.processing.process_tv_episodes !== undefined ? data.processing.process_tv_episodes : true,
+        enable_duplicate_checking: data.processing.enable_duplicate_checking !== undefined ? data.processing.enable_duplicate_checking : true,
+        enable_anime_checking: data.processing.enable_anime_checking !== undefined ? data.processing.enable_anime_checking : false,
+        item_limit_per_category: data.processing.item_limit_per_category || null,
+        folder_size_limit_gb: data.processing.folder_size_limit_gb ?? 99,
+        folder_size_limit_enabled: data.processing.folder_size_limit_enabled !== undefined ? data.processing.folder_size_limit_enabled : true,
+        file_size_limit_gb: data.processing.file_size_limit_gb ?? 0,
+        file_size_limit_enabled: data.processing.file_size_limit_enabled !== undefined ? data.processing.file_size_limit_enabled : true,
+        dynamic_packs: data.processing.dynamic_packs !== undefined ? data.processing.dynamic_packs : true,
+        tv_pack_ignore: {
+            enabled: data.processing.tv_pack_ignore?.enabled !== undefined ? data.processing.tv_pack_ignore.enabled : true,
+            ignore_non_video: data.processing.tv_pack_ignore?.ignore_non_video !== undefined ? data.processing.tv_pack_ignore.ignore_non_video : true,
+            ignore_extras: data.processing.tv_pack_ignore?.ignore_extras !== undefined ? data.processing.tv_pack_ignore.ignore_extras : true,
+            require_sxxexx: data.processing.tv_pack_ignore?.require_sxxexx !== undefined ? data.processing.tv_pack_ignore.require_sxxexx : true,
+            require_resolution: data.processing.tv_pack_ignore?.require_resolution !== undefined ? data.processing.tv_pack_ignore.require_resolution : true,
+            require_source: data.processing.tv_pack_ignore?.require_source !== undefined ? data.processing.tv_pack_ignore.require_source : true,
+        },
+    };
+}
+
+function applySettingsUiAndSkipFiles(self, data) {
+    self.settings.ui = {
+        dashboard_stats_enabled: data.ui.dashboard_stats_enabled !== undefined ? data.ui.dashboard_stats_enabled : true,
+        stats_page_enabled: data.ui.stats_page_enabled !== undefined ? data.ui.stats_page_enabled : true,
+        ui_refresh_seconds: data.ui.ui_refresh_seconds || 2,
+        dashboard_stats_modules: (data.ui.dashboard_stats_modules || ["cpu", "memory", "disk", "free_space", "upload", "download"]).slice(0, 6),
+    };
+
+    const sf = data.skip_files || {};
+    self.settings.skip_files = {
+        enabled: sf.enabled || false,
+        display_mode: sf.display_mode || 'disabled',
+        patterns: (sf.patterns || []).map(p => ({
+            pattern: p.pattern || '',
+            categories: Array.isArray(p.categories) ? [...p.categories] : [],
+            is_regex: p.is_regex || false,
+        })),
+    };
+}
+
+function applySettingsAuthUploadFolders(self, data) {
+    const auth = data.auth || {};
+    self.settings.auth = {
+        enable_password: auth.enable_password !== undefined ? auth.enable_password : false,
+        web_username: auth.web_username || 'admin',
+        new_password: '',
+    };
+
+    self.settings.upload = {
+        poster_name: data.upload.poster_name || '',
+        poster_email: data.upload.poster_email || '',
+        rar_size: data.upload.rar_size || '100m',
+        article_size: data.upload.article_size || '1M',
+        include_readme: data.upload.include_readme !== undefined ? data.upload.include_readme : true,
+        upload_max_retries: data.upload.upload_max_retries || 3,
+        upload_retry_delay_seconds: data.upload.upload_retry_delay_seconds || 5,
+    };
+
+    const f = data.folders || {};
+    self.settings.folders = {
+        base: f.base_folder || '',
+        folder_paths: Array.isArray(f.folder_paths) && f.folder_paths.length > 0
+            ? f.folder_paths.map(fp => self.normalizeFolderPathEntry(fp))
+            : [],
+    };
+}
+
+function applySettingsCategoriesAndServers(self, data) {
+    // Populate available categories from indexer plugins
+    if (Array.isArray(data.categories) && data.categories.length > 0) {
+        self.availableCategories = data.categories;
+        // Also update skip file categories to match
+        self.skipFileCategories = data.categories.map(c => ({
+            value: c.id,
+            label: c.label,
+        }));
+    }
+
+    self.settings.api_keys = data.api_keys || {};
+    self.settings.usernames = data.usernames || {};
+
+    self.servers = data.nntp_servers || [];
+}
+
 const vm = createVuePage({
     data() {
         return {
@@ -558,101 +659,11 @@ const vm = createVuePage({
                 // Load settings
                 const data = await this.apiFetch('/api/settings');
 
-                // Apply destinations
-                this.settings.destinations.enable_backfill = data.destinations.enable_backfill || false;
-                this.settings.destinations.enable_duplicate_bypass = data.destinations.enable_duplicate_bypass || false;
-                this.indexers.forEach(indexer => {
-                    this.settings.destinations[`enable_${indexer.id}`] = data.destinations[`enable_${indexer.id}`] || false;
-                    this.settings.destinations[`backfill_${indexer.id}`] = data.destinations[`backfill_${indexer.id}`] || false;
-                    this.settings.destinations[`priority_${indexer.id}`] = data.destinations[`priority_${indexer.id}`] || (indexer.priority || false);
-                });
-
-                // Apply processing settings
-                this.settings.processing = {
-                    verbose: data.processing.verbose || false,
-                    process_tv_episodes: data.processing.process_tv_episodes !== undefined ? data.processing.process_tv_episodes : true,
-                    enable_duplicate_checking: data.processing.enable_duplicate_checking !== undefined ? data.processing.enable_duplicate_checking : true,
-                    enable_anime_checking: data.processing.enable_anime_checking !== undefined ? data.processing.enable_anime_checking : false,
-                    item_limit_per_category: data.processing.item_limit_per_category || null,
-                    folder_size_limit_gb: data.processing.folder_size_limit_gb ?? 99,
-                    folder_size_limit_enabled: data.processing.folder_size_limit_enabled !== undefined ? data.processing.folder_size_limit_enabled : true,
-                    file_size_limit_gb: data.processing.file_size_limit_gb ?? 0,
-                    file_size_limit_enabled: data.processing.file_size_limit_enabled !== undefined ? data.processing.file_size_limit_enabled : true,
-                    dynamic_packs: data.processing.dynamic_packs !== undefined ? data.processing.dynamic_packs : true,
-                    tv_pack_ignore: {
-                        enabled: data.processing.tv_pack_ignore?.enabled !== undefined ? data.processing.tv_pack_ignore.enabled : true,
-                        ignore_non_video: data.processing.tv_pack_ignore?.ignore_non_video !== undefined ? data.processing.tv_pack_ignore.ignore_non_video : true,
-                        ignore_extras: data.processing.tv_pack_ignore?.ignore_extras !== undefined ? data.processing.tv_pack_ignore.ignore_extras : true,
-                        require_sxxexx: data.processing.tv_pack_ignore?.require_sxxexx !== undefined ? data.processing.tv_pack_ignore.require_sxxexx : true,
-                        require_resolution: data.processing.tv_pack_ignore?.require_resolution !== undefined ? data.processing.tv_pack_ignore.require_resolution : true,
-                        require_source: data.processing.tv_pack_ignore?.require_source !== undefined ? data.processing.tv_pack_ignore.require_source : true,
-                    },
-                };
-
-                // Apply UI settings
-                this.settings.ui = {
-                    dashboard_stats_enabled: data.ui.dashboard_stats_enabled !== undefined ? data.ui.dashboard_stats_enabled : true,
-                    stats_page_enabled: data.ui.stats_page_enabled !== undefined ? data.ui.stats_page_enabled : true,
-                    ui_refresh_seconds: data.ui.ui_refresh_seconds || 2,
-                    dashboard_stats_modules: (data.ui.dashboard_stats_modules || ["cpu", "memory", "disk", "free_space", "upload", "download"]).slice(0, 6),
-                };
-
-                // Apply skip files settings
-                const sf = data.skip_files || {};
-                this.settings.skip_files = {
-                    enabled: sf.enabled || false,
-                    display_mode: sf.display_mode || 'disabled',
-                    patterns: (sf.patterns || []).map(p => ({
-                        pattern: p.pattern || '',
-                        categories: Array.isArray(p.categories) ? [...p.categories] : [],
-                        is_regex: p.is_regex || false,
-                    })),
-                };
-
-                // Apply auth settings
-                const auth = data.auth || {};
-                this.settings.auth = {
-                    enable_password: auth.enable_password !== undefined ? auth.enable_password : false,
-                    web_username: auth.web_username || 'admin',
-                    new_password: '',
-                };
-
-                // Apply upload settings
-                this.settings.upload = {
-                    poster_name: data.upload.poster_name || '',
-                    poster_email: data.upload.poster_email || '',
-                    rar_size: data.upload.rar_size || '100m',
-                    article_size: data.upload.article_size || '1M',
-                    include_readme: data.upload.include_readme !== undefined ? data.upload.include_readme : true,
-                    upload_max_retries: data.upload.upload_max_retries || 3,
-                    upload_retry_delay_seconds: data.upload.upload_retry_delay_seconds || 5,
-                };
-
-                // Apply folder settings
-                const f = data.folders || {};
-                this.settings.folders = {
-                    base: f.base_folder || '',
-                    folder_paths: Array.isArray(f.folder_paths) && f.folder_paths.length > 0
-                        ? f.folder_paths.map(fp => this.normalizeFolderPathEntry(fp))
-                        : [],
-                };
-
-                // Populate available categories from indexer plugins
-                if (Array.isArray(data.categories) && data.categories.length > 0) {
-                    this.availableCategories = data.categories;
-                    // Also update skip file categories to match
-                    this.skipFileCategories = data.categories.map(c => ({
-                        value: c.id,
-                        label: c.label,
-                    }));
-                }
-
-                // Apply API Keys & Usernames
-                this.settings.api_keys = data.api_keys || {};
-                this.settings.usernames = data.usernames || {};
-
-                // Apply servers
-                this.servers = data.nntp_servers || [];
+                applySettingsDestinations(this, data);
+                applySettingsProcessing(this, data);
+                applySettingsUiAndSkipFiles(this, data);
+                applySettingsAuthUploadFolders(this, data);
+                applySettingsCategoriesAndServers(this, data);
 
                 // Load raw config
                 await this.loadRawSettings();
