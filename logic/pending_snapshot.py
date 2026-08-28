@@ -1797,6 +1797,151 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     return payload
 
 
+def _resolve_filter_categories(category: str, source: Dict[str, List[Any]]) -> List[str]:
+    if category == "all":
+        return list(source.keys())
+    if category == "tv":
+        return [c for c in ["tv", "external"] if c in source]
+    if category in source:
+        return [category]
+    return []
+
+
+def _is_match(raw_query: Optional[str], target: str, literal: bool) -> bool:
+    """Shared search-match rule for every category branch below.
+
+    Kept as a plain module-level helper (not a nested closure) so its own
+    branches are what get measured, rather than folding into whichever
+    category function calls it.
+    """
+    if not raw_query:
+        return True
+    if literal:
+        return raw_query.lower() in target.lower()
+    target_clean = target.lower()
+    query_clean = raw_query.lower()
+    for token in "._-[]()":
+        target_clean = target_clean.replace(token, " ")
+        query_clean = query_clean.replace(token, " ")
+    words = [word for word in query_clean.split() if word]
+    return not words or all(word in target_clean for word in words)
+
+
+def _filter_tv_season(
+    season: Dict[str, Any], query: Optional[str], literal: bool, indexer_ids: List[str]
+) -> Optional[tuple]:
+    """Return (filtered_season, size, episode_count, indexer_status), or None if the
+    season has no matching items."""
+    season_items = season.get("items") or []
+    keep_items = [item for item in season_items if _is_match(query, item.get("name", ""), literal)]
+    if not keep_items:
+        return None
+
+    season_status: Dict[str, bool] = {idx_id: True for idx_id in indexer_ids}
+    for item in keep_items:
+        item_status = item.get("indexers") or {}
+        for idx_id in indexer_ids:
+            if not item_status.get(idx_id, False):
+                season_status[idx_id] = False
+
+    season_size = sum(int(item.get("size") or 0) for item in keep_items)
+    season_episodes = sum(1 for item in keep_items if item.get("itype") == "TV Episode")
+    filtered_season = {
+        **season,
+        "items": keep_items,
+        "indexers": season_status,
+        "size": season_size,
+        "episode_count": season_episodes,
+        "expanded": False,
+    }
+    return filtered_season, season_size, season_episodes, season_status
+
+
+def _filter_tv_show(
+    show: Dict[str, Any], query: Optional[str], literal: bool, indexer_ids: List[str]
+) -> Optional[Dict[str, Any]]:
+    if not query or _is_match(query, show.get("name", ""), literal):
+        return show
+
+    keep_seasons = []
+    show_size = 0
+    show_episodes = 0
+    show_status: Dict[str, bool] = {idx_id: True for idx_id in indexer_ids}
+    for season in show.get("seasons") or []:
+        result = _filter_tv_season(season, query, literal, indexer_ids)
+        if result is None:
+            continue
+        filtered_season, season_size, season_episodes, season_status = result
+        keep_seasons.append(filtered_season)
+        show_size += season_size
+        show_episodes += season_episodes
+        for idx_id in indexer_ids:
+            if not season_status[idx_id]:
+                show_status[idx_id] = False
+
+    if not keep_seasons:
+        return None
+    return {
+        **show,
+        "seasons": keep_seasons,
+        "indexers": show_status,
+        "size": show_size,
+        "episode_count": show_episodes,
+    }
+
+
+def _filter_tv_category(
+    shows: List[Dict[str, Any]], query: Optional[str], literal: bool, indexer_ids: List[str]
+) -> List[Dict[str, Any]]:
+    out = []
+    for show in shows:
+        filtered_show = _filter_tv_show(show, query, literal, indexer_ids)
+        if filtered_show is not None:
+            out.append(filtered_show)
+    return out
+
+
+def _filter_external_category(
+    groups: List[Dict[str, Any]],
+    category: str,
+    query: Optional[str],
+    literal: bool,
+    external_search_index: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    detected_filter = category if category not in ("all", "external") else None
+    out = []
+    for group in groups:
+        items_pool = group.get("items", [])
+        if detected_filter:
+            if group.get("source_category") == detected_filter:
+                items_pool = list(items_pool)
+            else:
+                items_pool = [i for i in items_pool if i.get("detected_category") == detected_filter]
+        if not items_pool:
+            continue
+        if not query:
+            out.append({**group, "items": items_pool})
+            continue
+        keep_items = [
+            item
+            for item in items_pool
+            if _is_match(
+                query,
+                str(external_search_index.get(str(item.get("key") or "")) or item.get("name", "")),
+                literal,
+            )
+        ]
+        if keep_items:
+            out.append({**group, "items": keep_items})
+    return out
+
+
+def _filter_generic_category(
+    items: List[Dict[str, Any]], query: Optional[str], literal: bool
+) -> List[Dict[str, Any]]:
+    return [item for item in items if not query or _is_match(query, item["name"], literal)]
+
+
 def filter_pending_snapshot(
     data: Dict[str, Any], search: Optional[str], category: str, literal: bool = False
 ) -> Dict[str, Any]:
@@ -1813,14 +1958,7 @@ def filter_pending_snapshot(
 
     source = data["items"]
     all_categories = list(source.keys())
-    if category == "all":
-        categories = all_categories
-    elif category == "tv":
-        categories = [c for c in ["tv", "external"] if c in source]
-    elif category in source:
-        categories = [category]
-    else:
-        categories = []
+    categories = _resolve_filter_categories(category, source)
     filtered: Dict[str, List[Any]] = {category_key: [] for category_key in all_categories}
     query = search.strip() if search else None
     indexer_ids: List[str] = [
@@ -1832,99 +1970,17 @@ def filter_pending_snapshot(
     if not isinstance(external_search_index, dict):
         external_search_index = {}
 
-    def is_match(raw_query: str, target: str) -> bool:
-        if not raw_query:
-            return True
-        if literal:
-            return raw_query.lower() in target.lower()
-        target_clean = target.lower()
-        query_clean = raw_query.lower()
-        for token in "._-[]()":
-            target_clean = target_clean.replace(token, " ")
-            query_clean = query_clean.replace(token, " ")
-        words = [word for word in query_clean.split() if word]
-        return not words or all(word in target_clean for word in words)
-
     for category_key in categories:
         if category_key not in source:
             continue
         if category_key == "tv":
-            for show in source[category_key]:
-                if not query or is_match(query, show.get("name", "")):
-                    filtered["tv"].append(show)
-                    continue
-
-                keep_seasons = []
-                show_size = 0
-                show_episodes = 0
-                show_status: Dict[str, bool] = {idx_id: True for idx_id in indexer_ids}
-                for season in show.get("seasons") or []:
-                    season_items = season.get("items") or []
-                    keep_items = [item for item in season_items if is_match(query, item.get("name", ""))]
-                    if not keep_items:
-                        continue
-
-                    season_status: Dict[str, bool] = {idx_id: True for idx_id in indexer_ids}
-                    for item in keep_items:
-                        item_status = item.get("indexers") or {}
-                        for idx_id in indexer_ids:
-                            if not item_status.get(idx_id, False):
-                                season_status[idx_id] = False
-                                show_status[idx_id] = False
-
-                    season_size = sum(int(item.get("size") or 0) for item in keep_items)
-                    season_episodes = sum(1 for item in keep_items if item.get("itype") == "TV Episode")
-                    keep_seasons.append(
-                        {
-                            **season,
-                            "items": keep_items,
-                            "indexers": season_status,
-                            "size": season_size,
-                            "episode_count": season_episodes,
-                            "expanded": False,
-                        }
-                    )
-                    show_size += season_size
-                    show_episodes += season_episodes
-
-                if keep_seasons:
-                    filtered["tv"].append(
-                        {
-                            **show,
-                            "seasons": keep_seasons,
-                            "indexers": show_status,
-                            "size": show_size,
-                            "episode_count": show_episodes,
-                        }
-                    )
+            filtered["tv"] = _filter_tv_category(source[category_key], query, literal, indexer_ids)
         elif category_key == "external":
-            detected_filter = category if category not in ("all", "external") else None
-            for group in source.get(category_key, []):
-                items_pool = group.get("items", [])
-                if detected_filter:
-                    if group.get("source_category") == detected_filter:
-                        items_pool = list(items_pool)
-                    else:
-                        items_pool = [i for i in items_pool if i.get("detected_category") == detected_filter]
-                if not items_pool:
-                    continue
-                if not query:
-                    filtered["external"].append({**group, "items": items_pool})
-                    continue
-                keep_items = [
-                    item
-                    for item in items_pool
-                    if is_match(
-                        query,
-                        str(external_search_index.get(str(item.get("key") or "")) or item.get("name", "")),
-                    )
-                ]
-                if keep_items:
-                    filtered["external"].append({**group, "items": keep_items})
+            filtered["external"] = _filter_external_category(
+                source.get(category_key, []), category, query, literal, external_search_index
+            )
         else:
-            for item in source[category_key]:
-                if not query or is_match(query, item["name"]):
-                    filtered[category_key].append(item)
+            filtered[category_key] = _filter_generic_category(source[category_key], query, literal)
 
     return {
         "items": filtered,
