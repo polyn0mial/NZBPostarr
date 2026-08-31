@@ -4,6 +4,7 @@
 
 from tests.support import *
 
+
 @pytest.mark.skipif(
     not _playwright_browsers_available(),
     reason="Playwright browsers are not installed",
@@ -88,11 +89,11 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
     ]
 
     for case_name, path_parts, required_substrings in cases:
-        text = _read_repo_text(*path_parts)
+        text = _queue_source() if case_name == "queue-js" else _read_repo_text(*path_parts)
         for needle in required_substrings:
             assert needle in text, f"{case_name}: {needle}"
 
-    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    queue_js = _queue_source()
     assert "this._pendingExternalGroupsSortable = null;" not in queue_js
     for obsolete_browser_inference in (
         "inferExternalCategory",
@@ -105,7 +106,7 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
 def test_webui_performance_guards_are_present() -> None:
     page_base_js = _read_repo_text("webui", "assets", "js", "page-base.js")
     dashboard_js = _read_repo_text("webui", "assets", "js", "pages", "dashboard.js")
-    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    queue_js = _queue_source()
     queue_html = _read_repo_text("webui", "queue.html")
     core_css = _read_repo_text("webui", "assets", "css", "core.css")
 

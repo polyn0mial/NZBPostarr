@@ -4,305 +4,96 @@
 FastAPI application: API routes and app setup.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
-
-import asyncio
-import copy
-import hashlib
-import hmac
-import json
-import os
-import re
-import tempfile
-import threading
-import time
-import urllib.parse
-from contextlib import AsyncExitStack, asynccontextmanager
-from pathlib import Path
-from typing import Any, AsyncGenerator, Callable, Dict, List, Optional, Set
-
-from fastapi import (
-    APIRouter,
-    Depends,
-    FastAPI,
-    File,
-    Form,
-    HTTPException,
-    Request,
-    Response,
-    UploadFile,
+from app_base import (
+    APIRouter as APIRouter, ASSETS_DIR as ASSETS_DIR, Any as Any, AsyncExitStack as AsyncExitStack, AsyncGenerator as AsyncGenerator,
+    BaseModel as BaseModel, Callable as Callable, Depends as Depends, Dict as Dict, FastAPI as FastAPI, Field as Field, File as File,
+    FileResponse as FileResponse, FileSystemEventHandler as FileSystemEventHandler, Form as Form, GZipMiddleware as GZipMiddleware,
+    HTMLResponse as HTMLResponse, HTTPException as HTTPException, JSONResponse as JSONResponse, Jinja2Templates as Jinja2Templates, List as List,
+    Observer as Observer, Optional as Optional, Path as Path, ProcessingJobRequest as ProcessingJobRequest, RedirectResponse as RedirectResponse,
+    Request as Request, Response as Response, SECRET_MASK as SECRET_MASK, Set as Set, Settings as Settings, StaticFiles as StaticFiles,
+    UploadFile as UploadFile, UploadService as UploadService, VIDEO_EXTENSIONS as VIDEO_EXTENSIONS, WEBUI_ROOT as WEBUI_ROOT,
+    _ANIME_CHECK_COOLDOWN_S as _ANIME_CHECK_COOLDOWN_S, _AUTH_COOKIE as _AUTH_COOKIE, _AUTH_COOKIE_MAX_AGE as _AUTH_COOKIE_MAX_AGE,
+    _AUTH_PUBLIC_PATHS as _AUTH_PUBLIC_PATHS, _AUTH_PUBLIC_PREFIXES as _AUTH_PUBLIC_PREFIXES, _MCP_ASGI_APP as _MCP_ASGI_APP, _MCP_PATH as _MCP_PATH,
+    _PENDING_BUILD_SUMMARY as _PENDING_BUILD_SUMMARY, _PENDING_FILTER as _PENDING_FILTER, _anime_check_inflight as _anime_check_inflight,
+    _anime_check_last_attempt as _anime_check_last_attempt, _anime_check_lock as _anime_check_lock, _anime_check_thread as _anime_check_thread,
+    _boot_reaper_task as _boot_reaper_task, _pending_index as _pending_index, _pending_refresh_lock as _pending_refresh_lock,
+    _shared_dashboard_stats_enabled as _shared_dashboard_stats_enabled, _shared_history_tracking_enabled as _shared_history_tracking_enabled,
+    _shared_stats_page_enabled as _shared_stats_page_enabled, asynccontextmanager as asynccontextmanager, asyncio as asyncio, console as console,
+    console_router as console_router, copy as copy, dashboard_router as dashboard_router, database as database, get_config as get_config,
+    get_configured_category_folders as get_configured_category_folders, get_configured_folders as get_configured_folders,
+    get_pending_index_manager as get_pending_index_manager, get_upload_service as get_upload_service, hashlib as hashlib, hmac as hmac,
+    indexers_router as indexers_router, json as json, logger as logger, os as os, pending_router as pending_router,
+    pending_snapshot_mod as pending_snapshot_mod, processing as processing, re as re, scan_configured_items as scan_configured_items,
+    settings_router as settings_router, start_watchdog_observer as start_watchdog_observer, stats_router as stats_router,
+    stop_watchdog_observer as stop_watchdog_observer, system_router as system_router, tempfile as tempfile, templates as templates,
+    tests_router as tests_router, threading as threading, time as time, updater as updater, uploads_router as uploads_router, urllib as urllib,
+    usenet_stream as usenet_stream,
 )
-from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
-from loguru import logger
-from pydantic import BaseModel, Field
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
-
-from core import database
-from core.config import get_config
-from core.redaction import SECRET_MASK
-from core.utils import VIDEO_EXTENSIONS, start_watchdog_observer, stop_watchdog_observer
-from logic import pending_snapshot as pending_snapshot_mod
-from logic import processing, updater, usenet_stream
-from logic.pending_index import get_pending_index_manager
-from logic.pending_scan import (
-    get_configured_category_folders,
-    get_configured_folders,
-    scan_configured_items,
+from app_g1 import (
+    AddQueueItemsRequest as AddQueueItemsRequest, BulkDeleteRequest as BulkDeleteRequest,
+    PendingGroupOrderLockedRequest as PendingGroupOrderLockedRequest, PendingGroupOrderRequest as PendingGroupOrderRequest,
+    QueuePriorityRequest as QueuePriorityRequest, QueueRevalidateRequest as QueueRevalidateRequest, QueueScheduleRequest as QueueScheduleRequest,
+    RemoveQueuedJobItemRequest as RemoveQueuedJobItemRequest, RenameJobRequest as RenameJobRequest, ReorderQueueRequest as ReorderQueueRequest,
+    ReorderQueuedJobItemsRequest as ReorderQueuedJobItemsRequest, RestartRequest as RestartRequest, StartQueueRequest as StartQueueRequest,
+    StopAllRequest as StopAllRequest, StreamStartResponse as StreamStartResponse, UpdateInstallRequest as UpdateInstallRequest,
+    UpdateRollbackRequest as UpdateRollbackRequest, UploadRequest as UploadRequest, _default_itype_for_category as _default_itype_for_category,
+    _mask_config_secrets as _mask_config_secrets, _merge_masked_secret_updates as _merge_masked_secret_updates,
+    _normalize_request_strings as _normalize_request_strings, _resolved_policy_path as _resolved_policy_path, browse_folders as browse_folders,
+    clear_completed as clear_completed, clear_queue as clear_queue, clear_queue_items as clear_queue_items,
+    database_health_check as database_health_check, delete_job_history as delete_job_history, delete_job_route as delete_job_route,
+    delete_stream_monitor as delete_stream_monitor, delete_upload_item as delete_upload_item, download_log_file as download_log_file,
+    force_start_queue_item as force_start_queue_item, get_active_job_items as get_active_job_items, get_completed_job_items as get_completed_job_items,
+    get_grouped as get_grouped, get_grouped_items as get_grouped_items, get_history as get_history, get_hourly_stats as get_hourly_stats,
+    get_job_uploads as get_job_uploads, get_jobs as get_jobs, get_logs as get_logs, get_queue as get_queue, get_queue_items as get_queue_items,
+    get_queued_job_items as get_queued_job_items, get_recent as get_recent, get_stream_monitors as get_stream_monitors, get_summary as get_summary,
+    pause_queue_processing as pause_queue_processing, pause_upload as pause_upload, promote_queued_job as promote_queued_job,
+    reload_indexers_route as reload_indexers_route, remove_queue_item as remove_queue_item, resume_queue_processing as resume_queue_processing,
+    resume_upload as resume_upload, retry_upload as retry_upload, stop_clear_queue_processing as stop_clear_queue_processing,
+    stop_clear_upload as stop_clear_upload, stop_queue_processing as stop_queue_processing, stop_upload as stop_upload,
 )
-from logic.queueing import ProcessingJobRequest
-from logic.services import UploadService, console, get_upload_service
-from logic.stats_engine import (
-    dashboard_stats_enabled as _shared_dashboard_stats_enabled,
-    history_tracking_enabled as _shared_history_tracking_enabled,
-    stats_page_enabled as _shared_stats_page_enabled,
+from app_g2 import (
+    AnimeCacheCorrectionRequest as AnimeCacheCorrectionRequest, ForceUploadRequest as ForceUploadRequest, MarkUploadedRequest as MarkUploadedRequest,
+    _build_pending_summary as _build_pending_summary, _bulk_selection_excluded_roots as _bulk_selection_excluded_roots,
+    _classify_video_name as _classify_video_name, _collect_anime_check_names as _collect_anime_check_names,
+    _collect_uncached_anime_check_names as _collect_uncached_anime_check_names, _detect_content_itype as _detect_content_itype,
+    _detect_external_category as _detect_external_category, _filter_pending as _filter_pending,
+    _force_upload_dir_direct_video_count as _force_upload_dir_direct_video_count,
+    _force_upload_dir_recursive_video_count as _force_upload_dir_recursive_video_count, _log_selected_payload as _log_selected_payload,
+    _normalize_force_upload_path as _normalize_force_upload_path, _normalize_selection_path as _normalize_selection_path,
+    _normalize_upload_categories as _normalize_upload_categories, _path_is_at_or_below as _path_is_at_or_below,
+    _pending_watch_folders as _pending_watch_folders, _preview_selected_items as _preview_selected_items, _run_startup_reaper as _run_startup_reaper,
+    _runtime_revision as _runtime_revision, _slim_pending_node as _slim_pending_node, bulk_delete_upload_items as bulk_delete_upload_items,
+    check_for_updates_now as check_for_updates_now, get_raw_config as get_raw_config, get_readme_file as get_readme_file,
+    get_runtime_revision as get_runtime_revision, get_update_backups as get_update_backups, get_update_releases as get_update_releases,
+    get_update_status as get_update_status, health as health, install_update_from_github as install_update_from_github,
+    install_update_from_upload as install_update_from_upload, ping as ping, remove_queued_job_item_route as remove_queued_job_item_route,
+    rename_upload_job as rename_upload_job, reorder_active_job_items_route as reorder_active_job_items_route, reorder_queue_items as reorder_queue_items,
+    reorder_queued_job_items_route as reorder_queued_job_items_route, revalidate_queue_jobs as revalidate_queue_jobs,
+    save_readme_file as save_readme_file, set_queued_job_priority as set_queued_job_priority, set_queued_job_schedule as set_queued_job_schedule,
+    start_queue as start_queue, start_streamed_nzb_upload as start_streamed_nzb_upload,
 )
-
-_PENDING_BUILD_SUMMARY = pending_snapshot_mod.build_pending_summary
-_PENDING_FILTER = pending_snapshot_mod.filter_pending_snapshot
-
-# ============================================================
-# MODELS
-# ============================================================
-
-
-class UploadRequest(BaseModel):
-    """API request model for starting an upload job."""
-
-    category: str = "all"
-    categories: List[str] = Field(default_factory=list)
-    test_mode: bool = False
-    limit: Optional[int] = None
-    file_path: Optional[str] = None
-    upload_type: Optional[str] = None
-    enable_duplicate_check: bool = True
-    skip_packs: bool = False
-    skip_episodes: bool = False
-    indexer_id: Optional[str] = None
-    indexer_ids: List[str] = Field(default_factory=list)
-    folder_paths: List[str] = Field(default_factory=list)
-    source: Optional[str] = None
-
-
-class StreamStartResponse(BaseModel):
-    """API response model for starting a streamed NZB repost job."""
-
-    job_id: Optional[str] = None
-    job_ids: List[str] = Field(default_factory=list)
-    status: str
-    mode: str = "job"
-    message: Optional[str] = None
-    monitor: Optional[Dict[str, Any]] = None
-
-
-class ReorderQueuedJobItemsRequest(BaseModel):
-    """API request model for reordering queued job target paths."""
-
-    paths: List[str]
-
-
-class RemoveQueuedJobItemRequest(BaseModel):
-    """API request model for removing one path from a queued job."""
-
-    path: str
-
-
-class RenameJobRequest(BaseModel):
-    """API request model for setting/clearing a custom job display name."""
-
-    name: Optional[str] = None
-
-
-class QueueScheduleRequest(BaseModel):
-    """API request model for deferred queued-job scheduling."""
-
-    run_after: Optional[str] = None
-
-
-class QueuePriorityRequest(BaseModel):
-    """API request model for setting a queued or paused job's priority."""
-
-    priority: int = 0
-
-
-class PendingGroupOrderRequest(BaseModel):
-    """API request model for shared pending-directory ordering."""
-
-    order: List[str] = Field(default_factory=list)
-
-
-class PendingGroupOrderLockedRequest(BaseModel):
-    """API request model for shared pending-directory lock state."""
-
-    locked: bool = False
-
-
-class QueueRevalidateRequest(BaseModel):
-    """API request model for revalidating queued jobs against current rules."""
-
-    include_paused: bool = True
-
-
-class UpdateInstallRequest(BaseModel):
-    """API request model for installing an update from GitHub."""
-
-    version: Optional[str] = None
-    restart: bool = True
-
-
-class UpdateRollbackRequest(BaseModel):
-    """API request model for rolling back to a backup snapshot."""
-
-    backup_id: str
-    restart: bool = True
-
-
-class RestartRequest(BaseModel):
-    """API request model for scheduling a process restart."""
-
-    delay_seconds: float = 2.0
-    stop_before_restart: bool = True
-    clear_staged_items: bool = True
-    wait_timeout_seconds: float = 15.0
-
-
-class StopAllRequest(BaseModel):
-    """API request model for stopping all work and waiting for quiescence."""
-
-    clear_staged_items: bool = True
-    wait_timeout_seconds: float = 15.0
-
-
-# ============================================================
-# ROUTERS
-# ============================================================
-
-uploads_router = APIRouter(prefix="/api/uploads", tags=["uploads"])
-dashboard_router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
-settings_router = APIRouter(prefix="/api/settings", tags=["settings"])
-console_router = APIRouter(prefix="/api/console", tags=["console"])
-stats_router = APIRouter(prefix="/api/stats", tags=["stats"])
-tests_router = APIRouter(prefix="/api/tests", tags=["tests"])
-system_router = APIRouter(prefix="/api/system", tags=["system"])
-
+from app_g3 import (
+    _collapse_force_upload_items as _collapse_force_upload_items, _filter_bulk_selectable_items as _filter_bulk_selectable_items,
+    _should_preserve_force_upload_dir as _should_preserve_force_upload_dir, _slim_pending_items as _slim_pending_items,
+    mark_items_uploaded as mark_items_uploaded, restart_service as restart_service, rollback_update as rollback_update,
+    stop_all_service_activity as stop_all_service_activity, update_pending_group_order as update_pending_group_order,
+    update_pending_group_order_locked as update_pending_group_order_locked,
+)
 
 def _stats_page_enabled(conf: Optional[Any] = None) -> bool:
     current = conf or get_config()
     return _shared_stats_page_enabled(current)
 
-
 def _dashboard_server_stats_enabled(conf: Optional[Any] = None) -> bool:
     current = conf or get_config()
     return _shared_dashboard_stats_enabled(current)
-
 
 def _stats_history_enabled(conf: Optional[Any] = None) -> bool:
     current = conf or get_config()
     return _shared_history_tracking_enabled(current)
 
-
 def _stats_collector_required(conf: Optional[Any] = None) -> bool:
     return _stats_history_enabled(conf)
-
-
-def _resolved_policy_path(value: Any) -> Path:
-    path = Path(str(value or "").strip())
-    try:
-        return path.resolve()
-    except OSError:
-        return path.absolute()
-
-
-def _bulk_selection_excluded_roots(conf: Any) -> tuple[Path, ...]:
-    """Return configured roots which must not participate in mass selection."""
-    get_entries = getattr(conf, "get_folder_path_entries", None)
-    entries = get_entries() if callable(get_entries) else getattr(conf, "folder_paths", [])
-    roots: list[Path] = []
-    for entry in entries or []:
-        if not isinstance(entry, dict) or bool(entry.get("allow_bulk_selection", True)):
-            continue
-        raw_path = str(entry.get("path") or "").strip()
-        if raw_path:
-            roots.append(_resolved_policy_path(raw_path))
-    return tuple(roots)
-
-
-def _path_is_at_or_below(path_value: Any, root: Path) -> bool:
-    candidate = _resolved_policy_path(path_value)
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        return False
-    return True
-
-
-def _filter_bulk_selectable_items(
-    items: List[Dict[str, Any]],
-    conf: Any,
-) -> tuple[List[Dict[str, Any]], int]:
-    """Apply per-root mass-selection policy without restricting manual actions."""
-    excluded_roots = _bulk_selection_excluded_roots(conf)
-    if not excluded_roots:
-        return list(items), 0
-
-    allowed: List[Dict[str, Any]] = []
-    excluded_count = 0
-    for item in items:
-        raw_path = str(item.get("path") or "").strip()
-        if raw_path and any(_path_is_at_or_below(raw_path, root) for root in excluded_roots):
-            excluded_count += 1
-            continue
-        allowed.append(item)
-    return allowed, excluded_count
-
-
-def _normalize_request_strings(values: List[str]) -> List[str]:
-    normalized: List[str] = []
-    seen: Set[str] = set()
-    for value in values:
-        text = str(value or "").strip()
-        if text and text not in seen:
-            seen.add(text)
-            normalized.append(text)
-    return normalized
-
-
-def _normalize_upload_categories(values: List[str]) -> List[str]:
-    requested = _normalize_request_strings(values)
-    if not requested or "all" in requested:
-        return ["all"]
-
-    normalized: List[str] = []
-    seen: Set[str] = set()
-    for value in requested:
-        key = str(value).strip().lower()
-        for category in (["movies", "tv"] if key == "both" else [key]):
-            if category and category != "external" and category not in seen:
-                seen.add(category)
-                normalized.append(category)
-    return normalized or ["all"]
-
-
-def _normalize_selection_path(value: Any) -> str:
-    normalized = str(_resolved_policy_path(value))
-    return normalized.casefold() if os.name == "nt" else normalized
-
-
-def _default_itype_for_category(path: Path, category: str) -> str:
-    normalized = str(category or "").strip().lower()
-    if normalized == "tv":
-        return "TV Show" if path.is_dir() else "TV Episode"
-    return {
-        "movies": "Movie",
-        "anime": "Anime",
-        "music": "Music",
-        "audiobooks": "Audiobook",
-        "books": "Ebook",
-        "apps": "App",
-    }.get(normalized, "Misc")
-
 
 def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Dict[str, str]], Dict[str, Any]]:
     """Resolve one upload request into the canonical bulk-selection candidates."""
@@ -383,113 +174,17 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
         "excluded_roots": [str(root) for root in excluded_roots],
     }
 
-
-async def _preview_selected_items(
-    items: List[Dict[str, Any]],
-    *,
-    enable_duplicate_check: bool,
-    test_mode: bool,
-    indexer_id: Optional[str] = None,
-    indexer_ids: Optional[List[str]] = None,
-    force: Optional[bool] = None,
-    skip_packs: bool = False,
-    skip_episodes: bool = False,
-) -> Dict[str, Any]:
-    normalized_indexer_ids = _normalize_request_strings(indexer_ids or ([indexer_id] if indexer_id else []))
-    return await asyncio.to_thread(
-        processing.preview_processing_items,
-        items,
-        target_indexer_id=normalized_indexer_ids[0] if len(normalized_indexer_ids) == 1 else None,
-        target_indexer_ids=normalized_indexer_ids,
-        enable_duplicate_check=enable_duplicate_check,
-        force=force,
-        test_mode=test_mode,
-        skip_packs=skip_packs,
-        skip_episodes=skip_episodes,
-    )
-
-
-def _mask_config_secrets(value: Any, *, key: str = "") -> Any:
-    normalized_key = str(key or "").strip().lower()
-    secret_key = (
-        normalized_key in {"api_keys", "usernames", "web_password", "password", "pass", "user", "username"}
-        or normalized_key.endswith("_api_key")
-    )
-    if secret_key:
-        if isinstance(value, dict):
-            return {str(child_key): SECRET_MASK if child_value not in (None, "") else child_value for child_key, child_value in value.items()}
-        return SECRET_MASK if value not in (None, "") else value
-    if isinstance(value, dict):
-        return {
-            str(child_key): _mask_config_secrets(child_value, key=str(child_key))
-            for child_key, child_value in value.items()
-        }
-    if isinstance(value, list):
-        return [_mask_config_secrets(item) for item in value]
-    return value
-
-
-def _merge_masked_secret_updates(updates: Dict[str, Any], conf: Any) -> Dict[str, Any]:
-    """Replace unchanged UI mask markers with the current private values."""
-    merged = copy.deepcopy(updates)
-    if merged.get("web_password") == SECRET_MASK:
-        merged["web_password"] = str(getattr(conf, "web_password", "") or "")
-
-    for field_name in ("api_keys", "usernames"):
-        incoming = merged.get(field_name)
-        current = getattr(conf, field_name, {}) or {}
-        if not isinstance(incoming, dict) or not isinstance(current, dict):
-            continue
-        for item_key, item_value in list(incoming.items()):
-            if item_value == SECRET_MASK:
-                incoming[item_key] = current.get(item_key, "")
-
-    incoming_servers = merged.get("nntp_servers")
-    current_servers = list(getattr(conf, "nntp_servers", []) or [])
-    if isinstance(incoming_servers, list):
-        current_by_name = {
-            str(getattr(server, "name", "")): server
-            for server in current_servers
-            if str(getattr(server, "name", ""))
-        }
-        normalized_servers: list[Any] = []
-        for index, incoming_server in enumerate(incoming_servers):
-            if not isinstance(incoming_server, dict):
-                normalized_servers.append(incoming_server)
-                continue
-            server = dict(incoming_server)
-            current_server = current_by_name.get(str(server.get("name") or ""))
-            if current_server is None and index < len(current_servers):
-                current_server = current_servers[index]
-
-            incoming_user = server.get("user")
-            if incoming_user == SECRET_MASK and current_server is not None:
-                server["user"] = str(getattr(current_server, "user", ""))
-
-            incoming_password = server.pop("password", server.get("pass"))
-            if incoming_password == SECRET_MASK and current_server is not None:
-                incoming_password = str(getattr(current_server, "password", ""))
-            if incoming_password is not None:
-                server["pass"] = incoming_password
-            normalized_servers.append(server)
-        merged["nntp_servers"] = normalized_servers
-    return merged
-
-
 def _require_stats_page_enabled() -> None:
     if not _stats_page_enabled():
         raise HTTPException(status_code=404, detail="Stats page is disabled")
-
 
 def _require_dashboard_server_stats_enabled() -> None:
     if not _dashboard_server_stats_enabled():
         raise HTTPException(status_code=404, detail="Dashboard server stats are disabled")
 
-
 def _require_stats_history_enabled() -> None:
     if not _stats_history_enabled():
         raise HTTPException(status_code=404, detail="Stats history is disabled")
-
 
 async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
     current = conf or get_config()
@@ -504,15 +199,6 @@ async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
     else:
         await stop_collector()
     sync_collector_schedule()
-
-
-@uploads_router.get("/jobs")
-def get_jobs(
-    service: UploadService = Depends(get_upload_service),
-) -> List[Dict[str, Any]]:
-    """Retrieve compact upload-job snapshots for frequent dashboard polling."""
-    return service.get_active_jobs(compact=True)
-
 
 @uploads_router.post("/start")
 async def start_upload(req: UploadRequest, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
@@ -551,7 +237,6 @@ async def start_upload(req: UploadRequest, service: UploadService = Depends(get_
         "status": "started",
     }
 
-
 @uploads_router.post("/preview")
 async def preview_upload(req: UploadRequest) -> Dict[str, Any]:
     """Preview bulk filters and upload eligibility without creating a job."""
@@ -567,503 +252,6 @@ async def preview_upload(req: UploadRequest) -> Dict[str, Any]:
     )
     preview["selection"] = selection_meta
     return preview
-
-
-@uploads_router.post("/stream-nzb", response_model=StreamStartResponse)
-async def start_streamed_nzb_upload(
-    file: Optional[UploadFile] = File(None),
-    source_path: Optional[str] = Form(None),
-    monitor_folder: bool = Form(False),
-    category: Optional[str] = Form(None),
-    release_name: Optional[str] = Form(None),
-    submit_mode: str = Form("post_and_submit"),
-    posting_server_name: Optional[str] = Form(None),
-    test_mode: bool = Form(False),
-    enable_duplicate_check: bool = Form(True),
-    indexer_id: Optional[str] = Form(None),
-    service: UploadService = Depends(get_upload_service),
-) -> StreamStartResponse:
-    """Upload an NZB manifest and queue a direct Usenet-to-Usenet stream job."""
-    try:
-        request_options = usenet_stream.normalize_stream_request(
-            upload_filename=file.filename if file else None,
-            source_path=source_path,
-            monitor_folder=monitor_folder,
-            category=category,
-            submit_mode=submit_mode,
-        )
-    except usenet_stream.StreamError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    source_path = request_options.source_path
-    category = request_options.category
-    normalized_submit_mode = request_options.submit_mode
-
-    tmp_path: Optional[Path] = None
-    try:
-        if monitor_folder:
-            monitor = usenet_stream.add_stream_monitor(
-                folder_path=source_path,
-                category=category,
-                posting_server_name=posting_server_name,
-                submit_mode=normalized_submit_mode,
-                indexer_id=indexer_id,
-                enable_duplicate_check=enable_duplicate_check,
-                test_mode=test_mode,
-            )
-            await usenet_stream.restart_stream_monitors()
-            return StreamStartResponse(
-                status="monitoring",
-                mode="monitor",
-                message=f"Watching {monitor['folder_path']} for new NZB files",
-                monitor=monitor,
-            )
-
-        if file:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".nzb") as tmp:
-                while True:
-                    chunk = await file.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    tmp.write(chunk)
-                tmp_path = Path(tmp.name)
-
-            if not tmp_path.exists() or tmp_path.stat().st_size == 0:
-                raise HTTPException(status_code=400, detail="Uploaded NZB was empty")
-
-            resolved_category = usenet_stream.resolve_stream_category(tmp_path, category)
-            job_id = service.start_usenet_stream_job(
-                category=resolved_category,
-                stream_source_path=str(tmp_path),
-                stream_source_name=file.filename,
-                release_name=release_name,
-                test_mode=test_mode,
-                enable_duplicate_check=enable_duplicate_check,
-                indexer_id=indexer_id,
-                posting_server_name=posting_server_name,
-                submit_mode=normalized_submit_mode,
-                cleanup_paths=[str(tmp_path)],
-            )
-            return StreamStartResponse(
-                job_id=job_id,
-                job_ids=[job_id],
-                status="started",
-                mode="job",
-                message=f"Queued stream job for {file.filename}",
-            )
-
-        resolved_paths = usenet_stream.resolve_source_nzb_paths(source_path)
-        if len(resolved_paths) > 1 and release_name:
-            logger.info("Ignoring custom release name for multi-file server-path stream request")
-
-        job_ids: list[str] = []
-        for path in resolved_paths:
-            resolved_category = usenet_stream.resolve_stream_category(path, category)
-            job_ids.append(
-                service.start_usenet_stream_job(
-                    category=resolved_category,
-                    stream_source_path=str(path),
-                    stream_source_name=path.name,
-                    release_name=release_name if len(resolved_paths) == 1 else None,
-                    test_mode=test_mode,
-                    enable_duplicate_check=enable_duplicate_check,
-                    indexer_id=indexer_id,
-                    posting_server_name=posting_server_name,
-                    submit_mode=normalized_submit_mode,
-                )
-            )
-
-        return StreamStartResponse(
-            job_id=job_ids[0] if len(job_ids) == 1 else None,
-            job_ids=job_ids,
-            status="started",
-            mode="batch" if len(job_ids) > 1 else "job",
-            message=f"Queued {len(job_ids)} stream job(s)",
-        )
-    except usenet_stream.StreamError as exc:
-        if tmp_path:
-            tmp_path.unlink(missing_ok=True)
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except HTTPException:
-        if tmp_path:
-            tmp_path.unlink(missing_ok=True)
-        raise
-    except Exception as exc:
-        if tmp_path:
-            tmp_path.unlink(missing_ok=True)
-        logger.exception(f"Failed to queue streamed NZB upload: {exc}")
-        raise HTTPException(status_code=500, detail=f"Failed to queue streamed NZB upload: {exc}") from exc
-    finally:
-        if file is not None:
-            await file.close()
-
-
-@uploads_router.get("/stream-monitors")
-async def get_stream_monitors() -> Dict[str, Any]:
-    """List configured stream folder monitors."""
-    return {"monitors": usenet_stream.list_stream_monitors()}
-
-
-@uploads_router.delete("/stream-monitors/{monitor_id}")
-async def delete_stream_monitor(monitor_id: str) -> Dict[str, Any]:
-    """Remove a configured stream folder monitor."""
-    if not usenet_stream.remove_stream_monitor(monitor_id):
-        raise HTTPException(status_code=404, detail="Stream monitor not found")
-    await usenet_stream.restart_stream_monitors()
-    return {"status": "deleted", "monitor_id": monitor_id}
-
-
-@uploads_router.post("/jobs/{job_id}/stop")
-async def stop_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
-    """Request a specific job to stop."""
-    if service.stop_job(job_id):
-        return {"status": "stopping", "message": "Termination signal sent to job."}
-    raise HTTPException(status_code=404, detail="Job not found")
-
-
-@uploads_router.post("/jobs/{job_id}/stop-clear")
-async def stop_clear_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
-    """Stop a specific job and remove it from the visible queue as soon as possible."""
-    if service.stop_and_clear_job(job_id):
-        return {"status": "clearing", "message": "Job stopping and clearing from the queue."}
-    raise HTTPException(status_code=404, detail="Job not found")
-
-
-@uploads_router.post("/jobs/{job_id}/pause")
-async def pause_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
-    """Pause an actively running upload job."""
-    if service.pause_job(job_id):
-        job = service.get_job(job_id) or {}
-        pause_pending = bool(job.get("pause_requested")) and job.get("status") == "running"
-        return {
-            "status": job.get("status", "paused"),
-            "message": (
-                "Pause requested; waiting for the current safe checkpoint."
-                if pause_pending
-                else "Job paused; the scheduler lane is available."
-            ),
-        }
-    raise HTTPException(status_code=404, detail="Job not found or not running")
-
-
-@uploads_router.post("/jobs/{job_id}/resume")
-async def resume_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
-    """Resume a paused upload job."""
-    if service.resume_job(job_id):
-        job = service.get_job(job_id) or {}
-        queued = bool(job.get("resume_requested"))
-        return {
-            "status": job.get("status", "running"),
-            "message": "Job queued to resume when the scheduler lane is available." if queued else "Job resumed.",
-        }
-    raise HTTPException(status_code=404, detail="Job not found or not paused")
-
-
-@uploads_router.post("/jobs/{job_id}/retry")
-async def retry_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
-    """Queue a new attempt from a failed processing job's saved request."""
-    ok, new_job_id, reason = service.retry_job(job_id)
-    if not ok:
-        if reason == "not-found":
-            raise HTTPException(status_code=404, detail="Job not found")
-        raise HTTPException(status_code=409, detail="Job is not eligible for retry")
-    return {
-        "status": "queued",
-        "job_id": new_job_id,
-        "retry_of": job_id,
-        "message": f"Retry queued as {new_job_id}",
-    }
-
-
-@uploads_router.patch("/jobs/{job_id}/name")
-async def rename_upload_job(
-    job_id: str,
-    req: RenameJobRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Set or clear a human-friendly job name."""
-    found, display_name = service.rename_job(job_id, req.name)
-    if not found:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return {
-        "status": "updated",
-        "job_id": job_id,
-        "display_name": display_name,
-    }
-
-
-@uploads_router.delete("/jobs/completed")
-async def clear_completed(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Clear all finished jobs from memory."""
-    cleared = service.clear_completed_jobs()
-    return {"cleared": cleared}
-
-
-@uploads_router.delete("/jobs/{job_id}")
-async def delete_job_route(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
-    """Remove a job from memory."""
-    if service.delete_job(job_id):
-        return {"status": "deleted"}
-    raise HTTPException(status_code=404, detail="Job not found")
-
-
-@uploads_router.get("/queue")
-def get_queue(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Retrieve structured queue data: running, queued, and recently finished jobs."""
-    from logic.services import build_queue_snapshot
-
-    return build_queue_snapshot(service)
-
-
-@uploads_router.post("/queue/pause")
-async def pause_queue_processing(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Pause queue processing and pause the currently running job (if any)."""
-    service.pause_queue(pause_active=True)
-    return {
-        "status": "paused",
-        "message": "Queue processing paused. New jobs remain queued until resumed.",
-        "control": service.get_queue_control_state(),
-    }
-
-
-@uploads_router.post("/queue/resume")
-async def resume_queue_processing(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Resume queue processing and continue with paused/waiting jobs."""
-    service.resume_queue()
-    return {
-        "status": "running",
-        "message": "Queue processing resumed.",
-        "control": service.get_queue_control_state(),
-    }
-
-
-@uploads_router.post("/queue/stop")
-async def stop_queue_processing(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Stop the active job and pause queue processing until resumed."""
-    service.stop_queue()
-    return {
-        "status": "stopped",
-        "message": "Active job stopping. Queue processing is paused.",
-        "control": service.get_queue_control_state(),
-    }
-
-
-@uploads_router.post("/queue/stop-clear")
-async def stop_clear_queue_processing(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Stop the active job, clear waiting jobs, and hide the active row while it shuts down."""
-    result = service.stop_queue_and_clear()
-    return {
-        "status": "clearing",
-        "message": "Active job stopping and queue clearing.",
-        **result,
-    }
-
-
-@uploads_router.post("/queue/revalidate")
-async def revalidate_queue_jobs(
-    req: QueueRevalidateRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Re-scan queued/paused jobs against the current classification rules."""
-    result = service.revalidate_queued_jobs(include_paused=bool(req.include_paused))
-    return {"status": "success", **result}
-
-
-@uploads_router.post("/queue/clear")
-async def clear_queue(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Cancel all queued (not yet running) jobs."""
-    cleared = service.clear_queued_jobs()
-    return {"cleared": cleared}
-
-
-@uploads_router.post("/queue/{job_id}/promote")
-async def promote_queued_job(
-    job_id: str,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Move a queued job to the front of the queue (next to run)."""
-    if service.promote_job(job_id):
-        return {"status": "promoted", "job_id": job_id}
-    raise HTTPException(status_code=404, detail="Job not found or not queued")
-
-
-@uploads_router.patch("/queue/{job_id}/schedule")
-async def set_queued_job_schedule(
-    job_id: str,
-    req: QueueScheduleRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Set or clear the deferred run timestamp for a queued job."""
-    ok, run_after, reason = service.set_queued_job_schedule(job_id, req.run_after)
-    if not ok:
-        if reason == "not-found":
-            raise HTTPException(status_code=404, detail="Job not found")
-        if reason == "not-queued":
-            raise HTTPException(status_code=409, detail="Job is not queued")
-        if reason == "invalid-datetime":
-            raise HTTPException(status_code=400, detail="Invalid run_after datetime")
-        raise HTTPException(status_code=400, detail="Unable to set schedule")
-
-    return {
-        "status": "updated",
-        "job_id": job_id,
-        "run_after": run_after,
-    }
-
-
-@uploads_router.patch("/queue/{job_id}/priority")
-async def set_queued_job_priority(
-    job_id: str,
-    req: QueuePriorityRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Set durable scheduler priority for a queued or paused job."""
-    ok, priority = service.set_job_priority(job_id, req.priority)
-    if not ok:
-        if service.get_job(job_id) is None:
-            raise HTTPException(status_code=404, detail="Job not found")
-        raise HTTPException(status_code=409, detail="Only queued or paused jobs can change priority")
-    return {"status": "updated", "job_id": job_id, "priority": priority}
-
-
-@uploads_router.get("/queue/{job_id}/items")
-def get_queued_job_items(
-    job_id: str,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Retrieve target paths for a queued job so the UI can edit it."""
-    items = service.get_queued_job_items(job_id)
-    if items is None:
-        raise HTTPException(status_code=404, detail="Queued job not found")
-    return {"job_id": job_id, "items": items, "count": len(items)}
-
-
-@uploads_router.get("/queue/{job_id}/active-items")
-def get_active_job_items(
-    job_id: str,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Retrieve remaining target paths only while an active editor is open."""
-    items = service.get_active_job_items(job_id)
-    if items is None:
-        raise HTTPException(status_code=404, detail="Active job not found")
-    return {"job_id": job_id, "items": items, "count": len(items)}
-
-
-@uploads_router.get("/queue/{job_id}/completed-items")
-def get_completed_job_items(
-    job_id: str,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Retrieve item paths for a recently finished job (current session only)."""
-    items = service.get_finished_job_items(job_id)
-    if items is None:
-        raise HTTPException(status_code=404, detail="Finished job not found")
-    return {"job_id": job_id, "items": items, "count": len(items)}
-
-
-@uploads_router.put("/queue/{job_id}/items/reorder")
-async def reorder_queued_job_items_route(
-    job_id: str,
-    req: ReorderQueuedJobItemsRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Reorder queued-job target paths by providing the full desired path order."""
-    if not req.paths:
-        raise HTTPException(status_code=400, detail="No paths provided")
-
-    if service.reorder_queued_job_items(job_id, req.paths):
-        return {"status": "reordered", "job_id": job_id}
-
-    if service.get_queued_job_items(job_id) is None:
-        raise HTTPException(status_code=404, detail="Queued job not found")
-    raise HTTPException(status_code=400, detail="Invalid path order for queued job")
-
-
-@uploads_router.put("/queue/{job_id}/active-items/reorder")
-async def reorder_active_job_items_route(
-    job_id: str,
-    req: ReorderQueuedJobItemsRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Reorder the remaining target paths for a running or paused job."""
-    if not req.paths:
-        raise HTTPException(status_code=400, detail="No paths provided")
-
-    if service.reorder_active_job_items(job_id, req.paths):
-        return {"status": "reordered", "job_id": job_id}
-
-    job = service.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    if job.get("status") not in ("running", "paused"):
-        raise HTTPException(status_code=409, detail="Job is not active")
-    raise HTTPException(status_code=400, detail="Invalid remaining-item order for active job")
-
-
-@uploads_router.delete("/queue/{job_id}/items")
-async def remove_queued_job_item_route(
-    job_id: str,
-    req: RemoveQueuedJobItemRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Remove a single target path from a queued job."""
-    if not req.path:
-        raise HTTPException(status_code=400, detail="No path provided")
-
-    if service.remove_queued_job_item(job_id, req.path):
-        return {"status": "removed", "job_id": job_id, "path": req.path}
-
-    if service.get_queued_job_items(job_id) is None:
-        raise HTTPException(status_code=404, detail="Queued job not found")
-    raise HTTPException(status_code=404, detail="Path not found in queued job")
-
-
-# ── Item-level queue endpoints ──────────────────────────────────────
-
-
-class AddQueueItemsRequest(BaseModel):
-    """API request model for adding items to the upload queue."""
-
-    items: List[Dict[str, str]]  # [{path, category, itype, name?}]
-    bulk_selection: bool = False
-
-
-class ReorderQueueRequest(BaseModel):
-    """API request model for reordering queue items."""
-
-    item_ids: List[int]
-
-
-class StartQueueRequest(BaseModel):
-    """API request model for starting queue processing."""
-
-    enable_duplicate_check: bool = True
-    test_mode: bool = False
-    indexer_id: Optional[str] = None
-
-
-@uploads_router.get("/queue/items")
-def get_queue_items(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Retrieve all items in the upload queue."""
-    items = service.get_queue_items()
-    return {"items": items, "count": len(items)}
-
 
 @uploads_router.post("/queue/items")
 async def add_queue_items(
@@ -1096,70 +284,6 @@ async def add_queue_items(
         "bulk_excluded": excluded_count,
     }
 
-
-@uploads_router.delete("/queue/items/{item_id}")
-async def remove_queue_item(
-    item_id: int,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Remove a single item from the queue."""
-    if service.remove_queue_item(item_id):
-        return {"status": "removed", "item_id": item_id}
-    raise HTTPException(status_code=404, detail="Queue item not found")
-
-
-@uploads_router.post("/queue/items/clear")
-async def clear_queue_items(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Clear all items from the upload queue."""
-    cleared = service.clear_queue_items()
-    return {"cleared": cleared}
-
-
-@uploads_router.put("/queue/items/reorder")
-async def reorder_queue_items(
-    req: ReorderQueueRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Reorder queue items. Provide all item IDs in the desired order."""
-    if service.reorder_queue_items(req.item_ids):
-        return {"status": "reordered"}
-    raise HTTPException(
-        status_code=400,
-        detail="Invalid item IDs - must include all current queue items",
-    )
-
-
-@uploads_router.post("/queue/start")
-async def start_queue(
-    req: StartQueueRequest,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Process all queued items as one unified upload job."""
-    try:
-        result = service.start_queue_with_details(
-            enable_duplicate_check=req.enable_duplicate_check,
-            test_mode=req.test_mode,
-            indexer_id=req.indexer_id,
-            source="queue-start",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    job_ids = result.get("job_ids", [])
-    if not job_ids:
-        raise HTTPException(status_code=400, detail="Queue is empty")
-    return {
-        "status": "started",
-        "job_ids": job_ids,
-        "jobs_created": result.get("jobs_created", len(job_ids)),
-        "started_items": result.get("started_items", 0),
-        "skipped_items": result.get("skipped_items", 0),
-        "remaining_staged": result.get("remaining_staged", 0),
-    }
-
-
 @uploads_router.post("/queue/preview")
 async def preview_queue(
     req: StartQueueRequest,
@@ -1180,155 +304,6 @@ async def preview_queue(
         "excluded_roots": [],
     }
     return preview
-
-
-@uploads_router.post("/queue/items/{item_id}/start")
-async def force_start_queue_item(
-    item_id: int,
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Remove a single item from the queue and immediately start a force-upload job for it."""
-    # Find and remove the item from the queue
-    items = service.get_queue_items()
-    target = None
-    for qi in items:
-        if qi["id"] == item_id:
-            target = qi
-            break
-    if not target:
-        raise HTTPException(status_code=404, detail="Queue item not found")
-
-    # Start a force-upload job for this single item
-    jid = service.start_processing_job_request(
-        ProcessingJobRequest(
-            category=str(target["category"]),
-            test_mode=False,
-            paths=(str(target["path"]),),
-            item_hints=(dict(target),),
-            enable_duplicate_check=True,
-        ),
-        reuse_running=False,
-        source="queue-item-start",
-    )
-    if not service.remove_queue_item(item_id):
-        logger.warning(f"[QUEUE-ITEM-START] Started job {jid} but could not remove staged item {item_id}")
-    return {"status": "started", "job_id": jid, "item": target}
-
-
-@uploads_router.get("/recent")
-def get_recent(
-    limit: int = 50,
-    offset: int = 0,
-    search: Optional[str] = None,
-    destination: str = "all",
-    literal: bool = False,
-    sort_by: str = "when",
-    order: str = "desc",
-) -> Dict[str, Any]:
-    """Fetch paginated upload history from the database."""
-    return database.get_recent_uploads(
-        limit=limit,
-        offset=offset,
-        search=search,
-        destination=destination,
-        literal=literal,
-        sort_by=sort_by,
-        order=order,
-    )
-
-
-@uploads_router.get("/grouped")
-def get_grouped(
-    page: int = 1,
-    per_page: int = 50,
-    search: Optional[str] = None,
-    destination: str = "all",
-    literal: bool = False,
-    sort_by: str = "when",
-    order: str = "desc",
-) -> Dict[str, Any]:
-    """Fetch upload history grouped by show name, paginated by group count."""
-    return database.get_grouped_uploads(
-        page=page,
-        per_page=per_page,
-        search=search,
-        destination=destination,
-        literal=literal,
-        sort_by=sort_by,
-        order=order,
-    )
-
-
-@uploads_router.get("/grouped/items")
-def get_grouped_items(title_key: str, destination: str = "all") -> Dict[str, Any]:
-    """Full upload rows behind one grouped-history row.
-
-    Backs the History page's group expansion; database.get_group_upload_items
-    already existed but had no route, so expanding a group 404'd.
-    """
-    return database.get_group_upload_items(title_key, destination=destination)
-
-
-@uploads_router.get("/history")
-async def get_history(limit: int = 100) -> List[Dict[str, Any]]:
-    """Listing of completed upload jobs."""
-    return database.get_job_history(limit)
-
-
-@uploads_router.get("/history/{job_id}/uploads")
-async def get_job_uploads(job_id: str) -> List[Dict[str, Any]]:
-    """Fetch individual items for a given job ID."""
-    return database.get_uploads_for_job(job_id)
-
-
-@uploads_router.delete("/history")
-async def delete_job_history(request: Request) -> Dict[str, Any]:
-    """Delete one or more job history records."""
-    body = await request.json()
-    job_ids = body.get("job_ids", [])
-    if not job_ids:
-        raise HTTPException(status_code=400, detail="No job IDs provided")
-    deleted = database.delete_job_history(job_ids)
-    return {"status": "success", "deleted": deleted}
-
-
-@uploads_router.get("/hourly-stats")
-async def get_hourly_stats() -> Dict[str, Any]:
-    """Fetch recent performance metrics."""
-    return database.get_hourly_upload_stats()
-
-
-@uploads_router.delete("/item/{item_name}")
-async def delete_upload_item(item_name: str) -> Dict[str, Any]:
-    """Remove a single item from the history database."""
-    if database.delete_upload_item(item_name):
-        return {"status": "success"}
-    raise HTTPException(status_code=500, detail="Failed to delete item")
-
-
-class BulkDeleteRequest(BaseModel):
-    """API request model for bulk deleting items."""
-
-    item_names: List[str]
-
-
-@uploads_router.post("/item/bulk-delete")
-async def bulk_delete_upload_items(req: BulkDeleteRequest) -> Dict[str, Any]:
-    """Remove multiple items from the history database."""
-    if not req.item_names:
-        return {"status": "success", "deleted_count": 0}
-
-    deleted_count = database.bulk_delete_upload_items(req.item_names)
-    return {"status": "success", "deleted_count": deleted_count}
-
-
-@dashboard_router.get("/summary")
-def get_summary(
-    service: UploadService = Depends(get_upload_service),
-) -> Dict[str, Any]:
-    """Get a summary of current stats and queue sizes for the dashboard."""
-    return service.get_dashboard_summary()
-
 
 @dashboard_router.get("/system-stats")
 def get_system_stats() -> Dict[str, Any]:
@@ -1364,7 +339,6 @@ def get_system_stats() -> Dict[str, Any]:
         "dropout": net["dropout"],
     }
 
-
 @dashboard_router.get("/health")
 async def health_check() -> Dict[str, Any]:
     """Check the health of tools and directory structure."""
@@ -1385,13 +359,6 @@ async def health_check() -> Dict[str, Any]:
         "nntp": bool(conf.nntp_servers),
     }
 
-
-@dashboard_router.get("/database-health")
-async def database_health_check() -> Dict[str, Any]:
-    """Check database connection, tables, and recent activity."""
-    return await asyncio.to_thread(database.get_database_health)
-
-
 @stats_router.get("/summary")
 async def get_stats_summary(
     service: UploadService = Depends(get_upload_service),
@@ -1399,7 +366,6 @@ async def get_stats_summary(
     """Retrieve summarized historical statistics."""
     _require_stats_page_enabled()
     return await asyncio.to_thread(service.get_statistics)
-
 
 @stats_router.get("/full")
 async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
@@ -1412,7 +378,6 @@ async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
     mark_ui_active(mode="full", collapsed=collapsed_list)
 
     return await asyncio.to_thread(get_full_system_info)
-
 
 @stats_router.get("/mini")
 async def get_mini_stats() -> Dict[str, Any]:
@@ -1443,13 +408,11 @@ async def get_mini_stats() -> Dict[str, Any]:
         "network_download_mbps": net["download_mbps"],
     }
 
-
 @stats_router.get("/top-directories")
 async def get_top_directories(limit: int = 25) -> Dict[str, Any]:
     """Retrieve top-level storage usage data based on processed items."""
     _require_stats_page_enabled()
     return await asyncio.to_thread(database.get_top_directories, limit=limit)
-
 
 @stats_router.get("/history")
 def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
@@ -1469,7 +432,6 @@ def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
     history = _mem_hist(limit)
     iface_history = get_iface_history(limit)
     return {"history": history, "interfaces": iface_history}
-
 
 @stats_router.post("/history/record")
 async def record_stats(
@@ -1510,54 +472,6 @@ async def record_stats(
     )
     return {"status": "ok"}
 
-
-@console_router.get("/logs")
-async def get_logs(
-    after: int = 0,
-    after_seq: Optional[int] = None,
-    count: Optional[int] = None,
-    tail: Optional[int] = None,
-) -> Dict[str, Any]:
-    """Fetch log messages from the console buffer.
-
-    Pass ``tail=N`` on the first request to jump to the most recent N
-    entries instead of replaying the entire buffer from the start.
-    """
-    if tail is not None:
-        logs, last_seq = console.get_tail(tail)
-        return {"logs": logs, "last_seq": last_seq, "seq": last_seq, "count": len(logs)}
-
-    seq = after_seq if after_seq is not None else after
-    logs, last_seq = console.get_logs(after_seq=seq, limit=count)
-    return {
-        "logs": logs,
-        "last_seq": last_seq,
-        "seq": last_seq,
-        "count": len(logs),
-    }
-
-
-@console_router.get("/log-file")
-async def download_log_file() -> Response:
-    """Serve the raw log file for viewing / download."""
-    log_path = Path(__file__).resolve().parent / "data" / "logs" / "nzbpostarr.log"
-    if not log_path.exists():
-        raise HTTPException(status_code=404, detail="Log file not found")
-    return FileResponse(
-        str(log_path),
-        media_type="text/plain",
-        filename="nzbpostarr-log.txt",
-        headers={"Content-Disposition": "inline; filename=nzbpostarr-log.txt"},
-    )
-
-
-# ============================================================
-# INDEXER ROUTES (Dynamic Plugin System)
-# ============================================================
-
-indexers_router = APIRouter(prefix="/api/indexers", tags=["indexers"])
-
-
 @indexers_router.get("")
 @indexers_router.get("/")
 async def get_all_indexers_route() -> List[Dict[str, Any]]:
@@ -1566,16 +480,6 @@ async def get_all_indexers_route() -> List[Dict[str, Any]]:
 
     conf = get_config()
     return [idx.to_ui_dict(conf) for idx in get_all_indexers()]
-
-
-@indexers_router.post("/reload")
-async def reload_indexers_route() -> Dict[str, Any]:
-    """Reload all indexer definitions from YAML files."""
-    from core.registry import get_all_indexers, reload_indexers
-
-    reload_indexers()
-    return {"status": "success", "count": len(get_all_indexers())}
-
 
 @indexers_router.get("/{indexer_id}")
 async def get_indexer_route(indexer_id: str) -> Dict[str, Any]:
@@ -1598,7 +502,6 @@ async def get_indexer_route(indexer_id: str) -> Dict[str, Any]:
         }
     )
     return data
-
 
 @settings_router.get("")
 @settings_router.get("/")
@@ -1693,7 +596,6 @@ async def get_current_settings() -> Dict[str, Any]:
         "indexers": [idx.to_ui_dict(conf) for idx in get_all_indexers()],
     }
 
-
 @settings_router.post("/reset")
 async def reset_settings_route() -> Dict[str, Any]:
     """Reset configuration to defaults from config.defaults.yaml."""
@@ -1715,57 +617,10 @@ async def reset_settings_route() -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to reset: {str(e)}") from e
 
-
 @settings_router.get("/config")
 async def get_current_config() -> Dict[str, Any]:
     """Retrieve the current active configuration (flat)."""
     return _mask_config_secrets(get_config().model_dump(by_alias=True))
-
-
-@settings_router.get("/browse")
-async def browse_folders(path: str = "/") -> Dict[str, Any]:
-    """Browse local directories for the folder picker.
-
-    Returns a list of subdirectories at the given path,
-    along with the resolved parent path for navigation.
-    """
-    import platform
-
-    target = Path(path) if path and path != "/" else Path("/")
-
-    # On Windows, list drive letters when at root
-    if platform.system() == "Windows" and (str(target) == "/" or str(target) == "\\"):
-        drives = []
-        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
-            drive = f"{letter}:\\"
-            if os.path.exists(drive):
-                drives.append({"name": f"{letter}:", "path": drive})
-        return {"path": "/", "parent": None, "dirs": drives}
-
-    try:
-        target = target.resolve()
-    except (OSError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail="Invalid path") from exc
-
-    if not target.exists():
-        raise HTTPException(status_code=404, detail="Path does not exist")
-    if not target.is_dir():
-        raise HTTPException(status_code=400, detail="Path is not a directory")
-
-    parent = str(target.parent) if target.parent != target else None
-
-    dirs = []
-    try:
-        for entry in sorted(target.iterdir(), key=lambda e: e.name.lower()):
-            if entry.name.startswith("."):
-                continue
-            if entry.is_dir():
-                dirs.append({"name": entry.name, "path": str(entry)})
-    except PermissionError:
-        pass  # Return empty list for inaccessible dirs
-
-    return {"path": str(target), "parent": parent, "dirs": dirs}
-
 
 @settings_router.put("/{_section}")
 async def update_settings(_section: str, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -1813,64 +668,6 @@ async def update_settings(_section: str, updates: Dict[str, Any]) -> Dict[str, A
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to save settings")
 
-
-@settings_router.get("/raw")
-async def get_raw_config() -> Dict[str, Any]:
-    """Get the raw YAML content for direct editing, with secrets masked.
-
-    Credentials are replaced with ``SECRET_MASK`` exactly as the structured
-    settings endpoints do. ``save_raw_config`` restores any untouched mask from
-    the live config, so a round-trip through the raw editor preserves values the
-    operator did not edit.
-    """
-    import yaml
-
-    from core.config import get_config_path
-
-    path = get_config_path()
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Config file not found")
-
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    except (OSError, yaml.YAMLError) as exc:
-        # Never fall back to echoing the file verbatim: that is the leak.
-        raise HTTPException(status_code=500, detail=f"Config file could not be read: {exc}") from exc
-
-    masked = _mask_config_secrets(data)
-    # allow_unicode keeps SECRET_MASK readable as bullets in the editor instead
-    # of an escaped "•..." sequence.
-    content = yaml.safe_dump(masked, default_flow_style=False, sort_keys=False, allow_unicode=True)
-    return {"content": content, "path": str(path), "masked": True}
-
-
-@settings_router.get("/readme")
-async def get_readme_file() -> Dict[str, Any]:
-    """Get the contents of the readme.txt file included in uploads."""
-    from core.config import APP_ROOT
-
-    path = APP_ROOT / "indexers" / "readme" / "readme.txt"
-    example_path = path.with_name("readme.example.txt")
-    content_path = path if path.exists() else example_path
-    content = content_path.read_text(encoding="utf-8") if content_path.exists() else ""
-    return {"content": content, "path": str(path)}
-
-
-@settings_router.post("/readme")
-async def save_readme_file(req: Dict[str, Any]) -> Dict[str, Any]:
-    """Save (or create) the readme.txt file included in uploads."""
-    from core.config import APP_ROOT
-
-    content = req.get("content", "")
-    if not isinstance(content, str):
-        content = ""
-
-    path = APP_ROOT / "indexers" / "readme" / "readme.txt"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    return {"status": "success", "path": str(path)}
-
-
 @settings_router.post("/preview")
 async def get_config_preview(updates: Dict[str, Any]) -> Dict[str, str]:
     """Generate a YAML preview of what the config would look like with these updates."""
@@ -1891,7 +688,6 @@ async def get_config_preview(updates: Dict[str, Any]) -> Dict[str, str]:
         return {"content": yaml.dump(data, default_flow_style=False, sort_keys=False)}
     except Exception as e:
         return {"content": f"# Error generating preview: {str(e)}"}
-
 
 @settings_router.post("/raw")
 async def save_raw_config(req: Dict[str, Any]) -> Dict[str, Any]:
@@ -1932,331 +728,6 @@ async def save_raw_config(req: Dict[str, Any]) -> Dict[str, Any]:
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save: {str(e)}") from e
 
-
-@tests_router.get("/ping")
-async def ping() -> Dict[str, Any]:
-    """Simple connection test."""
-    return {"status": "pong"}
-
-
-def _runtime_revision() -> Dict[str, Any]:
-    revision_path = Path(__file__).resolve().parent / "data" / "deployed_revision.json"
-    if revision_path.exists():
-        try:
-            payload = json.loads(revision_path.read_text(encoding="utf-8"))
-            if isinstance(payload, dict) and payload.get("revision"):
-                return {
-                    "revision": str(payload["revision"]),
-                    "dirty": bool(payload.get("dirty", False)),
-                    "deployed_at": payload.get("deployed_at"),
-                }
-        except (OSError, ValueError, TypeError):
-            pass
-    env_revision = str(os.getenv("NZBPOSTARR_REVISION") or "").strip()
-    return {"revision": env_revision or "unknown", "dirty": False, "deployed_at": None}
-
-
-@tests_router.get("/health")
-async def health() -> Dict[str, Any]:
-    """Basic health check."""
-    return {"status": "ok", "time": time.time(), **_runtime_revision()}
-
-
-@system_router.get("/revision")
-async def get_runtime_revision() -> Dict[str, Any]:
-    """Return the exact source revision recorded by the deployment workflow."""
-    return _runtime_revision()
-
-
-@system_router.get("/update/status")
-async def get_update_status(force: bool = False) -> Dict[str, Any]:
-    """Return current updater status and latest known version info."""
-    return await asyncio.to_thread(updater.get_update_status, force=force)
-
-
-@system_router.post("/update/check")
-async def check_for_updates_now() -> Dict[str, Any]:
-    """Force an immediate GitHub update check."""
-    return await asyncio.to_thread(updater.check_for_updates)
-
-
-@system_router.get("/update/releases")
-async def get_update_releases(limit: int = 20) -> Dict[str, Any]:
-    """List available GitHub releases/tags for install selection."""
-    try:
-        releases = await asyncio.to_thread(updater.get_releases, limit=limit)
-        return {"releases": releases}
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Failed to fetch releases: {exc}") from exc
-
-
-@system_router.get("/update/backups")
-async def get_update_backups(limit: int = 20) -> Dict[str, Any]:
-    """List local update snapshots available for rollback."""
-    backups = await asyncio.to_thread(updater.list_backups, limit=limit)
-    return {"backups": backups}
-
-
-@system_router.post("/update/install/github")
-async def install_update_from_github(req: UpdateInstallRequest) -> Dict[str, Any]:
-    """Install the latest (or selected) update directly from GitHub."""
-    try:
-        return await asyncio.to_thread(
-            updater.install_from_github,
-            version=req.version,
-            restart=req.restart,
-        )
-    except updater.UpdateError as exc:
-        message = str(exc)
-        status = 409 if "already in progress" in message.lower() else 400
-        raise HTTPException(status_code=status, detail=message) from exc
-    except Exception as exc:
-        logger.exception(f"GitHub update failed: {exc}")
-        raise HTTPException(status_code=500, detail=f"GitHub update failed: {exc}") from exc
-
-
-@system_router.post("/update/install/upload")
-async def install_update_from_upload(
-    file: UploadFile = File(...),
-    restart: bool = Form(True),
-) -> Dict[str, Any]:
-    """Install an update from a user-provided ZIP archive."""
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="No file provided")
-    if not file.filename.lower().endswith(".zip"):
-        raise HTTPException(status_code=400, detail="Only .zip files are supported")
-
-    tmp_path: Optional[Path] = None
-    try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp:
-            while True:
-                chunk = await file.read(1024 * 1024)
-                if not chunk:
-                    break
-                tmp.write(chunk)
-            tmp_path = Path(tmp.name)
-
-        return await asyncio.to_thread(updater.install_from_uploaded_zip, tmp_path, restart=restart)
-    except updater.UpdateError as exc:
-        message = str(exc)
-        status = 409 if "already in progress" in message.lower() else 400
-        raise HTTPException(status_code=status, detail=message) from exc
-    except Exception as exc:
-        logger.exception(f"Uploaded update failed: {exc}")
-        raise HTTPException(status_code=500, detail=f"Uploaded update failed: {exc}") from exc
-    finally:
-        await file.close()
-        if tmp_path:
-            tmp_path.unlink(missing_ok=True)
-
-
-@system_router.post("/update/rollback")
-async def rollback_update(req: UpdateRollbackRequest) -> Dict[str, Any]:
-    """Restore files from a previous updater snapshot."""
-    try:
-        return await asyncio.to_thread(
-            updater.rollback_to_backup,
-            backup_id=req.backup_id,
-            restart=req.restart,
-        )
-    except updater.UpdateError as exc:
-        message = str(exc)
-        status = 409 if "already in progress" in message.lower() else 400
-        raise HTTPException(status_code=status, detail=message) from exc
-    except Exception as exc:
-        logger.exception(f"Rollback failed: {exc}")
-        raise HTTPException(status_code=500, detail=f"Rollback failed: {exc}") from exc
-
-
-@system_router.post("/restart")
-async def restart_service(req: RestartRequest) -> Dict[str, Any]:
-    """Schedule a process restart without changing files."""
-    service = get_upload_service()
-    stop_result: Optional[Dict[str, Any]] = None
-
-    if req.stop_before_restart:
-        stop_result = await asyncio.to_thread(
-            service.stop_all_jobs_and_wait,
-            clear_staged_items=req.clear_staged_items,
-            wait_timeout_s=req.wait_timeout_seconds,
-        )
-
-    updater.schedule_restart(delay_seconds=req.delay_seconds)
-    return {
-        "status": "scheduled",
-        "delay_seconds": req.delay_seconds,
-        "stop": stop_result,
-    }
-
-
-@system_router.post("/stop-all")
-async def stop_all_service_activity(req: StopAllRequest) -> Dict[str, Any]:
-    """Stop active jobs, clear waiting work, and wait until quiet."""
-    service = get_upload_service()
-    stop_result = await asyncio.to_thread(
-        service.stop_all_jobs_and_wait,
-        clear_staged_items=req.clear_staged_items,
-        wait_timeout_s=req.wait_timeout_seconds,
-    )
-    status = "stopped"
-    message = "All uploads stopped and queue cleared."
-    if stop_result.get("timed_out"):
-        status = "partial"
-        message = "Stop requested, but some work was still shutting down when the timeout expired."
-
-    return {
-        "status": status,
-        "message": message,
-        "stop": stop_result,
-    }
-
-
-# ============================================================
-# PENDING QUEUE ROUTES
-# ============================================================
-
-pending_router = APIRouter(prefix="/api/pending", tags=["pending"])
-
-
-class MarkUploadedRequest(BaseModel):
-    """API request model for marking items as uploaded."""
-
-    item_keys: List[str]
-    indexer_ids: List[str]
-    itype: str = "Misc"
-
-
-class ForceUploadRequest(BaseModel):
-    """API request model for force-uploading specific pending items."""
-
-    items: List[Dict[str, str]]  # [{path, category, itype}]
-    enable_duplicate_check: bool = True
-    test_mode: bool = False
-    indexer_id: Optional[str] = None
-    force: Optional[bool] = None
-    bulk_selection: bool = False
-
-
-class AnimeCacheCorrectionRequest(BaseModel):
-    """Persist a user correction for one title's anime detector result."""
-
-    name: str
-    is_anime: bool
-
-
-def _log_selected_payload(prefix: str, items: List[Dict[str, Any]]) -> None:
-    """Emit concise selection logs for queued/forced uploads."""
-    for item in items:
-        raw_path = str(item.get("path") or "").strip()
-        if not raw_path:
-            continue
-        name = str(item.get("name") or Path(raw_path).name)
-        category = str(item.get("category") or "").strip().lower() or "unknown"
-        detected = str(item.get("detected_category") or category or "unknown").strip().lower()
-        method = str(item.get("detection_method") or "UI selection").strip()
-        reason = str(item.get("selection_reason") or "").strip()
-        logger.info(
-            f"[{prefix}] Selected '{name}' -> category={category} detected={detected} method={method}"
-            f"{f' reason={reason}' if reason else ''}"
-        )
-
-
-def _normalize_force_upload_path(path: Any) -> str:
-    text = str(path or "").strip()
-    if not text:
-        return ""
-    try:
-        normalized = Path(text).resolve().as_posix()
-    except OSError:
-        normalized = Path(text).as_posix()
-    normalized = normalized.rstrip("/")
-    return normalized.casefold() if os.name == "nt" else normalized
-
-
-def _force_upload_dir_direct_video_count(path: Path) -> int:
-    try:
-        return sum(1 for child in path.iterdir() if child.is_file() and child.suffix.lower() in VIDEO_EXTENSIONS)
-    except OSError:
-        return 0
-
-
-def _force_upload_dir_recursive_video_count(path: Path) -> int:
-    try:
-        return sum(1 for child in path.rglob("*") if child.is_file() and child.suffix.lower() in VIDEO_EXTENSIONS)
-    except OSError:
-        return 0
-
-
-def _should_preserve_force_upload_dir(item: dict[str, Any], category: str, raw_path: Path) -> bool:
-    """Keep real TV season-pack directories even when selected alongside child episodes."""
-    if category != "tv" or not raw_path.exists() or not raw_path.is_dir():
-        return False
-
-    direct_video_count = _force_upload_dir_direct_video_count(raw_path)
-    if direct_video_count >= 1:
-        return True
-
-    folder_name = raw_path.name.lower()
-    season_like_name = bool(re.search(r"(?:^|[^a-z0-9])s\d{2}(?:[^a-z0-9]|$)", folder_name)) or any(
-        token in folder_name for token in ("season", "complete")
-    )
-    if not season_like_name:
-        return False
-
-    return _force_upload_dir_recursive_video_count(raw_path) >= 2
-
-
-def _collapse_force_upload_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Prefer the most specific selected paths when a batch contains ancestor + child entries."""
-    grouped: dict[str, list[tuple[int, dict[str, Any], str]]] = {}
-    for idx, item in enumerate(items):
-        category = str(item.get("category") or "").strip().lower()
-        normalized_path = _normalize_force_upload_path(item.get("path"))
-        if not category or not normalized_path:
-            continue
-        grouped.setdefault(category, []).append((idx, item, normalized_path))
-
-    dropped_indices: set[int] = set()
-    for category, entries in grouped.items():
-        kept_descendants: list[str] = []
-        dropped_here = 0
-        for idx, item, normalized_path in sorted(entries, key=lambda entry: len(entry[2]), reverse=True):
-            raw_path = Path(str(item.get("path") or "").strip())
-            if raw_path.exists() and not raw_path.is_dir():
-                kept_descendants.append(normalized_path)
-                continue
-
-            if any(child_path.startswith(f"{normalized_path}/") for child_path in kept_descendants) and not (
-                raw_path.exists() and _should_preserve_force_upload_dir(item, category, raw_path)
-            ):
-                dropped_indices.add(idx)
-                dropped_here += 1
-                continue
-
-            kept_descendants.append(normalized_path)
-
-        if dropped_here:
-            logger.info(f"[FORCE-UPLOAD] Category '{category}' collapsed {dropped_here} overlapping ancestor path(s)")
-
-    return [item for idx, item in enumerate(items) if idx not in dropped_indices]
-
-
-# ── Pending index state ─────────────────────────────────────
-_pending_index = get_pending_index_manager()
-_anime_check_inflight: bool = False  # True while Jikan background check is running
-_anime_check_lock = threading.Lock()
-_anime_check_thread: Optional[threading.Thread] = None
-_pending_refresh_lock = threading.Lock()
-_anime_check_last_attempt: float = 0.0
-_ANIME_CHECK_COOLDOWN_S: float = 3600.0
-_boot_reaper_task: Optional[asyncio.Task[Any]] = None
-
-
-def _pending_watch_folders(conf: Any) -> list[Path]:
-    """Return existing configured folders that should invalidate pending index on change."""
-    return get_configured_folders(conf, must_exist=True)
-
-
 def _wait_for_pending_snapshot(max_wait_s: float = 2.0, poll_s: float = 0.1) -> Dict[str, Any]:
     """Briefly wait for the background pending index to become ready.
 
@@ -2272,24 +743,6 @@ def _wait_for_pending_snapshot(max_wait_s: float = 2.0, poll_s: float = 0.1) -> 
         state = _pending_index.get_state()
     return state
 
-
-async def _run_startup_reaper() -> None:
-    """Run the initial orphan-process scan without blocking app startup."""
-    from logic.process_reaper import reap_orphans
-
-    try:
-        result = await asyncio.to_thread(reap_orphans, force=True)
-        logger.debug(
-            "[startup] Boot reaper scan finished "
-            f"(stale={result.get('stale_found', 0)} killed={result.get('killed', 0)} failed={result.get('failed', 0)})"
-        )
-    except asyncio.CancelledError:
-        logger.debug("[startup] Boot reaper scan cancelled")
-        raise
-    except Exception as exc:
-        logger.error(f"[startup] Boot reaper scan failed: {exc}")
-
-
 def _arm_process_reaper() -> None:
     """Start periodic cleanup immediately and offload the boot scan to the background."""
     global _boot_reaper_task
@@ -2303,7 +756,6 @@ def _arm_process_reaper() -> None:
         _boot_reaper_task.cancel()
 
     _boot_reaper_task = asyncio.create_task(_run_startup_reaper(), name="startup-process-reaper")
-
 
 async def _stop_startup_reaper() -> None:
     """Cancel or drain the background boot reaper task during shutdown."""
@@ -2324,37 +776,11 @@ async def _stop_startup_reaper() -> None:
     except Exception:
         pass
 
-
-def _collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
-    return pending_snapshot_mod.collect_anime_check_names(data)
-
-
-def _collect_uncached_anime_check_names(data: Dict[str, Any]) -> list[str]:
-    return pending_snapshot_mod.collect_uncached_anime_check_names(data)
-
-
-def _classify_video_name(name: str, folder_category: str = "", assume_movie_if_unknown: bool = False) -> str:
-    return pending_snapshot_mod.classify_video_name(name, folder_category, assume_movie_if_unknown)
-
-
-def _detect_external_category(name: str, entry_path: Path) -> str:
-    return pending_snapshot_mod.detect_external_category(name, entry_path)
-
-
-def _detect_content_itype(name: str, entry_path: Path, folder_category: str) -> str:
-    return pending_snapshot_mod.detect_content_itype(name, entry_path, folder_category)
-
-
-def _build_pending_summary(items: Dict[str, Any], indexers: Optional[List[Dict[str, Any]]] = None) -> Dict[str, int]:
-    return _PENDING_BUILD_SUMMARY(items, indexers)
-
-
 def _scan_pending_all() -> Dict[str, Any]:
     pending_snapshot_mod.get_config = get_config
     pending_snapshot_mod.get_configured_category_folders = get_configured_category_folders
     pending_snapshot_mod.database = database
     return pending_snapshot_mod.scan_pending_snapshot()
-
 
 def _refresh_pending_snapshot_now(reason: str = "manual") -> Dict[str, Any]:
     """Rebuild the pending snapshot synchronously and replace the cache."""
@@ -2380,13 +806,6 @@ def _refresh_pending_snapshot_now(reason: str = "manual") -> Dict[str, Any]:
         return data
     finally:
         _pending_refresh_lock.release()
-
-
-def _filter_pending(
-    data: Dict[str, Any], search: Optional[str], category: str, literal: bool = False
-) -> Dict[str, Any]:
-    return _PENDING_FILTER(data, search, category, literal)
-
 
 def _background_anime_check(data: Dict[str, Any]) -> None:
     """Check candidate video titles against Jikan and refresh cache if needed.
@@ -2429,7 +848,6 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
             _anime_check_inflight = False
             _anime_check_thread = None
 
-
 @pending_router.get("/summary")
 def get_pending_summary() -> Dict[str, Any]:
     """Return lightweight summary counts from cache (no filesystem scan)."""
@@ -2464,7 +882,6 @@ def get_pending_summary() -> Dict[str, Any]:
         "refreshing": bool(state.get("refreshing", False)),
     }
 
-
 @pending_router.get("/order")
 def get_pending_group_order() -> Dict[str, Any]:
     """Return the shared pending-directory order and lock state."""
@@ -2476,78 +893,6 @@ def get_pending_group_order() -> Dict[str, Any]:
         "order": [str(key) for key in order if str(key).strip()],
         "locked": bool(getattr(conf, "pending_external_group_order_locked", False)),
     }
-
-
-@pending_router.put("/order")
-async def update_pending_group_order(req: PendingGroupOrderRequest) -> Dict[str, Any]:
-    """Persist the shared pending-directory order for all browsers/users."""
-    from core.config import save_config
-
-    order = [str(key).strip() for key in req.order if str(key).strip()]
-    if save_config({"pending_external_group_order": order}):
-        return {"status": "success", "order": order}
-    raise HTTPException(status_code=500, detail="Failed to save pending order")
-
-
-@pending_router.put("/order/locked")
-async def update_pending_group_order_locked(req: PendingGroupOrderLockedRequest) -> Dict[str, Any]:
-    """Persist the shared pending-directory lock state."""
-    from core.config import save_config
-
-    locked = bool(req.locked)
-    if save_config({"pending_external_group_order_locked": locked}):
-        return {"status": "success", "locked": locked}
-    raise HTTPException(status_code=500, detail="Failed to save pending order lock state")
-
-
-def _slim_pending_node(node: Any) -> Any:
-    """Strip a pending-tree node down to its top-level fields.
-
-    Descendants are fetched through the lazy /children route, so copying
-    megabytes of nested data here only to render collapsed rows wastes
-    network, JSON, Vue reactivity, and memory.
-    """
-    if not isinstance(node, dict):
-        return node
-    slim = {key: value for key, value in node.items() if not str(key).startswith("_")}
-    raw_children = node.get("children")
-    raw_files = node.get("files")
-    child_source = raw_children if isinstance(raw_children, list) else raw_files
-    if isinstance(child_source, list):
-        if child_source or "child_count" not in slim:
-            slim["child_count"] = len([child for child in child_source if isinstance(child, dict)])
-        if "children" in slim:
-            slim["children"] = []
-        if "files" in slim:
-            slim["files"] = []
-    return slim
-
-
-def _slim_pending_items(items: Any) -> Any:
-    """Apply `_slim_pending_node` across every section of a pending `items` payload."""
-    if not isinstance(items, dict):
-        return items
-    slim_items: Dict[str, Any] = {}
-    for section_name, section in items.items():
-        if not isinstance(section, list):
-            slim_items[section_name] = section
-            continue
-        if section_name != "external":
-            slim_items[section_name] = [_slim_pending_node(item) for item in section]
-            continue
-        groups = []
-        for group in section:
-            if not isinstance(group, dict):
-                groups.append(group)
-                continue
-            slim_group = dict(group)
-            group_items = group.get("items")
-            if isinstance(group_items, list):
-                slim_group["items"] = [_slim_pending_node(item) for item in group_items]
-            groups.append(slim_group)
-        slim_items[section_name] = groups
-    return slim_items
-
 
 @pending_router.get("/items")
 def get_pending_items(
@@ -2623,7 +968,6 @@ def get_pending_items(
     res["anime_detecting"] = _anime_check_inflight
     return res
 
-
 @pending_router.get("/children")
 def get_pending_children(
     key: str = "",
@@ -2633,28 +977,6 @@ def get_pending_children(
     state = _pending_index.get_state()
     data = state.get("snapshot") or {}
     return pending_snapshot_mod.build_external_children_for_request(data, key, path)
-
-
-@pending_router.post("/mark-uploaded")
-async def mark_items_uploaded(req: MarkUploadedRequest) -> Dict[str, Any]:
-    """Record items as already uploaded without posting them.
-
-    Backs the queue page's "Mark Uploaded" action; database.mark_as_uploaded
-    already existed but had no route, so the button 404'd.
-    """
-    if not req.item_keys:
-        raise HTTPException(status_code=400, detail="No items specified")
-    if not req.indexer_ids:
-        raise HTTPException(status_code=400, detail="No indexers specified")
-
-    created = database.mark_as_uploaded(req.item_keys, req.indexer_ids, itype=req.itype)
-    return {
-        "status": "success",
-        "records_created": created,
-        "items": len(req.item_keys),
-        "indexers": len(req.indexer_ids),
-    }
-
 
 @pending_router.post("/anime-cache")
 def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, Any]:
@@ -2687,7 +1009,6 @@ def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, A
         "is_anime": req.is_anime,
         "category": category,
     }
-
 
 @pending_router.post("/force-upload")
 async def force_upload_items(
@@ -2742,7 +1063,6 @@ async def force_upload_items(
         "bulk_excluded": excluded_count,
     }
 
-
 @pending_router.post("/preview-upload")
 async def preview_force_upload_items(req: ForceUploadRequest) -> Dict[str, Any]:
     """Preview pending-item eligibility without creating an upload job."""
@@ -2771,23 +1091,6 @@ async def preview_force_upload_items(req: ForceUploadRequest) -> Dict[str, Any]:
     }
     return preview
 
-
-# ============================================================
-# FASTAPI APPLICATION SETUP
-# ============================================================
-
-# Root directory for web assets (webui/ subfolder relative to this file)
-WEBUI_ROOT = Path(__file__).parent / "webui"
-ASSETS_DIR = WEBUI_ROOT / "assets"
-
-templates = Jinja2Templates(directory=str(WEBUI_ROOT))
-# Change delimiters to avoid conflict with Vue.js {{ }}
-templates.env.variable_start_string = "[["
-templates.env.variable_end_string = "]]"
-
-
-# Cache-bust token: event-driven asset stamp with a slow fallback reconcile.
-# This avoids scanning the entire JS/CSS tree on normal template renders.
 class _AssetCacheBustEventHandler(FileSystemEventHandler):
     def __init__(self, owner: "_DynamicCacheBust") -> None:
         super().__init__()
@@ -2812,7 +1115,6 @@ class _AssetCacheBustEventHandler(FileSystemEventHandler):
     def on_deleted(self, event: Any) -> None:
         if not event.is_directory:
             self._note(getattr(event, "src_path", ""))
-
 
 class _DynamicCacheBust:
     """Tracks a monotonic cache-bust token for frontend assets."""
@@ -2909,29 +1211,20 @@ class _DynamicCacheBust:
                 self._cached_at = now
                 return self._cached_value
 
-
 _asset_cache_bust = _DynamicCacheBust()
+
 templates.env.globals["cache_bust"] = _asset_cache_bust
-templates.env.globals["auth_enabled"] = lambda: getattr(get_config(), "enable_password", False)
-
-# ── Cookie-based Auth Helpers ──────────────────────────────────────────
-
-_AUTH_COOKIE = "nzbp_auth"
-_AUTH_COOKIE_MAX_AGE = 30 * 86400  # 30 days
-
 
 def _auth_secret() -> str:
     """Derive a signing secret from the current web_password."""
     pw = getattr(get_config(), "web_password", None) or ""
     return hashlib.sha256(f"nzbpostarr-auth:{pw}".encode()).hexdigest()
 
-
 def _sign_auth_cookie(username: str) -> str:
     ts = str(int(time.time()))
     msg = f"{username}:{ts}".encode()
     sig = hmac.new(_auth_secret().encode(), msg, hashlib.sha256).hexdigest()
     return f"{ts}.{username}.{sig}"
-
 
 def _verify_auth_cookie(token: str) -> bool:
     try:
@@ -2943,13 +1236,6 @@ def _verify_auth_cookie(token: str) -> bool:
         return hmac.compare_digest(sig, expected)
     except Exception:
         return False
-
-
-# Populated by _mount_mcp_endpoint() after the app object exists; stays None
-# whenever the MCP endpoint is disabled, untokenized, or the optional package
-# is not installed.
-_MCP_ASGI_APP: Any = None
-
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
@@ -3014,10 +1300,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     checkpoint_wal()  # flush WAL before process exits
     shutdown_scheduler()
 
-
 app = FastAPI(title="NZBPostarr", lifespan=lifespan, docs_url="/swagger", redoc_url=None)
-app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 @app.middleware("http")
 async def add_cache_control_header(request: Request, call_next: Callable[[Request], Any]) -> Response:
@@ -3039,13 +1324,6 @@ async def add_cache_control_header(request: Request, call_next: Callable[[Reques
         response.headers["Cache-Control"] = "no-cache"
     return response
 
-
-# Paths that skip authentication entirely
-_AUTH_PUBLIC_PREFIXES = ("/login", "/assets/", "/favicon", "/robots.txt")
-_AUTH_PUBLIC_PATHS = {"/api/system/revision"}
-_MCP_PATH = "/mcp"
-
-
 def _verify_mcp_token(request: Request) -> bool:
     """Constant-time bearer-token check for the MCP endpoint."""
     expected = str(getattr(get_config(), "mcp_token", "") or "").strip()
@@ -3057,7 +1335,6 @@ def _verify_mcp_token(request: Request) -> bool:
     if scheme.lower() != "bearer":
         return False
     return hmac.compare_digest(presented.strip(), expected)
-
 
 @app.middleware("http")
 async def session_auth_middleware(request: Request, call_next: Callable[[Request], Any]) -> Response:
@@ -3087,30 +1364,29 @@ async def session_auth_middleware(request: Request, call_next: Callable[[Request
 
     return await call_next(request)
 
-
-# Load settings
 def get_settings() -> Any:
     return get_config()
 
-
-# Set an alias for use in launcher
-Settings = get_config
-
-# Mount static files
 if ASSETS_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
 
-# Include API routes
 app.include_router(uploads_router)
-app.include_router(dashboard_router)
-app.include_router(settings_router)
-app.include_router(console_router)
-app.include_router(stats_router)
-app.include_router(tests_router)
-app.include_router(system_router)
-app.include_router(indexers_router)
-app.include_router(pending_router)
 
+app.include_router(dashboard_router)
+
+app.include_router(settings_router)
+
+app.include_router(console_router)
+
+app.include_router(stats_router)
+
+app.include_router(tests_router)
+
+app.include_router(system_router)
+
+app.include_router(indexers_router)
+
+app.include_router(pending_router)
 
 def _mount_mcp_endpoint() -> bool:
     """Mount the optional MCP endpoint. No-op unless enabled, tokenized and installed."""
@@ -3128,12 +1404,7 @@ def _mount_mcp_endpoint() -> bool:
     _MCP_ASGI_APP = mcp_app
     return True
 
-
 _MCP_MOUNTED = _mount_mcp_endpoint()
-
-
-# ── Page Routes ──────────────────────────────────────────────
-
 
 @app.exception_handler(404)
 async def not_found_exception_handler(request: Request, _exc: Exception) -> Response:
@@ -3161,7 +1432,6 @@ async def not_found_exception_handler(request: Request, _exc: Exception) -> Resp
         },
         status_code=404,
     )
-
 
 @app.exception_handler(500)
 @app.exception_handler(Exception)
@@ -3192,14 +1462,9 @@ async def server_error_exception_handler(request: Request, exc: Exception) -> Re
         status_code=500,
     )
 
-
 @app.get("/robots.txt", response_class=Response)
 async def robots_txt() -> Response:
     return Response(content="User-agent: *\nAllow: /\n", media_type="text/plain")
-
-
-# ── Auth Routes ───────────────────────────────────────────────────────
-
 
 @app.get("/login", response_class=HTMLResponse)
 async def get_login(request: Request) -> Response:
@@ -3209,7 +1474,6 @@ async def get_login(request: Request) -> Response:
     error = request.query_params.get("error", "")
     next_url = request.query_params.get("next", "/")
     return templates.TemplateResponse(request, "login.html", {"request": request, "error": error, "next_url": next_url})
-
 
 @app.post("/login", response_class=HTMLResponse)
 async def post_login(
@@ -3239,14 +1503,12 @@ async def post_login(
     next_encoded = urllib.parse.quote(next_url, safe="")
     return RedirectResponse(url=f"/login?error=invalid&next={next_encoded}", status_code=302)
 
-
 @app.get("/logout")
 async def logout() -> Response:
     """Clear auth cookie and redirect to /login."""
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(_AUTH_COOKIE)
     return response
-
 
 @app.get("/", response_class=HTMLResponse)
 async def get_index(request: Request) -> HTMLResponse:
@@ -3255,20 +1517,17 @@ async def get_index(request: Request) -> HTMLResponse:
         return templates.TemplateResponse(request, "index.html", {"request": request})
     return HTMLResponse("index.html not found", status_code=404)
 
-
 @app.get("/pending", response_class=HTMLResponse)
 @app.get("/pending.html", response_class=HTMLResponse)
 async def redirect_pending_to_queue(request: Request) -> Response:
     """Redirect legacy pending-page URLs to the unified /queue page."""
     return RedirectResponse(url="/queue", status_code=301)
 
-
 @app.get("/uploads", response_class=HTMLResponse)
 @app.get("/uploads.html", response_class=HTMLResponse)
 async def redirect_uploads_to_history(request: Request) -> Response:
     """Redirect legacy uploads-page URLs to /history."""
     return RedirectResponse(url="/history", status_code=301)
-
 
 @app.get("/{page_name}", response_class=HTMLResponse)
 async def get_page(request: Request, page_name: str) -> Response:
@@ -3298,3 +1557,4 @@ async def get_page(request: Request, page_name: str) -> Response:
         return templates.TemplateResponse(request, html_name, {"request": request})
 
     raise HTTPException(status_code=404, detail=f"Page '{page_name}' not found")
+

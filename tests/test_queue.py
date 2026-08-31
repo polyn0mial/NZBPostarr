@@ -5,7 +5,7 @@
 from tests.support import *
 
 def test_queue_page_keeps_data_loading_separate_from_queue_validation() -> None:
-    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    queue_js = _queue_source()
 
     load_pending_block = queue_js.split("async loadPending(forceRefresh = false, silent = false) {", 1)[1].split(
         "async loadQueuedPaths() {", 1
@@ -17,7 +17,7 @@ def test_queue_page_keeps_data_loading_separate_from_queue_validation() -> None:
 
 
 def test_bulk_force_upload_bypasses_review_and_staging() -> None:
-    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    queue_js = _queue_source()
     force_block = queue_js.split("async _doForceUploadBulk(indexerId, skipDupeCheck = false) {", 1)[1].split(
         "closeBulkPreviewModal() {",
         1,
@@ -29,7 +29,7 @@ def test_bulk_force_upload_bypasses_review_and_staging() -> None:
 
 
 def test_nested_external_lookup_includes_lazy_loaded_and_ignored_groups() -> None:
-    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    queue_js = _queue_source()
     lookup_block = queue_js.split("findExternalNodeByKey(targetKey) {", 1)[1].split(
         "resolveExternalNode(itemOrKey) {",
         1,
@@ -65,7 +65,7 @@ def test_queue_job_count_is_below_progress_and_describes_remaining_items() -> No
 
 
 def test_pending_rows_restore_compact_category_and_status_badges() -> None:
-    queue_js = _read_repo_text("webui", "assets", "js", "pages", "queue.js")
+    queue_js = _queue_source()
     queue_html = _read_repo_text("webui", "queue.html")
 
     assert queue_html.count(">Done</span>") >= 4
