@@ -648,6 +648,47 @@ def cmd_history(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_issues(args: argparse.Namespace) -> int:
+    """Show failed indexer submissions grouped into a "known issues" list.
+
+    WHY: with 6+ indexers each free to fail differently, `history` alone shows
+    one row per attempt. This groups failures by (indexer, error signature) so
+    a recurring problem shows up as one counted row instead of a scroll.
+    """
+    from core import database
+
+    result = database.get_grouped_upload_errors(
+        indexer_id=args.destination,
+        limit=args.limit,
+        since_days=args.since_days,
+    )
+    issues = result.get("issues", [])
+
+    if args.json:
+        print(json.dumps(result, indent=2, default=str))
+        return 0
+
+    if not issues:
+        print("No known upload issues found.")
+        return 0
+
+    print("━" * 100)
+    print(f"  {'Indexer':<14} {'Count':<7} {'Items':<7} {'Last Seen':<20} {'Error'}")
+    print("━" * 100)
+
+    for issue in issues:
+        indexer = issue.get("indexer_id", "?")
+        count = issue.get("count", 0)
+        affected = issue.get("affected_item_count", 0)
+        last_seen = str(issue.get("last_seen") or "?")[:19]
+        sample = str(issue.get("sample_error") or "")[:50]
+
+        print(f"  {indexer:<14} {count:<7} {affected:<7} {last_seen:<20} {sample}")
+
+    print("━" * 100)
+    return 0
+
+
 def cmd_indexers(args: argparse.Namespace) -> int:
     """Show detailed indexer information.
 
@@ -1340,6 +1381,35 @@ def build_headless_parser() -> argparse.ArgumentParser:
         help="Output job history as JSON",
     )
 
+    # ── issues ──
+    p_issues = sub.add_parser(
+        "issues",
+        help="Show failed indexer submissions grouped into a known-issues list",
+    )
+    p_issues.add_argument(
+        "--destination",
+        default="all",
+        help="Limit to one indexer ID, or 'all' (default)",
+    )
+    p_issues.add_argument(
+        "--limit",
+        "-l",
+        type=int,
+        default=50,
+        help="Maximum number of issue groups to show (default: 50)",
+    )
+    p_issues.add_argument(
+        "--since-days",
+        type=int,
+        default=None,
+        help="Only count failures from the last N days (default: all history)",
+    )
+    p_issues.add_argument(
+        "--json",
+        action="store_true",
+        help="Output grouped issues as JSON",
+    )
+
     # ── indexers ──
     p_indexers = sub.add_parser(
         "indexers",
@@ -1575,6 +1645,7 @@ def run_headless(argv: List[str]) -> int:
         "status": cmd_status,
         "pending": cmd_pending,
         "history": cmd_history,
+        "issues": cmd_issues,
         "indexers": cmd_indexers,
         "stream-monitors": cmd_stream_monitors,
         "stats": cmd_stats,

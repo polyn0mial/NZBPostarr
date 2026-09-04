@@ -93,6 +93,12 @@ def test_grouped_items_route_is_wired() -> None:
     assert "/api/uploads/grouped/items" in paths
     assert "get" in paths["/api/uploads/grouped/items"]
 
+
+def test_grouped_errors_route_is_wired() -> None:
+    paths = app_mod.app.openapi()["paths"]
+    assert "/api/uploads/errors/grouped" in paths
+    assert "get" in paths["/api/uploads/errors/grouped"]
+
 def test_mark_uploaded_rejects_empty_input(monkeypatch) -> None:
     calls: list[tuple] = []
 
@@ -168,6 +174,22 @@ def test_grouped_items_passes_destination_through(monkeypatch) -> None:
     app_mod.get_grouped_items("some show", destination="geek")
 
     assert seen == {"title_key": "some show", "destination": "geek"}
+
+def test_grouped_errors_passes_params_through(monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    def _fake(indexer_id="all", limit=50, since_days=None):
+        seen["indexer_id"] = indexer_id
+        seen["limit"] = limit
+        seen["since_days"] = since_days
+        return {"issues": [], "total_issues": 0}
+
+    monkeypatch.setattr(db, "get_grouped_upload_errors", _fake)
+
+    result = app_mod.get_grouped_errors(destination="geek", limit=5, since_days=3)
+
+    assert seen == {"indexer_id": "geek", "limit": 5, "since_days": 3}
+    assert result == {"issues": [], "total_issues": 0}
 
 def test_no_inline_script_inside_the_vue_root() -> None:
     """Vue silently discards <script>/<style> in a client component template.

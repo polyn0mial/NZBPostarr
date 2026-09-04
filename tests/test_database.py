@@ -124,6 +124,7 @@ def test_duplicate_and_history_queries_fail_closed_on_db_failure(monkeypatch) ->
         lambda: db.get_uploads_for_job("job-id"),
         lambda: db.delete_upload_item("release"),
         lambda: db.bulk_delete_upload_items(["release"]),
+        lambda: db.get_grouped_upload_errors(),
     ]
 
     for operation in operations:
@@ -403,3 +404,99 @@ def test_database_e2e_dual_upload_race_does_not_crash() -> None:
     db.save_job_history("job-race", category="tv", status="running")
     with session_scope() as session:
         assert session.query(JobHistory).filter_by(job_id="job-race").count() == 1
+
+
+# ============================================================
+#  get_grouped_upload_errors / _fingerprint_upload_error
+# ============================================================
+
+
+def test_fingerprint_upload_error_collapses_variable_parts() -> None:
+    """Two failures with the same underlying cause carry different paths/counts;
+    the signature must match across those so grouping isn't defeated by the
+    exact bytes/filename that differ per attempt."""
+
+    a = db._fingerprint_upload_error(r"Auth failed for C:\incoming\Show.S01E01.mkv (attempt 3)")
+    b = db._fingerprint_upload_error(r"Auth failed for C:\incoming\Movie.2024.mkv (attempt 7)")
+    assert a == b
+
+    assert db._fingerprint_upload_error("") == "<empty>"
+    assert db._fingerprint_upload_error(None) == "<empty>"
+
+    # Distinct error classes must not collapse into the same signature.
+    assert db._fingerprint_upload_error("Auth failed") != db._fingerprint_upload_error("Rate limited")
+
+
+@pytest.mark.usefixtures("isolated_sqlite_db")
+def test_get_grouped_upload_errors_groups_by_indexer_and_signature() -> None:
+    """Repeated failures with the same shape collapse into one counted issue;
+    a differently-shaped failure and a successful upload must not join it."""
+
+    for idx, name in enumerate(
+        [
+            "Show.A.S01E01.1080p.WEB-DL.mkv",
+            "Show.B.S01E02.1080p.WEB-DL.mkv",
+            "Show.C.S01E03.1080p.WEB-DL.mkv",
+        ]
+    ):
+        db.record_nntp_success(name, 100, "TV Episode")
+        assert (
+            db.update_db_destination(
+                dest="geek",
+                _name=name,
+                size=100,
+                key=name,
+                itype="TV Episode",
+                status="failed",
+                error=f"Auth failed for /srv/incoming/{name} (attempt {idx})",
+            )
+            is True
+        )
+
+    # A different failure shape on the same indexer: a separate issue.
+    other_name = "Show.D.S01E04.1080p.WEB-DL.mkv"
+    db.record_nntp_success(other_name, 100, "TV Episode")
+    assert (
+        db.update_db_destination(
+            dest="geek",
+            _name=other_name,
+            size=100,
+            key=other_name,
+            itype="TV Episode",
+            status="failed",
+            error="Rate limited, retry later",
+        )
+        is True
+    )
+
+    # A successful result must never contribute an issue row.
+    ok_name = "Show.E.S01E05.1080p.WEB-DL.mkv"
+    db.record_nntp_success(ok_name, 100, "TV Episode")
+    assert (
+        db.update_db_destination(
+            dest="geek",
+            _name=ok_name,
+            size=100,
+            key=ok_name,
+            itype="TV Episode",
+            status="success",
+        )
+        is True
+    )
+
+    result = db.get_grouped_upload_errors(indexer_id="geek")
+    assert result["total_issues"] == 2
+
+    auth_issue = next(i for i in result["issues"] if i["sample_error"].startswith("Auth failed"))
+    assert auth_issue["indexer_id"] == "geek"
+    assert auth_issue["count"] == 3
+    assert auth_issue["affected_item_count"] == 3
+    assert auth_issue["first_seen"] is not None
+    assert auth_issue["last_seen"] is not None
+
+    rate_issue = next(i for i in result["issues"] if i["sample_error"].startswith("Rate limited"))
+    assert rate_issue["count"] == 1
+
+    # Filtering to an indexer with no failures returns an empty, not an error.
+    empty = db.get_grouped_upload_errors(indexer_id="omg")
+    assert empty == {"issues": [], "total_issues": 0}

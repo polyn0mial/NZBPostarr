@@ -521,6 +521,20 @@ def get_grouped_items(title_key: str, destination: str = "all") -> Dict[str, Any
     """
     return database.get_group_upload_items(title_key, destination=destination)
 
+@uploads_router.get("/errors/grouped")
+def get_grouped_errors(
+    destination: str = "all",
+    limit: int = 50,
+    since_days: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Known-issues view: failed indexer submissions grouped by error signature.
+
+    Turns the flat per-attempt failure log into a "this has happened N times
+    across these items, most recently at T" list, one row per indexer per
+    distinct underlying error.
+    """
+    return database.get_grouped_upload_errors(indexer_id=destination, limit=limit, since_days=since_days)
+
 @uploads_router.get("/history")
 async def get_history(limit: int = 100) -> List[Dict[str, Any]]:
     """Listing of completed upload jobs."""
