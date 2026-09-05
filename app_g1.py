@@ -526,6 +526,7 @@ def get_grouped_errors(
     destination: str = "all",
     limit: int = 50,
     since_days: Optional[int] = None,
+    include_muted: bool = True,
 ) -> Dict[str, Any]:
     """Known-issues view: failed indexer submissions grouped by error signature.
 
@@ -533,7 +534,29 @@ def get_grouped_errors(
     across these items, most recently at T" list, one row per indexer per
     distinct underlying error.
     """
-    return database.get_grouped_upload_errors(indexer_id=destination, limit=limit, since_days=since_days)
+    return database.get_grouped_upload_errors(indexer_id=destination, limit=limit, since_days=since_days, include_muted=include_muted)
+
+class MuteIssueRequest(BaseModel):
+    """API request model for muting/unmuting a known-issue group.
+
+    A group has no id of its own; (indexer_id, signature) is the same pair
+    get_grouped_upload_errors groups by, so it is also the mute key.
+    """
+
+    indexer_id: str
+    signature: str
+
+@uploads_router.post("/errors/mute")
+def mute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
+    """Silence a known-issue group so it stops standing out in the default view."""
+    database.mute_upload_issue(body.indexer_id, body.signature)
+    return {"status": "success", "muted": True}
+
+@uploads_router.post("/errors/unmute")
+def unmute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
+    """Restore a previously muted known-issue group to the default view."""
+    database.unmute_upload_issue(body.indexer_id, body.signature)
+    return {"status": "success", "muted": False}
 
 @uploads_router.get("/history")
 async def get_history(limit: int = 100) -> List[Dict[str, Any]]:

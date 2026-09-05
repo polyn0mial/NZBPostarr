@@ -33,7 +33,8 @@ from app_g1 import (
     AddQueueItemsRequest as AddQueueItemsRequest, BulkDeleteRequest as BulkDeleteRequest,
     PendingGroupOrderLockedRequest as PendingGroupOrderLockedRequest, PendingGroupOrderRequest as PendingGroupOrderRequest,
     QueuePriorityRequest as QueuePriorityRequest, QueueRevalidateRequest as QueueRevalidateRequest, QueueScheduleRequest as QueueScheduleRequest,
-    RemoveQueuedJobItemRequest as RemoveQueuedJobItemRequest, RenameJobRequest as RenameJobRequest, ReorderQueueRequest as ReorderQueueRequest,
+    MuteIssueRequest as MuteIssueRequest, RemoveQueuedJobItemRequest as RemoveQueuedJobItemRequest, RenameJobRequest as RenameJobRequest,
+    ReorderQueueRequest as ReorderQueueRequest,
     ReorderQueuedJobItemsRequest as ReorderQueuedJobItemsRequest, RestartRequest as RestartRequest, StartQueueRequest as StartQueueRequest,
     StopAllRequest as StopAllRequest, StreamStartResponse as StreamStartResponse, UpdateInstallRequest as UpdateInstallRequest,
     UpdateRollbackRequest as UpdateRollbackRequest, UploadRequest as UploadRequest, _default_itype_for_category as _default_itype_for_category,
@@ -47,10 +48,12 @@ from app_g1 import (
     get_history as get_history, get_hourly_stats as get_hourly_stats,
     get_job_uploads as get_job_uploads, get_jobs as get_jobs, get_logs as get_logs, get_queue as get_queue, get_queue_items as get_queue_items,
     get_queued_job_items as get_queued_job_items, get_recent as get_recent, get_stream_monitors as get_stream_monitors, get_summary as get_summary,
-    pause_queue_processing as pause_queue_processing, pause_upload as pause_upload, promote_queued_job as promote_queued_job,
+    mute_grouped_error as mute_grouped_error, pause_queue_processing as pause_queue_processing, pause_upload as pause_upload,
+    promote_queued_job as promote_queued_job,
     reload_indexers_route as reload_indexers_route, remove_queue_item as remove_queue_item, resume_queue_processing as resume_queue_processing,
     resume_upload as resume_upload, retry_upload as retry_upload, stop_clear_queue_processing as stop_clear_queue_processing,
     stop_clear_upload as stop_clear_upload, stop_queue_processing as stop_queue_processing, stop_upload as stop_upload,
+    unmute_grouped_error as unmute_grouped_error,
 )
 from app_g2 import (
     AnimeCacheCorrectionRequest as AnimeCacheCorrectionRequest, ForceUploadRequest as ForceUploadRequest, MarkUploadedRequest as MarkUploadedRequest,

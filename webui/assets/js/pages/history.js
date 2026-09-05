@@ -210,7 +210,7 @@ async function fetchFlatUploadsPage(self, requestSeq) {
 }
 
 const vm = createVuePage({
-    persist: ['literalSearch', 'filterDestination', 'sortColumn', 'sortOrder', 'pageSize', 'viewMode'],
+    persist: ['literalSearch', 'filterDestination', 'sortColumn', 'sortOrder', 'pageSize', 'viewMode', 'knownIssuesShowMuted'],
     data() {
         return {
             // Loaded indexers for dynamic rendering
@@ -270,6 +270,12 @@ const vm = createVuePage({
             // Upload item details modal
             uploadDetailModalOpen: false,
             uploadDetailItem: null,
+
+            // Known Issues panel: grouped failed-submission signatures (core.database.get_grouped_upload_errors)
+            knownIssuesOpen: false,
+            knownIssuesLoading: false,
+            knownIssuesShowMuted: true,
+            knownIssues: [],
 
             // Prevent stale async responses from clobbering newer results
             _uploadsRequestSeq: 0,
@@ -642,6 +648,49 @@ const vm = createVuePage({
             } catch (e) {
                 if (!e.isOffline) {
                     this.showToast('error', 'Error', 'Failed to delete jobs');
+                }
+            }
+        },
+
+        // ============================================================
+        //  Known Issues Panel
+        // ============================================================
+        toggleKnownIssuesPanel() {
+            this.knownIssuesOpen = !this.knownIssuesOpen;
+            if (this.knownIssuesOpen && this.knownIssues.length === 0) {
+                this.loadKnownIssues();
+            }
+        },
+
+        async loadKnownIssues() {
+            if (!this.isConnected) return;
+            this.knownIssuesLoading = true;
+            try {
+                const params = new URLSearchParams({ include_muted: String(this.knownIssuesShowMuted) });
+                const result = await this.apiFetch(`/api/uploads/errors/grouped?${params}`);
+                this.knownIssues = Array.isArray(result?.issues) ? result.issues : [];
+            } catch (e) {
+                if (!e.isOffline) {
+                    this.showToast('error', 'Error', 'Failed to load known issues');
+                }
+            } finally {
+                this.knownIssuesLoading = false;
+            }
+        },
+
+        async toggleIssueMute(issue) {
+            const wasMuted = issue.muted;
+            try {
+                const endpoint = wasMuted ? '/api/uploads/errors/unmute' : '/api/uploads/errors/mute';
+                await this.apiPost(endpoint, { indexer_id: issue.indexer_id, signature: issue.signature });
+                issue.muted = !wasMuted;
+                this.showToast('success', wasMuted ? 'Unmuted' : 'Muted', wasMuted ? 'Issue restored to the default view' : 'Issue silenced');
+                if (!this.knownIssuesShowMuted && issue.muted) {
+                    this.knownIssues = this.knownIssues.filter(i => i !== issue);
+                }
+            } catch (e) {
+                if (!e.isOffline) {
+                    this.showToast('error', 'Error', `Failed to ${wasMuted ? 'unmute' : 'mute'} issue`);
                 }
             }
         },
@@ -1067,6 +1116,7 @@ const vm = createVuePage({
         this.loadIndexers();
         this.loadStats();
         this.loadUploads();
+        this.loadKnownIssues();
 
         // Stamp the initial load so the 60s fallback measures from now
         this._lastHistoryFullRefresh = Date.now();

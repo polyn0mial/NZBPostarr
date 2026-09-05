@@ -34,6 +34,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    UniqueConstraint,
     and_,
     create_engine,
     delete,
@@ -227,6 +228,25 @@ class QueueItem(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     position: Mapped[int] = mapped_column(Integer, default=0, index=True)
     added_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
+
+
+class MutedIssue(Base):
+    """A known-issue group the operator has silenced from the default view.
+
+    WHY: the known-issues grouping (get_grouped_upload_errors) has no primary key
+    of its own - a group is identified only by (indexer_id, signature), the same
+    pair it is grouped by - so muting is keyed on that pair rather than any single
+    UploadResult row. A signature stays muted across every future occurrence of
+    the same recurring failure until explicitly unmuted.
+    """
+
+    __tablename__ = "muted_issues"
+    __table_args__ = (UniqueConstraint("indexer_id", "signature", name="uq_muted_issue_indexer_signature"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    indexer_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    signature: Mapped[str] = mapped_column(String, nullable=False)
+    muted_at: Mapped[datetime] = mapped_column(DateTime, default=_utc_now)
 
 
 def _backfill_parsed_metadata() -> None:
@@ -1718,13 +1738,16 @@ def get_grouped_upload_errors(
     indexer_id: Optional[str] = None,
     limit: int = 50,
     since_days: Optional[int] = None,
+    include_muted: bool = True,
 ) -> Dict[str, Any]:
     """Group failed indexer submissions into a "known issues" view.
 
     One row per (indexer, error signature) with an occurrence count and
     first/last-seen timestamps, sorted by most recently seen. Mirrors PostHog's
     error_tracking model of grouping exception occurrences into issues rather
-    than presenting a raw event stream.
+    than presenting a raw event stream. Each issue carries a `muted` flag
+    (from MutedIssue); pass `include_muted=False` to drop muted issues from
+    the result entirely instead of just flagging them.
     """
     try:
         with session_scope() as session:
@@ -1769,13 +1792,18 @@ def get_grouped_upload_errors(
                     group["last_seen"] = row.uploaded_at
                 group["affected_items"].add(row.item_name)
 
+            muted_keys = {(row.indexer_id, row.signature) for row in session.execute(select(MutedIssue.indexer_id, MutedIssue.signature)).all()}
+
             ordered = sorted(
                 groups.values(),
                 key=lambda g: g["last_seen"] or datetime.min,
                 reverse=True,
             )
             issues = []
-            for issue in ordered[: max(0, limit)]:
+            for issue in ordered:
+                is_muted = (issue["indexer_id"], issue["signature"]) in muted_keys
+                if is_muted and not include_muted:
+                    continue
                 affected = sorted(issue["affected_items"])
                 issues.append(
                     {
@@ -1787,13 +1815,52 @@ def get_grouped_upload_errors(
                         "affected_items": affected[:5],
                         "first_seen": issue["first_seen"].isoformat() if issue["first_seen"] else None,
                         "last_seen": issue["last_seen"].isoformat() if issue["last_seen"] else None,
+                        "muted": is_muted,
                     }
                 )
+                if len(issues) >= max(0, limit):
+                    break
 
             return {"issues": issues, "total_issues": len(groups)}
     except Exception as e:
         logger.error(f"Grouped upload error fetch failed: {e}")
         raise DatabaseOperationalError("Grouped upload error fetch failed") from e
+
+
+def mute_upload_issue(indexer_id: str, signature: str) -> bool:
+    """Silence a known-issue group so it stops standing out in the default view.
+
+    Idempotent: muting an already-muted (indexer_id, signature) pair is a no-op.
+    """
+    try:
+        with session_scope() as session:
+            existing = session.execute(
+                select(MutedIssue).filter_by(indexer_id=indexer_id, signature=signature)
+            ).scalar_one_or_none()
+            if existing is None:
+                session.add(MutedIssue(indexer_id=indexer_id, signature=signature))
+            return True
+    except Exception as e:
+        logger.error(f"Failed to mute issue ({indexer_id}, {signature}): {e}")
+        raise DatabaseOperationalError("Failed to mute issue") from e
+
+
+def unmute_upload_issue(indexer_id: str, signature: str) -> bool:
+    """Restore a previously muted known-issue group to the default view.
+
+    Idempotent: unmuting an already-unmuted pair is a no-op.
+    """
+    try:
+        with session_scope() as session:
+            existing = session.execute(
+                select(MutedIssue).filter_by(indexer_id=indexer_id, signature=signature)
+            ).scalar_one_or_none()
+            if existing is not None:
+                session.delete(existing)
+            return True
+    except Exception as e:
+        logger.error(f"Failed to unmute issue ({indexer_id}, {signature}): {e}")
+        raise DatabaseOperationalError("Failed to unmute issue") from e
 
 
 def get_uploads_for_job(job_id: str) -> List[Dict[str, Any]]:
