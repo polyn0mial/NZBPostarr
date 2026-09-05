@@ -63,7 +63,7 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
                 "const selection = this.buildSelectedActionPayloads();",
                 'this.buildActionPayloadsFromEntries(this.getActionEntriesForItem(item, "external"))',
                 "No visible selected items are available to stage",
-                "const data = await this.apiFetch(`/api/pending/items?${params}`, { timeoutMs: 15e3 });",
+                "const data = await self.apiFetch(`/api/pending/items?${params}`, { timeoutMs: 15e3 });",
                 'await this.apiPost("/api/pending/anime-cache", {',
                 "async correctAnimeCache(item, isAnime) {",
                 "createSortableInstance(instanceKey, container, options) {",
@@ -121,7 +121,7 @@ def test_webui_performance_guards_are_present() -> None:
     assert "document.removeEventListener('click', this._touchInfotipHandler);" in page_base_js
     assert "this.debouncedLoadPending.cancel();" in queue_js
     assert "clearInterval(this._animeWatcher);" in queue_js
-    assert 'params.append("known_cached_at", String(this.cachedAt));' in queue_js
+    assert 'params.append("known_cached_at", String(self.cachedAt));' in queue_js
     assert "this.startInterval(() => this.loadQueuedPaths(), 1e4);" not in queue_js
     assert "/api/uploads/queue/${jobId}/active-items" in queue_js
     assert "/api/uploads/queue/${job.job_id}/completed-items" in queue_js
