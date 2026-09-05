@@ -125,6 +125,8 @@ def test_duplicate_and_history_queries_fail_closed_on_db_failure(monkeypatch) ->
         lambda: db.delete_upload_item("release"),
         lambda: db.bulk_delete_upload_items(["release"]),
         lambda: db.get_grouped_upload_errors(),
+        lambda: db.mute_upload_issue("geek", "auth failed"),
+        lambda: db.unmute_upload_issue("geek", "auth failed"),
     ]
 
     for operation in operations:
@@ -500,3 +502,42 @@ def test_get_grouped_upload_errors_groups_by_indexer_and_signature() -> None:
     # Filtering to an indexer with no failures returns an empty, not an error.
     empty = db.get_grouped_upload_errors(indexer_id="omg")
     assert empty == {"issues": [], "total_issues": 0}
+
+
+@pytest.mark.usefixtures("isolated_sqlite_db")
+def test_mute_upload_issue_flags_without_removing_from_results() -> None:
+    """Muting a known-issue group must silence it (via the `muted` flag and the
+    include_muted=False filter) without deleting the underlying failure history -
+    unmuting must bring it right back."""
+
+    name = "Show.F.S01E06.1080p.WEB-DL.mkv"
+    db.record_nntp_success(name, 100, "TV Episode")
+    db.update_db_destination(
+        dest="geek", _name=name, size=100, key=name, itype="TV Episode",
+        status="failed", error="Auth failed for /srv/incoming/show.f.mkv",
+    )
+
+    before = db.get_grouped_upload_errors(indexer_id="geek")
+    assert before["total_issues"] == 1
+    assert before["issues"][0]["muted"] is False
+
+    signature = before["issues"][0]["signature"]
+    assert db.mute_upload_issue("geek", signature) is True
+
+    # Muting is idempotent - calling it again must not raise or duplicate the row.
+    assert db.mute_upload_issue("geek", signature) is True
+
+    flagged = db.get_grouped_upload_errors(indexer_id="geek")
+    assert flagged["total_issues"] == 1
+    assert flagged["issues"][0]["muted"] is True
+
+    filtered = db.get_grouped_upload_errors(indexer_id="geek", include_muted=False)
+    assert filtered["issues"] == []
+
+    assert db.unmute_upload_issue("geek", signature) is True
+    # Unmuting an already-unmuted pair must not raise.
+    assert db.unmute_upload_issue("geek", signature) is True
+
+    restored = db.get_grouped_upload_errors(indexer_id="geek", include_muted=False)
+    assert restored["total_issues"] == 1
+    assert restored["issues"][0]["muted"] is False

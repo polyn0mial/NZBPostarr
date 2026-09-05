@@ -178,18 +178,41 @@ def test_grouped_items_passes_destination_through(monkeypatch) -> None:
 def test_grouped_errors_passes_params_through(monkeypatch) -> None:
     seen: dict[str, object] = {}
 
-    def _fake(indexer_id="all", limit=50, since_days=None):
+    def _fake(indexer_id="all", limit=50, since_days=None, include_muted=True):
         seen["indexer_id"] = indexer_id
         seen["limit"] = limit
         seen["since_days"] = since_days
+        seen["include_muted"] = include_muted
         return {"issues": [], "total_issues": 0}
 
     monkeypatch.setattr(db, "get_grouped_upload_errors", _fake)
 
-    result = app_mod.get_grouped_errors(destination="geek", limit=5, since_days=3)
+    result = app_mod.get_grouped_errors(destination="geek", limit=5, since_days=3, include_muted=False)
 
-    assert seen == {"indexer_id": "geek", "limit": 5, "since_days": 3}
+    assert seen == {"indexer_id": "geek", "limit": 5, "since_days": 3, "include_muted": False}
     assert result == {"issues": [], "total_issues": 0}
+
+
+def test_mute_and_unmute_routes_are_wired() -> None:
+    paths = app_mod.app.openapi()["paths"]
+    assert "/api/uploads/errors/mute" in paths
+    assert "post" in paths["/api/uploads/errors/mute"]
+    assert "/api/uploads/errors/unmute" in paths
+    assert "post" in paths["/api/uploads/errors/unmute"]
+
+
+def test_mute_and_unmute_grouped_error_pass_params_through(monkeypatch) -> None:
+    seen: list[tuple] = []
+
+    monkeypatch.setattr(db, "mute_upload_issue", lambda indexer_id, signature: seen.append(("mute", indexer_id, signature)) or True)
+    monkeypatch.setattr(db, "unmute_upload_issue", lambda indexer_id, signature: seen.append(("unmute", indexer_id, signature)) or True)
+
+    mute_result = app_mod.mute_grouped_error(app_mod.MuteIssueRequest(indexer_id="geek", signature="auth failed"))
+    unmute_result = app_mod.unmute_grouped_error(app_mod.MuteIssueRequest(indexer_id="geek", signature="auth failed"))
+
+    assert seen == [("mute", "geek", "auth failed"), ("unmute", "geek", "auth failed")]
+    assert mute_result == {"status": "success", "muted": True}
+    assert unmute_result == {"status": "success", "muted": False}
 
 def test_no_inline_script_inside_the_vue_root() -> None:
     """Vue silently discards <script>/<style> in a client component template.
