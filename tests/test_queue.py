@@ -418,8 +418,29 @@ def test_queue_lifecycle_stop_and_restart_restores_manual_resume_state(tmp_path,
         else:
             raise AssertionError("Job did not reach stopped state before persistence check")
 
+        # The background job thread flips the in-memory status to "stopped" (above) and only
+        # afterwards acquires the lock to finalize and persist it to disk, on the same thread,
+        # in `_launch_job`'s `run()`. Reading the state file right away races that write: the
+        # file can still hold the older "stopping" snapshot, and on Windows a concurrent
+        # `os.replace()` of the same path can transiently surface as PermissionError. Poll the
+        # persisted content itself (tolerating that transient error) instead of trusting that
+        # the in-memory flag above already implies the write landed.
         state_file = state_root / "data" / "state" / "job_queue_state.json"
-        persisted = json.loads(state_file.read_text(encoding="utf-8"))
+        persisted = None
+        deadline = _time.time() + 2.0
+        while _time.time() < deadline:
+            try:
+                candidate = json.loads(state_file.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                _time.sleep(0.02)
+                continue
+            jobs = candidate.get("jobs") or []
+            if jobs and jobs[0].get("status") == "stopped":
+                persisted = candidate
+                break
+            _time.sleep(0.02)
+        if persisted is None:
+            raise AssertionError("Persisted job state did not reach 'stopped' before the deadline")
         assert persisted["jobs"][0]["status"] == "stopped"
         assert persisted["jobs"][0]["paths"] == [first_path, second_path]
 
