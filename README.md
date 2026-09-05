@@ -15,6 +15,7 @@ indexers.
 - **Multi-indexer support**: submit NZBs to multiple indexers simultaneously via a YAML plugin system
 - **Dynamic categories**: add any folder/category without touching code
 - **Duplicate detection**: skips content already present on enabled indexers
+- **Known issues view**: `--headless issues` and `/api/uploads/errors/grouped` group failed submissions by indexer and error signature instead of a flat log
 - **Headless / CLI mode**: `--headless upload tv` for scripted / cron use cases
 - **Direct NZB reposting**: `--headless stream /path/to/file.nzb` queues Usenet-to-Usenet stream jobs from the CLI
 - **On-demand CLI stats**: `--headless stats` shows a live snapshot without running the WebUI collector
@@ -189,6 +190,10 @@ python3 main.py --headless pending tv --folder /srv/incoming/tv --limit 25 --ver
 
 # View upload history
 python3 main.py --headless history
+
+# View failed uploads grouped into known issues (indexer + error signature)
+python3 main.py --headless issues
+python3 main.py --headless issues --destination nzbgeek --since-days 7
 
 # Inspect and control the shared upload queue
 python3 main.py --headless queue status

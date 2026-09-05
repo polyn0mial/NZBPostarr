@@ -634,6 +634,75 @@ def test_cmd_history_json_output(monkeypatch, capsys) -> None:
 
 
 # ============================================================
+#  cmd_issues
+# ============================================================
+
+
+def test_cmd_issues_json_output_passes_args_through(monkeypatch, capsys) -> None:
+    seen: dict[str, object] = {}
+    issues_result = {
+        "issues": [
+            {
+                "indexer_id": "geek",
+                "signature": "auth failed for <path>",
+                "sample_error": "Auth failed for /srv/incoming/x.mkv",
+                "count": 3,
+                "affected_item_count": 3,
+                "affected_items": ["a.mkv", "b.mkv", "c.mkv"],
+                "first_seen": "2026-09-01T00:00:00+00:00",
+                "last_seen": "2026-09-03T00:00:00+00:00",
+            }
+        ],
+        "total_issues": 1,
+    }
+
+    def _fake(indexer_id=None, limit=50, since_days=None):
+        seen["indexer_id"] = indexer_id
+        seen["limit"] = limit
+        seen["since_days"] = since_days
+        return issues_result
+
+    monkeypatch.setattr(db, "get_grouped_upload_errors", _fake)
+
+    rc = headless_mod.cmd_issues(SimpleNamespace(destination="geek", limit=10, since_days=7, json=True))
+
+    assert rc == 0
+    assert seen == {"indexer_id": "geek", "limit": 10, "since_days": 7}
+    payload = json.loads(capsys.readouterr().out)
+    assert payload == issues_result
+
+
+def test_cmd_issues_table_output_and_empty_case(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        db,
+        "get_grouped_upload_errors",
+        lambda **_kw: {
+            "issues": [
+                {
+                    "indexer_id": "geek",
+                    "count": 2,
+                    "affected_item_count": 2,
+                    "last_seen": "2026-09-03T00:00:00+00:00",
+                    "sample_error": "Auth failed",
+                }
+            ],
+            "total_issues": 1,
+        },
+    )
+
+    rc = headless_mod.cmd_issues(SimpleNamespace(destination="all", limit=50, since_days=None, json=False))
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "geek" in out
+    assert "Auth failed" in out
+
+    monkeypatch.setattr(db, "get_grouped_upload_errors", lambda **_kw: {"issues": [], "total_issues": 0})
+    rc = headless_mod.cmd_issues(SimpleNamespace(destination="all", limit=50, since_days=None, json=False))
+    assert rc == 0
+    assert "No known upload issues found." in capsys.readouterr().out
+
+
+# ============================================================
 #  cmd_indexers
 # ============================================================
 
