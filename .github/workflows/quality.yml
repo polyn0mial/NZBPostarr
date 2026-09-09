@@ -13,8 +13,16 @@ permissions:
   contents: read
 
 jobs:
+  # Both jobs run on the self-hosted OVH runner, not GitHub-hosted infra, so
+  # CI stays free instead of spending the private-repo Actions minutes
+  # allowance. That runner is capped at 4 cpus / 6 GB and fenced off the
+  # host's mail ports; it has no docker socket, so nothing here may use
+  # container:, service containers, or docker; it has git, curl, python3.12,
+  # tar, unzip, jq but no gcc/make, so a dependency needing a build from
+  # source will fail there. If the runner is ever offline, GitHub queues the
+  # run instead of failing it.
   backend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ovh]
     strategy:
       fail-fast: false
       matrix:
@@ -66,7 +74,7 @@ jobs:
         run: pip-audit -r requirements.lock
 
   frontend:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, ovh]
     defaults:
       run:
         working-directory: webui
