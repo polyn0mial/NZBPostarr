@@ -1,6 +1,6 @@
 import {
     createVuePage,
-    categoryMeta,
+    queueCategoryMeta as categoryMeta,
     categoryLabel,
     itypeToCategory as sharedItypeToCategory,
     categoryToItype,

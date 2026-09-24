@@ -122,7 +122,7 @@ to add one.
 Supported indexers included by default:
 - NZBGeek (`geek`)
 - NZBPlanet (`planet`)
-- NZB.su (`su`)
+- NZB.Life (`su`, formerly NZB.su)
 - DrunkenSlug (`slug`)
 - NZBs.in (`in`)
 - OMGwtfnzbs (`omg`)

@@ -40,9 +40,10 @@ def test_category_colours_follow_the_served_page_base() -> None:
     page_base_js = _page_base_js()
     core_css = _read_repo_text("webui", "assets", "css", "core.css")
 
-    assert "tv: { id: 'tv', label: 'TV', icon: 'tv', color: 'green', badgeClass: 'bg-green-500/15 text-green-400' }" in page_base_js
-    assert "misc: { id: 'misc', label: 'Misc', icon: 'box', color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' }" in page_base_js
-    assert "badgeClass: 'disc-cat-badge'" in page_base_js
+    # Wave 2 ruling: each page keeps the palette the server serves it (the
+    # server's dist/page-base.js bundle, TV green, is loaded by no page).
+    assert "tv: { id: 'tv', label: 'TV', icon: 'tv', color: 'cyan', badgeClass: 'bg-cyan-500/15 text-cyan-400' }" in page_base_js
+    assert "misc: { color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' }," in page_base_js
     assert "'emerald': { bg: 'bg-emerald-500/15'" in page_base_js
     assert "'slate': { bg: 'bg-slate-500/15'" in page_base_js
     assert ".disc-cat-badge {" in core_css

@@ -222,21 +222,39 @@ export const statusConfig = {
 /**
  * Canonical metadata for every known category.
  * Pages should use these instead of inline icon/color/label maps.
+ * The colours match DEFAULT_CATEGORY_HEX below (Dashboard, History, Settings).
  */
 export const categoryMeta = {
-    tv: { id: 'tv', label: 'TV', icon: 'tv', color: 'green', badgeClass: 'bg-green-500/15 text-green-400' },
+    tv: { id: 'tv', label: 'TV', icon: 'tv', color: 'cyan', badgeClass: 'bg-cyan-500/15 text-cyan-400' },
     movies: { id: 'movies', label: 'Movies', icon: 'film', color: 'purple', badgeClass: 'bg-purple-500/15 text-purple-400' },
-    misc: { id: 'misc', label: 'Misc', icon: 'box', color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' },
+    misc: { id: 'misc', label: 'Misc', icon: 'box', color: 'amber', badgeClass: 'bg-amber-500/15 text-amber-400' },
     anime: { id: 'anime', label: 'Anime', icon: 'tv', color: 'pink', badgeClass: 'bg-pink-500/15 text-pink-400' },
-    disc: { id: 'disc', label: 'DISC', icon: 'disc-3', color: 'slate', badgeClass: 'disc-cat-badge' },
-    music: { id: 'music', label: 'Music', icon: 'music', color: 'emerald', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
-    books: { id: 'books', label: 'Books', icon: 'book-open', color: 'amber', badgeClass: 'bg-amber-500/15 text-amber-400' },
-    apps: { id: 'apps', label: 'Apps', icon: 'app-window', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
+    disc: { id: 'disc', label: 'DISC', icon: 'disc-3', color: 'slate', badgeClass: 'bg-slate-500/15 text-slate-400' },
+    music: { id: 'music', label: 'Music', icon: 'music', color: 'green', badgeClass: 'bg-green-500/15 text-green-400' },
+    books: { id: 'books', label: 'Books', icon: 'book-open', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
+    apps: { id: 'apps', label: 'Apps', icon: 'app-window', color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' },
     audiobooks: { id: 'audiobooks', label: 'Audiobooks', icon: 'headphones', color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' },
     ebooks: { id: 'ebooks', label: 'Ebooks', icon: 'book-open', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
     external: { id: 'external', label: 'External', icon: 'folder-input', color: 'gray', badgeClass: 'bg-notion-bg-hover text-notion-text-secondary' },
     both: { id: 'both', label: 'Both', icon: 'layers', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
 };
+
+// The Queue page has its own palette (orange Misc, blue Music, emerald Books,
+// red Apps, light grey DISC badge). Only the differences are listed here.
+const QUEUE_CATEGORY_PALETTE = {
+    misc: { color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' },
+    disc: { badgeClass: 'bg-[#E0E0E0] text-[#2A2A2A] border-[#B9B9B9]' },
+    music: { color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
+    books: { color: 'emerald', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+    apps: { color: 'red', badgeClass: 'bg-red-500/15 text-red-400' },
+};
+
+export const queueCategoryMeta = Object.fromEntries(
+    Object.entries(categoryMeta).map(([id, meta]) => [id, { ...meta, ...(QUEUE_CATEGORY_PALETTE[id] || {}) }])
+);
+
+// Revision of the Queue page's saved-state key (nzbpostarr_persist_queue_<rev>).
+export const QUEUE_PERSIST_REV = '20260805_queue_hotfix_r5';
 
 export const CATEGORY_APPEARANCE_STORAGE_KEY = 'nzbpostarr_category_appearance_v2';
 const LEGACY_CATEGORY_APPEARANCE_STORAGE_KEYS = ['nzbpostarr_category_appearance_v1'];
@@ -429,9 +447,9 @@ export function itypeToCategory(itype, availableCategories = []) {
         case 'Music':
             return findCategoryMatch(availableCategories, null, 'music');
         case 'Audiobook':
-            return findCategoryMatch(availableCategories, 'audiobooks', 'book');
+            return findCategoryMatch(availableCategories, 'audiobooks', 'audiobook');
         case 'Ebook':
-            return findCategoryMatch(availableCategories, 'ebooks', 'book');
+            return findCategoryMatch(availableCategories, 'ebooks', 'ebook');
         default:
             return '';
     }
@@ -849,7 +867,11 @@ export function createVuePage(pageOptions = {}) {
     }
 
     // Load persisted page-specific data
-    const storageId = pageTitle.toLowerCase().replace(/\s+/g, '_') || 'common';
+    // The Queue page keeps the revisioned key its saved state already lives
+    // under; other pages append a revision only when the template sets one.
+    const baseStorageId = pageTitle.toLowerCase().replace(/\s+/g, '_') || 'common';
+    const persistRev = pageTitle === 'Queue' ? QUEUE_PERSIST_REV : (root.dataset.persistRev || '');
+    const storageId = persistRev ? `${baseStorageId}_${persistRev}` : baseStorageId;
     const persistKey = `nzbpostarr_persist_${storageId}`;
     let savedPageData = {};
     try {

@@ -1,5 +1,5 @@
 // Auto-split from queue.js - verbatim computed bodies.
-import { categoryMeta, categoryLabel } from "page-base";
+import { queueCategoryMeta as categoryMeta, categoryLabel } from "page-base";
 import { FILTER_MODE_OPTIONS, deepFreezePendingTree } from "./queue.js";
 
 export default {
