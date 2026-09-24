@@ -1,4 +1,14 @@
-import { createVuePage, colorClassMap, categoryIcon as _categoryIcon } from 'page-base';
+import {
+    createVuePage,
+    colorClassMap,
+    categoryIcon as _categoryIcon,
+    categoryMeta,
+    hexToRgba,
+    getDefaultCategoryHex,
+    loadCategoryAppearanceState,
+    saveCategoryAppearanceState,
+    getCategoryAppearanceEntry,
+} from 'page-base';
 import debounce from 'lodash.debounce';
 
 // ============================================================
@@ -33,10 +43,9 @@ function applySettingsProcessing(self, data) {
         dynamic_packs: data.processing.dynamic_packs !== undefined ? data.processing.dynamic_packs : true,
         tv_pack_ignore: {
             enabled: data.processing.tv_pack_ignore?.enabled !== undefined ? data.processing.tv_pack_ignore.enabled : true,
-            ignore_non_video: data.processing.tv_pack_ignore?.ignore_non_video !== undefined ? data.processing.tv_pack_ignore.ignore_non_video : true,
-            ignore_extras: data.processing.tv_pack_ignore?.ignore_extras !== undefined ? data.processing.tv_pack_ignore.ignore_extras : true,
-            require_sxxexx: data.processing.tv_pack_ignore?.require_sxxexx !== undefined ? data.processing.tv_pack_ignore.require_sxxexx : true,
-            require_resolution: data.processing.tv_pack_ignore?.require_resolution !== undefined ? data.processing.tv_pack_ignore.require_resolution : true,
+            ignore_non_episode: data.processing.tv_pack_ignore?.ignore_non_episode !== undefined ? data.processing.tv_pack_ignore.ignore_non_episode : true,
+            require_episode: data.processing.tv_pack_ignore?.require_episode !== undefined ? data.processing.tv_pack_ignore.require_episode : true,
+            require_resolution: data.processing.tv_pack_ignore?.require_resolution !== undefined ? data.processing.tv_pack_ignore.require_resolution : false,
             require_source: data.processing.tv_pack_ignore?.require_source !== undefined ? data.processing.tv_pack_ignore.require_source : true,
         },
     };
@@ -48,7 +57,9 @@ function applySettingsUiAndSkipFiles(self, data) {
         stats_page_enabled: data.ui.stats_page_enabled !== undefined ? data.ui.stats_page_enabled : true,
         ui_refresh_seconds: data.ui.ui_refresh_seconds || 2,
         dashboard_stats_modules: (data.ui.dashboard_stats_modules || ["cpu", "memory", "disk", "free_space", "upload", "download"]).slice(0, 6),
+        category_appearance_profiles: data.ui.category_appearance_profiles || {},
     };
+    self.loadCategoryAppearanceLibrary(self.settings.ui.category_appearance_profiles);
 
     const sf = data.skip_files || {};
     self.settings.skip_files = {
@@ -83,6 +94,7 @@ function applySettingsAuthUploadFolders(self, data) {
     const f = data.folders || {};
     self.settings.folders = {
         base: f.base_folder || '',
+        backup_folder: f.backup_folder || '',
         folder_paths: Array.isArray(f.folder_paths) && f.folder_paths.length > 0
             ? f.folder_paths.map(fp => self.normalizeFolderPathEntry(fp))
             : [],
@@ -112,6 +124,7 @@ const vm = createVuePage({
             // Section expansion state
             expandedSections: {
                 global: true,
+                'category-colors': true,
                 auth: false,
                 'tv-pack-ignore': false,
                 'skip-files': false,
@@ -150,10 +163,9 @@ const vm = createVuePage({
                     dynamic_packs: true,
                     tv_pack_ignore: {
                         enabled: true,
-                        ignore_non_video: true,
-                        ignore_extras: true,
-                        require_sxxexx: true,
-                        require_resolution: true,
+                        ignore_non_episode: true,
+                        require_episode: true,
+                        require_resolution: false,
                         require_source: true,
                     },
                 },
@@ -162,6 +174,7 @@ const vm = createVuePage({
                     stats_page_enabled: true,
                     ui_refresh_seconds: 2,
                     dashboard_stats_modules: ["cpu", "memory", "disk", "free_space", "upload", "download"],
+                    category_appearance_profiles: {},
                 },
                 skip_files: {
                     enabled: false,
@@ -189,6 +202,7 @@ const vm = createVuePage({
                 },
                 folders: {
                     base: '',
+                    backup_folder: '',
                     folder_paths: [],
                 },
                 api_keys: {},
@@ -207,39 +221,35 @@ const vm = createVuePage({
 
             tvPackIgnoreRules: [
                 {
-                    key: 'ignore_non_video',
-                    label: 'Non-video files',
+                    key: 'ignore_non_episode',
+                    label: 'Non-episode files',
                     icon: 'file-x',
-                    description: 'Marks sidecar files as ignored inside TV/anime season packs.',
-                    examples: '.nfo, .txt, .srt, .ass, .ssa, .sub, .idx, .sup, .jpg, .png, .webp, .sfv, .md5, .par2, .url',
+                    description: 'Marks sidecar files, samples, and anime/bonus content as ignored inside TV/anime season packs. Matching is case-insensitive.',
+                    examples: '.nfo, .txt, .srt, subtitles, sample, proof, screens, extras, featurettes, trailers, NCOP, NCED, OVA, OAD',
+                    examplesMore: 'OP, ED, preview, PV, teaser, special, specials, samples, sidecar image files, and other non-episode bonus content',
                 },
                 {
-                    key: 'ignore_extras',
-                    label: 'Extras and samples',
-                    icon: 'scissors',
-                    description: 'Marks sample and bonus-style media as ignored.',
-                    examples: 'sample, samples, proof, screens, subtitles, extras, featurettes, trailers, NCOP, NCED',
-                },
-                {
-                    key: 'require_sxxexx',
-                    label: 'Require S##E##',
+                    key: 'require_episode',
+                    label: 'Require episode format',
                     icon: 'list-checks',
-                    description: 'Only episode files with S##E## numbering are allowed into a filtered season pack.',
-                    examples: 'Allowed: S01E01. Ignored: 01.Title.mkv, Episode 01.mkv, 1x01.mkv',
+                    description: 'Episode files must include a recognised numbering pattern. Matching is case-insensitive and supports common TV, anime, daily, and multi-episode formats.',
+                    examples: 'S01E01, S01E01E02, S01E01-E02, S01.E01, 01x01, 01x01x02, 01x01-02, E01, E01-E02, EP01, Episode 01, 2024.01.15',
+                    examplesMore: 'S#E#, S###E###, S##.E##, S##_E##, S## E##, SE##EP##, S##EP##, SEASON##EPISODE##, SEASON#EP#, S##EPISODE##, S##E##V#, 01x01-01x02, [01x02], (01x02), Part1, Pt1, Chapter 01, 1of2, Part1of2, Pilot, Finale, Final, Special, OVA, OAD, YYYY_MM_DD, YYYY-MM-DD, DD.MM.YYYY, MM.DD.YYYY, 101, 102, 1001',
                 },
                 {
                     key: 'require_resolution',
                     label: 'Require resolution',
                     icon: 'scan',
                     description: 'Episode filenames must include a quality resolution.',
-                    examples: '2160p, 1080p, 1080i, 720p, 576p, 480p',
+                    examples: 'Any resolution ending in p or i (480p, 576i, 720p, 1080p, 1080i, 2160p, 4320p, etc.), NTSC, PAL',
                 },
                 {
                     key: 'require_source',
                     label: 'Require source',
                     icon: 'badge-check',
-                    description: 'Episode filenames must include a source/network/source-like token.',
-                    examples: 'WEB-DL, WEBRip, WEBHD, BluRay, BDRip, BRRip, REMUX, HDTV, PDTV, SDTV, TVRip, SATRip, DVDRip, DVD, VHS, AMZN, NF, DSNP, PCOK, HMAX, HULU, ATVP, CR',
+                    description: 'Episode filenames must include a media source token. Matching is case-insensitive and avoids generic title words that caused false positives.',
+                    examples: 'WEB-DL, WEBRip, WEB-Cap, BluRay, UHD BluRay, BDRip, BRRip, DVDRip, DVD5, DVD9, VHSRip, Laserdisc, DVDSCR, CAM, TS, TC, R5, HDTV, PDTV, DSR, DVB, TVRip',
+                    examplesMore: 'WEBDL, WEBCap, VODRip, DVD-R, LDRip, DVD-Screener, BluRay-Screener, BDScr, DDC, WP, CAMRip, Telesync, Telecine, DCP, HC-HD-Rip, R5-Line, DSRip, DVBRip, SATRip, REMUX',
                 },
             ],
 
@@ -316,6 +326,12 @@ const vm = createVuePage({
             readmeFilePath: '',
 
             // Reactive settings search - tracks which sections have matches
+            activeSettingsTab: 'general',
+            categoryAppearanceState: {
+                version: 2,
+                categories: {},
+            },
+            expandedTvPackRuleExamples: {},
         };
     },
 
@@ -374,6 +390,24 @@ const vm = createVuePage({
 
         readmeDirty() {
             return this.readmeContent !== this.readmeOriginal;
+        },
+
+        categoryAppearanceCards() {
+            const hidden = new Set(['external', 'both']);
+            return Object.values(categoryMeta)
+                .filter((cat) => !hidden.has(cat.id))
+                .map((cat) => {
+                    const entry = this.getCategoryAppearance(cat.id);
+                    return {
+                        ...cat,
+                        currentColor: entry.color,
+                        currentSaveId: entry.selected_save_id || '',
+                        saves: entry.saves,
+                        activeSaveName: entry.selected_save_id
+                            ? (entry.saves.find((save) => save.id === entry.selected_save_id)?.name || 'Saved preset')
+                            : 'Custom color',
+                    };
+                });
         },
     },
 
@@ -449,6 +483,118 @@ const vm = createVuePage({
             };
         },
 
+        loadCategoryAppearanceLibrary(initialProfiles = null) {
+            const state = loadCategoryAppearanceState();
+            const profiles = initialProfiles && typeof initialProfiles === 'object'
+                ? initialProfiles
+                : (this.settings.ui.category_appearance_profiles || {});
+            Object.entries(profiles || {}).forEach(([catId, value]) => {
+                if (!state.categories[catId]) state.categories[catId] = {};
+                if (value && typeof value === 'object') {
+                    if (value.color) state.categories[catId].color = value.color;
+                    if (Array.isArray(value.saves)) state.categories[catId].saves = value.saves;
+                    if (value.selected_save_id) state.categories[catId].selected_save_id = value.selected_save_id;
+                }
+            });
+            this.categoryAppearanceState = saveCategoryAppearanceState(state);
+            this.settings.ui.category_appearance_profiles = this.categoryAppearanceState.categories;
+        },
+
+        persistCategoryAppearanceLibrary() {
+            this.categoryAppearanceState = saveCategoryAppearanceState(this.categoryAppearanceState);
+            this.settings.ui.category_appearance_profiles = this.categoryAppearanceState.categories;
+        },
+
+        getCategoryAppearance(catId) {
+            return getCategoryAppearanceEntry(catId, this.categoryAppearanceState);
+        },
+
+        categoryAppearancePreviewStyle(catId) {
+            const color = this.getCategoryAppearance(catId).color;
+            return {
+                backgroundColor: hexToRgba(color, 0.16),
+                color,
+                borderColor: hexToRgba(color, 0.35),
+            };
+        },
+
+        categoryAppearanceSwatchStyle(catId) {
+            const color = this.getCategoryAppearance(catId).color;
+            return {
+                backgroundColor: hexToRgba(color, 0.16),
+            };
+        },
+
+        categoryAppearanceIconStyle(catId) {
+            return { color: this.getCategoryAppearance(catId).color };
+        },
+
+        setCategoryAppearanceColor(catId, color) {
+            if (!this.categoryAppearanceState.categories[catId]) {
+                this.categoryAppearanceState.categories[catId] = {};
+            }
+            this.categoryAppearanceState.categories[catId].color = color || getDefaultCategoryHex(catId);
+            this.categoryAppearanceState.categories[catId].selected_save_id = '';
+            this.persistCategoryAppearanceLibrary();
+        },
+
+        saveCategoryAppearancePreset(catId) {
+            const entry = this.getCategoryAppearance(catId);
+            const bucket = this.categoryAppearanceState.categories[catId] || (this.categoryAppearanceState.categories[catId] = {});
+            const saves = Array.isArray(bucket.saves) ? bucket.saves.slice() : [];
+            const nextNumber = saves.length + 1;
+            const preset = {
+                id: `${catId}-${Date.now()}`,
+                name: `Saved ${nextNumber}`,
+                color: entry.color,
+                created_at: new Date().toISOString(),
+            };
+            saves.push(preset);
+            bucket.saves = saves;
+            bucket.selected_save_id = preset.id;
+            this.persistCategoryAppearanceLibrary();
+            this.showToast('success', 'Color Saved', `${categoryMeta[catId]?.label || catId} color saved as ${preset.name}.`);
+        },
+
+        applyCategoryAppearancePreset(catId, presetId) {
+            if (!presetId) {
+                const bucket = this.categoryAppearanceState.categories[catId] || (this.categoryAppearanceState.categories[catId] = {});
+                bucket.selected_save_id = '';
+                this.persistCategoryAppearanceLibrary();
+                return;
+            }
+            const entry = this.getCategoryAppearance(catId);
+            const preset = entry.saves.find((save) => save.id === presetId);
+            if (!preset) return;
+            const bucket = this.categoryAppearanceState.categories[catId] || (this.categoryAppearanceState.categories[catId] = {});
+            bucket.color = preset.color;
+            bucket.selected_save_id = preset.id;
+            this.persistCategoryAppearanceLibrary();
+        },
+
+        deleteCategoryAppearancePreset(catId, presetId) {
+            const bucket = this.categoryAppearanceState.categories[catId];
+            if (!bucket || !Array.isArray(bucket.saves)) return;
+            bucket.saves = bucket.saves.filter((save) => save.id !== presetId);
+            if (bucket.selected_save_id === presetId) {
+                bucket.selected_save_id = '';
+            }
+            this.persistCategoryAppearanceLibrary();
+        },
+
+        deleteSelectedCategoryAppearancePreset(catId) {
+            const entry = this.getCategoryAppearance(catId);
+            if (!entry.selected_save_id) return;
+            this.deleteCategoryAppearancePreset(catId, entry.selected_save_id);
+        },
+
+        resetCategoryAppearance(catId) {
+            const bucket = this.categoryAppearanceState.categories[catId] || (this.categoryAppearanceState.categories[catId] = {});
+            bucket.color = getDefaultCategoryHex(catId);
+            bucket.selected_save_id = '';
+            this.persistCategoryAppearanceLibrary();
+        },
+
         buildFolderPathPayload() {
             return this.settings.folders.folder_paths
                 .filter(fp => fp.path && fp.path.trim())
@@ -471,10 +617,9 @@ const vm = createVuePage({
         defaultTvPackIgnore() {
             return {
                 enabled: true,
-                ignore_non_video: true,
-                ignore_extras: true,
-                require_sxxexx: true,
-                require_resolution: true,
+                ignore_non_episode: true,
+                require_episode: true,
+                require_resolution: false,
                 require_source: true,
             };
         },
@@ -586,15 +731,39 @@ const vm = createVuePage({
             );
         },
 
+        setSettingsTab(tabId) {
+            this.activeSettingsTab = tabId;
+        },
+
+        isTvPackRuleExpanded(ruleKey) {
+            return !!this.expandedTvPackRuleExamples[ruleKey];
+        },
+
+        toggleTvPackRuleExpanded(ruleKey) {
+            this.expandedTvPackRuleExamples[ruleKey] = !this.expandedTvPackRuleExamples[ruleKey];
+        },
+
+        settingsTabClass(tabId) {
+            const base = 'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors';
+            return this.activeSettingsTab === tabId
+                ? `${base} border-notion-accent bg-notion-accent text-white`
+                : `${base} border-notion-border bg-notion-bg text-notion-text-secondary hover:bg-notion-bg-hover hover:text-notion-text-primary`;
+        },
+
         sectionVisible(sectionId) {
             const q = this._normQuery();
             if (!q) return true;
 
             switch (sectionId) {
+                case 'category-colors':
+                    return (
+                        this.matchesSearch('category pill colors icon queue preview snapshot save saved preset palette color wheel') ||
+                        this.matchesSearch('active snapshot current color queue pill icon')
+                    );
                 case 'global':
                     return this._globalSectionVisible();
                 case 'tv-pack-ignore':
-                    return this.matchesSearch('tv pack ignore seasonal pack sxxexx source resolution sample nfo extras subtitles sidecar proof screens nced ncop');
+                    return this.matchesSearch('tv pack ignore seasonal pack sxxexx source resolution sample nfo extras subtitles sidecar proof screens nced ncop non-episode episode format ova oad');
                 case 'skip-files':
                     return this._skipFilesSectionVisible();
                 case 'updates':
@@ -1049,6 +1218,7 @@ const vm = createVuePage({
                     ...destinations,
                     skip_files: this.settings.skip_files,
                     base_folder: this.settings.folders.base,
+                    backup_folder: this.settings.folders.backup_folder,
                     folder_paths: this.buildFolderPathPayload(),
                     nntp_servers: this.servers,
                     api_keys: this.settings.api_keys,
@@ -1101,6 +1271,7 @@ const vm = createVuePage({
                         name: 'folders',
                         data: {
                             base_folder: this.settings.folders.base,
+                            backup_folder: this.settings.folders.backup_folder,
                             folder_paths: this.buildFolderPathPayload(),
                         }
                     },
@@ -1268,7 +1439,9 @@ const vm = createVuePage({
             this.folderBrowser.open = true;
             const current = idx === 'base'
                 ? this.settings.folders.base || '/'
-                : this.settings.folders.folder_paths[idx]?.path || '/';
+                : idx === 'backup'
+                    ? this.settings.folders.backup_folder || '/'
+                    : this.settings.folders.folder_paths[idx]?.path || '/';
             await this.browseTo(current);
         },
 
@@ -1300,6 +1473,8 @@ const vm = createVuePage({
             const idx = this.folderBrowser.targetIdx;
             if (idx === 'base') {
                 this.settings.folders.base = this.folderBrowser.currentPath;
+            } else if (idx === 'backup') {
+                this.settings.folders.backup_folder = this.folderBrowser.currentPath;
             } else if (idx !== null && this.settings.folders.folder_paths[idx]) {
                 this.settings.folders.folder_paths[idx].path = this.folderBrowser.currentPath;
             }

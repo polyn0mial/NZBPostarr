@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import yaml
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from core.utils import atomic_write_text, normalize_submission_category
@@ -27,6 +27,41 @@ _LEGACY_FOLDER_FIELDS: tuple[str, ...] = (
     "tv_folder",
     "misc_folder",
 )
+
+DEFAULT_TV_PACK_IGNORE: Dict[str, bool] = {
+    "enabled": True,
+    "ignore_non_episode": True,
+    "require_episode": True,
+    "require_resolution": False,
+    "require_source": True,
+}
+
+# Rule keys used before non-video + extras merged into ignore_non_episode and
+# S##E## became the broader require_episode check.
+_LEGACY_TV_PACK_IGNORE_KEYS: Dict[str, str] = {
+    "ignore_non_video": "ignore_non_episode",
+    "ignore_extras": "ignore_non_episode",
+    "require_sxxexx": "require_episode",
+}
+
+
+def _normalize_tv_pack_ignore(raw: Any) -> Any:
+    """Map legacy tv_pack_ignore rule keys onto the current key set.
+
+    A current key always wins over its legacy spelling; legacy keys only fill
+    a current key the config does not set, and are then dropped.
+    """
+    if not isinstance(raw, dict):
+        return raw
+    rules = {k: v for k, v in raw.items() if k not in _LEGACY_TV_PACK_IGNORE_KEYS}
+    legacy_values: Dict[str, Any] = {}
+    for key, value in raw.items():
+        current_key = _LEGACY_TV_PACK_IGNORE_KEYS.get(key)
+        if current_key:
+            legacy_values[current_key] = value
+    for key, value in legacy_values.items():
+        rules.setdefault(key, bool(value))
+    return rules
 
 def _normalize_folder_entry_category(raw: Any) -> str:
     """Normalize saved folder-path categories while preserving explicit intent."""
@@ -135,6 +170,9 @@ class Config(BaseSettings):
     )
 
     base_folder: Path
+    # Full-backup archive destination (Settings > Folders). Relative paths
+    # resolve against the app root.
+    backup_folder: Path = Field(default_factory=lambda: APP_ROOT / "backups")
     folder_paths: List[Dict[str, Any]] = Field(default_factory=list)
     nntp_servers: List[NNTPServer]
 
@@ -173,6 +211,19 @@ class Config(BaseSettings):
 
         return _normalize_folder_paths_payload(data)
 
+    @field_validator("backup_folder", mode="before")
+    @classmethod
+    def resolve_backup_folder(cls, value: Any) -> Any:
+        if value is None or not str(value).strip():
+            return APP_ROOT / "backups"
+        path = Path(str(value).strip()).expanduser()
+        return path if path.is_absolute() else APP_ROOT / path
+
+    @field_validator("tv_pack_ignore", mode="before")
+    @classmethod
+    def migrate_tv_pack_ignore(cls, value: Any) -> Any:
+        return _normalize_tv_pack_ignore(value)
+
     rar_path: str = "rar"
     nyuu_path: str
     parpar_path: str
@@ -187,16 +238,7 @@ class Config(BaseSettings):
     # Processing controls
     process_tv_episodes: bool
     dynamic_packs: bool = True
-    tv_pack_ignore: Dict[str, Any] = Field(
-        default_factory=lambda: {
-            "enabled": True,
-            "ignore_non_video": True,
-            "ignore_extras": True,
-            "require_sxxexx": True,
-            "require_resolution": True,
-            "require_source": True,
-        }
-    )
+    tv_pack_ignore: Dict[str, Any] = Field(default_factory=lambda: dict(DEFAULT_TV_PACK_IGNORE))
 
     # Operation limits
     upload_max_retries: int
@@ -233,6 +275,10 @@ class Config(BaseSettings):
     enable_password: bool = False
     web_username: str = "admin"
 
+    # Pending-page UI persistence shared across browsers/users.
+    pending_external_group_order: List[str] = Field(default_factory=list)
+    pending_external_group_order_locked: bool = False
+
     # Model Context Protocol endpoint, mounted at /mcp when enabled.
     # Off by default: it needs the optional `mcp` package, and it exposes queue
     # control to any client holding mcp_token. The token is required; without
@@ -249,6 +295,7 @@ class Config(BaseSettings):
     dashboard_stats_enabled: bool
     dashboard_stats_modules: List[str]
     stats_page_enabled: bool = True
+    category_appearance_profiles: Dict[str, Any] = Field(default_factory=dict)
 
     def get_api_key(self, field_name: str) -> Optional[str]:
         """Get an API key by name from config fields, api_keys mapping, or model_extra."""

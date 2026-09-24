@@ -32,13 +32,13 @@ enable_duplicate_checking: true
 
 # TV season-pack ignore rules.
 # These control which files inside a TV/anime season pack are marked ignored
-# and excluded from upload prep. Defaults preserve the strict current behavior.
+# and excluded from upload prep. Older configs that still use ignore_non_video,
+# ignore_extras or require_sxxexx are mapped onto the current keys on load.
 tv_pack_ignore:
   enabled: true
-  ignore_non_video: true
-  ignore_extras: true
-  require_sxxexx: true
-  require_resolution: true
+  ignore_non_episode: true
+  require_episode: true
+  require_resolution: false
   require_source: true
 
 # Anime Identification (Jikan / MyAnimeList)
@@ -94,7 +94,7 @@ medianfo: null
 # Indexer credentials (recommended)
 # You can store API keys here (or via env vars like NZBP_API_KEYS__GEEK=...)
 #
-# Adding a new Newznab-style indexer (NZBGeek/NZBPlanet/NZB.su shape) does not
+# Adding a new Newznab-style indexer (NZBGeek/NZBPlanet/NZB.Life shape) does not
 # need a hand-authored YAML: copy indexers/newznab.example.yaml to a plain
 # ".yaml" name, fill in submit_url/api key, and it is picked up automatically.
 # It sets 'profile: newznab' so the registry auto-populates the standard
@@ -145,6 +145,7 @@ dashboard_stats_modules:
   - 'upload'
   - 'download'
 stats_page_enabled: true
+category_appearance_profiles: {}
 
 # Web Interface
 host: '0.0.0.0'
@@ -153,6 +154,13 @@ debug: false
 log_level: 'INFO'
 static_cache_max_age: 3600
 ui_refresh_seconds: 2
+# Full backups from Settings > Folders are written here. A relative path
+# resolves against the app root.
+backup_folder: 'backups'
+
+# Shared Pending-page ordering state.
+pending_external_group_order: []
+pending_external_group_order_locked: false
 
 # Optional password for the raw config editor and web login in Nzbpostarr.
 # If left null, the raw editor is accessible to anyone who can reach the web UI.
