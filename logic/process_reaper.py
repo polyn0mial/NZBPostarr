@@ -168,12 +168,14 @@ def _find_stale_processes(
     stale: List[StaleProcess] = []
     now = time.time()
 
-    for proc in psutil.process_iter(["pid", "name", "status", "create_time", "cmdline", "ppid"]):
+    # status and ppid are read only for candidate processes: on Windows psutil builds
+    # them from a whole-system snapshot per process, which made the boot scan O(n^2)
+    # and starved every other thread of the GIL for minutes.
+    for proc in psutil.process_iter(["pid", "name", "create_time", "cmdline"]):
         try:
             info = proc.info
             pid: int = info["pid"]
             name: str = (info.get("name") or "").lower()
-            status: str = info.get("status") or ""
             create_time: float = info.get("create_time") or now
             cmdline_parts: list[str] = info.get("cmdline") or []
             cmdline = " ".join(cmdline_parts)[:200]
@@ -185,6 +187,11 @@ def _find_stale_processes(
 
             # ── Check 1: Tool processes (nyuu, rar, parpar) ──────────
             is_tool = name in TOOL_PROCESS_NAMES or any(t in cmdline.lower() for t in TOOL_PROCESS_NAMES)
+            is_upload_script = "upload.py" in cmdline and "python" in name
+            if not (is_tool or is_upload_script):
+                continue
+            info.update(proc.as_dict(attrs=["status", "ppid"]))
+            status: str = info.get("status") or ""
 
             if is_tool:
                 # Zombie or stopped tool process → always reap
@@ -207,7 +214,7 @@ def _find_stale_processes(
                     continue
 
             # ── Check 2: Orphaned Python upload.py processes ─────────
-            if "upload.py" in cmdline and "python" in name:
+            if is_upload_script:
                 if status in (
                     psutil.STATUS_ZOMBIE,
                     psutil.STATUS_STOPPED,
