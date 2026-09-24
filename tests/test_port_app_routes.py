@@ -2,7 +2,6 @@
 
 """App route fixes ported from the live server (area app-routes)."""
 
-import dataclasses
 import tarfile
 
 from tests.support import *
@@ -242,10 +241,6 @@ def test_pending_refresh_waits_for_an_in_flight_rebuild(monkeypatch) -> None:
 
 
 def test_force_upload_passes_force_and_skip_pack_expansion(monkeypatch, tmp_path) -> None:
-    @dataclasses.dataclass(frozen=True)
-    class _Request(_RealProcessingJobRequest):
-        skip_pack_expansion: bool = False
-
     captured: list = []
 
     class _Service:
@@ -253,7 +248,6 @@ def test_force_upload_passes_force_and_skip_pack_expansion(monkeypatch, tmp_path
             captured.extend(requests)
             return ["job-1"]
 
-    monkeypatch.setattr(app_mod, "ProcessingJobRequest", _Request)
     movie = tmp_path / "Movie.2020.mkv"
     movie.write_bytes(b"x")
     items = [{"path": str(movie), "category": "movies", "itype": "Movie"}]
@@ -266,12 +260,8 @@ def test_force_upload_passes_force_and_skip_pack_expansion(monkeypatch, tmp_path
         assert captured[0].skip_pack_expansion is True
 
 
-@pytest.mark.skipif(
-    "skip_pack_expansion" not in getattr(_RealProcessingJobRequest, "__dataclass_fields__", {}),
-    reason="contract: queue-processing adds ProcessingJobRequest.skip_pack_expansion: bool = False",
-)
 def test_real_processing_job_request_gets_skip_pack_expansion() -> None:
-    assert app_mod._force_upload_request_extras() == {"skip_pack_expansion": True}
+    assert _RealProcessingJobRequest(category="tv").skip_pack_expansion is False
 
 
 # app-routes-08: no one-hour cooldown on the anime background check

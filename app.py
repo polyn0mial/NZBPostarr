@@ -604,6 +604,16 @@ async def get_current_settings() -> Dict[str, Any]:
         "indexers": [idx.to_ui_dict(conf) for idx in get_all_indexers()],
     }
 
+def _invalidate_pending_indexer_context() -> None:
+    """Drop the pending tree's cached indexer ticks after an indexer change."""
+    from logic.pending_snapshot import invalidate_pending_indexer_context
+
+    invalidate_pending_indexer_context()
+
+def _settings_touch_indexers(section: str, updates: Dict[str, Any]) -> bool:
+    """True when a settings save enables, disables or re-keys an indexer."""
+    return section in ("destinations", "credentials") or any(str(key).startswith("enable_") for key in updates)
+
 @settings_router.post("/reset")
 async def reset_settings_route() -> Dict[str, Any]:
     """Reset configuration to defaults from config.defaults.yaml."""
@@ -614,6 +624,7 @@ async def reset_settings_route() -> Dict[str, Any]:
     try:
         if defaults_path.exists():
             new_config = replace_config_content(defaults_path.read_text(encoding="utf-8"))
+            _invalidate_pending_indexer_context()
             await _sync_stats_collector_state(new_config)
             return {
                 "status": "success",
@@ -637,6 +648,8 @@ async def update_settings(_section: str, updates: Dict[str, Any]) -> Dict[str, A
 
     updates = _merge_masked_secret_updates(updates, get_config())
     if save_config(updates):
+        if _settings_touch_indexers(_section, updates):
+            _invalidate_pending_indexer_context()
         if _section == "ui":
             await _sync_stats_collector_state()
 
@@ -731,6 +744,7 @@ async def save_raw_config(req: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         new_config = replace_config_content(content)
+        _invalidate_pending_indexer_context()
         await _sync_stats_collector_state(new_config)
         return {"status": "success"}
     except Exception as e:
@@ -1015,15 +1029,6 @@ def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, A
         "category": category,
     }
 
-def _force_upload_request_extras() -> Dict[str, Any]:
-    """ProcessingJobRequest options Force Upload adds when the queue layer supports them.
-
-    ``skip_pack_expansion`` is the queue layer's ProcessingJobRequest field (as on the
-    server); a request built before that field exists simply omits it.
-    """
-    fields = getattr(ProcessingJobRequest, "__dataclass_fields__", {})
-    return {"skip_pack_expansion": True} if "skip_pack_expansion" in fields else {}
-
 @pending_router.post("/force-upload")
 async def force_upload_items(
     req: ForceUploadRequest,
@@ -1067,7 +1072,7 @@ async def force_upload_items(
                 force=None if req.force is None else bool(req.force),
                 # Skip pre-flight pack expansion - paths are already explicit;
                 # expansion happens lazily inside the job thread instead of here.
-                **_force_upload_request_extras(),
+                skip_pack_expansion=True,
             )
         ],
         source="pending-force-upload",
@@ -1289,6 +1294,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _pending_index.configure(_scan_pending_all)
     _pending_index.start(_pending_watch_folders(conf))
     logger.debug(f"  [3.5/4] Pending index manager started ({time.time() - start:.3f}s)")
+
+    # Warm the pending tree's indexer context off the request path (daemon thread).
+    from logic.pending_snapshot import prewarm_pending_indexer_context
+
+    prewarm_pending_indexer_context()
 
     # Process reaper - periodic cleanup of hung/orphaned tool processes
     _arm_process_reaper()

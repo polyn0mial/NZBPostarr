@@ -696,8 +696,10 @@ async def download_log_file() -> Response:
 async def reload_indexers_route() -> Dict[str, Any]:
     """Reload all indexer definitions from YAML files."""
     from core.registry import get_all_indexers, reload_indexers
+    from logic.pending_snapshot import invalidate_pending_indexer_context
 
     reload_indexers()
+    invalidate_pending_indexer_context()
     return {"status": "success", "count": len(get_all_indexers())}
 
 @settings_router.get("/browse")
