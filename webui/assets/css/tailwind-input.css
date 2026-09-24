@@ -163,11 +163,13 @@
         background: var(--notion-bg-elevated);
         border: 1px solid var(--notion-border-strong);
         width: max-content;
-        min-width: 40px;
-        max-width: 200px;
+        min-width: 120px;
+        max-width: 300px;
         font-size: 10px;
         line-height: var(--leading-normal);
         white-space: normal;
+        overflow-wrap: anywhere;
+        word-break: break-word;
     }
     .infotip-trigger:hover .infotip-content {
         visibility: visible;
@@ -181,6 +183,30 @@
     }
     .infotip-bottom:hover .infotip-content {
         transform: translateX(-50%) translateY(12px);
+    }
+    .infotip-arrow {
+        position: absolute;
+        bottom: -12px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 0;
+        height: 0;
+        border-style: solid;
+        border-width: 6px;
+        border-color: transparent;
+        border-top-color: var(--notion-border-strong);
+        border-bottom-width: 0;
+    }
+    .infotip-arrow::after {
+        content: '';
+        position: absolute;
+        top: -6px;
+        left: -5.5px;
+        border-style: solid;
+        border-width: 5.5px;
+        border-color: transparent;
+        border-top-color: var(--notion-bg-elevated);
+        border-bottom-width: 0;
     }
     .infotip-bottom .infotip-arrow {
         top: auto;
@@ -354,7 +380,9 @@
     padding-inline: 0.125rem;
     padding-top: 0.375rem;
     border-top: 1px solid var(--notion-divider);
-    font-size: 9px;
+    font-size: 10px;
+    overflow-wrap: anywhere;
+    word-break: break-word;
     line-height: var(--leading-tight);
     font-weight: var(--font-weight-medium);
     color: var(--notion-text-tertiary);
@@ -436,4 +464,13 @@
     opacity: 0.9;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
     border-radius: 6px;
+}
+
+/* Force-include DISC category badge classes (higher opacity for visibility) */
+@source inline("bg-slate-500/30 text-slate-300 border-emerald-500/50 border-notion-warning/50 bg-emerald-500/15");
+
+/* Reset native SELECT appearance for category pill so custom bg-color applies */
+select.rounded-full {
+    appearance: none;
+    -webkit-appearance: none;
 }

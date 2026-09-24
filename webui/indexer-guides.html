@@ -436,7 +436,7 @@
                 </tr>
                 <tr>
                     <td><code class="doc-code">query_param</code></td>
-                    <td>NZBGeek, NZB.su, NZBPlanet</td>
+                    <td>NZBGeek, NZB.Life, NZBPlanet</td>
                     <td>
                         API key appended to URL:
                         <code class="doc-code">?apikey=KEY</code>
@@ -1121,18 +1121,18 @@ else:
         </div>
 
         <!-- ══════════════════════════════════════════════════════════════════ -->
-        <!--  NZB.su / NZB.life                                               -->
+        <!--  NZB.Life (formerly NZB.su)                                        -->
         <!-- ══════════════════════════════════════════════════════════════════ -->
         <div v-if="activeSection==='nzbsu'" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
             <div class="doc-h2" style="margin-top: 0">
                 <span class="idx-badge" style="background: rgba(14, 165, 233, 0.15); color: #0ea5e9; border: 1px solid rgba(14, 165, 233, 0.3)">S</span>
-                NZB.su / NZB.life
+                NZB.Life (formerly NZB.su)
                 <span class="text-[10px] text-notion-text-tertiary ml-2">api.nzb.life</span>
             </div>
 
             <div class="doc-callout doc-callout-err">
                 <strong>CRITICAL - The URL situation:</strong>
-                NZB.su has
+                NZB.Life (formerly NZB.su) has
                 <strong>two domains</strong>
                 . Only
                 <code class="doc-code">https://api.nzb.life/api</code>
@@ -1186,7 +1186,7 @@ else:
                 </tr>
                 <tr>
                     <td><strong>API Key Location</strong></td>
-                    <td>nzb.su → Profile → API Key</td>
+                    <td>nzb.life → Profile → API Key</td>
                 </tr>
                 <tr>
                     <td><strong>Rate Limiting</strong></td>
@@ -1263,7 +1263,7 @@ else:
 
             <div class="doc-callout doc-callout-warn">
                 <strong>Category matters:</strong>
-                NZB.su will accept uploads without a valid
+                NZB.Life will accept uploads without a valid
                 <code class="doc-code">cat</code>
                 , but they can appear as
                 <code class="doc-code">No category</code>
@@ -1365,7 +1365,7 @@ else:
                 <lucide-icon name="search" icon-class="size-3.5 text-notion-accent"></lucide-icon>
                 Search API Functions
             </div>
-            <p>NZB.su also has a full Newznab search API (used by Sonarr/Radarr etc.):</p>
+            <p>NZB.Life also has a full Newznab search API (used by Sonarr/Radarr etc.):</p>
             <table class="doc-table">
                 <tr>
                     <th>Function</th>
@@ -2531,7 +2531,7 @@ curl -X POST \
                     { id: 'template', title: 'Creating Custom Indexers', shortName: 'Template', group: 'System', letter: '+', color: '#4ade80', domain: '', keywords: 'template custom create new indexer yaml plugin file checklist' },
                     { id: 'nzbgeek', title: 'NZBGeek', shortName: 'NZBGeek', group: 'Newznab', letter: 'G', color: '#6366f1', domain: 'nzbgeek.info', keywords: 'nzbgeek geek api newznab upload submit nzb nfo category curl batch script' },
                     { id: 'nzbsin', title: 'NZBs.in', shortName: 'NZBs.in', group: 'Custom Auth', letter: 'I', color: '#0da192', domain: 'nzbs.in', keywords: 'nzbsin nzbs.in bearer token header authentication mediainfo screenshots upload python curl' },
-                    { id: 'nzbsu', title: 'NZB.su / NZB.life', shortName: 'NZB.su', group: 'Newznab', letter: 'S', color: '#0ea5e9', domain: 'api.nzb.life', keywords: 'nzbsu nzb.su life api newznab nzbadd search tvsearch movie upload categories error codes extended attributes domain' },
+                    { id: 'nzbsu', title: 'NZB.Life (formerly NZB.su)', shortName: 'NZB.Life', group: 'Newznab', letter: 'S', color: '#0ea5e9', domain: 'api.nzb.life', keywords: 'nzbsu nzb.su nzb.life api newznab nzbadd search tvsearch movie upload categories error codes extended attributes domain' },
                     { id: 'omg', title: 'OMGWTFNZBs', shortName: 'OMG', group: 'Custom Auth', letter: 'O', color: '#22c55e', domain: 'omgwtfnzbs.org', keywords: 'omg omgwtfnzbs curl upload username api key categories nfo required auto category video' },
                     { id: 'nzbplanet', title: 'NZBPlanet', shortName: 'NZBPlanet', group: 'Newznab', letter: 'P', color: '#2563eb', domain: 'nzbplanet.net', keywords: 'nzbplanet planet api newznab nzbadd search tvsearch movie music book cart no nfo extended attributes' },
                     { id: 'drunkenslug', title: 'DrunkenSlug', shortName: 'DrunkenSlug', group: 'Session Auth', letter: 'D', color: '#f59e0b', domain: 'drunkenslug.com', keywords: 'drunkenslug slug session cookie upload no auth no category files[]' },
