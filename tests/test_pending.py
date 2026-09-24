@@ -1449,8 +1449,9 @@ def test_resolve_explicit_path_tv_pack_ignores_non_episode_files(tmp_path) -> No
     assert result.itype == "TV Show"
     assert result.detection_method == "Episode pattern"
     assert result.queue_paths == (episode_one, episode_two)
+    # queue-backend-11: OP/ED/OVA/preview/special files are pack extras.
     assert _ignored_path_reasons(result) == [
-        (opening, "No S##E## episode pattern"),
+        (opening, "TV season pack extra/sample"),
         (notes, "TV season pack extra/non-video content"),
     ]
 

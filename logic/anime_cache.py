@@ -508,14 +508,16 @@ def is_anime(raw_name: str) -> Optional[bool]:
         if key in _cache:
             return _cache[key]
 
-        # Lookup
-        result = _query_jikan(title, release_year=release_year)
-        if result is not None:
+    # Lookup outside the lock: Jikan is rate-limited and slow, and holding the
+    # cache lock here would freeze every pending scan/expansion meanwhile.
+    result = _query_jikan(title, release_year=release_year)
+    if result is not None:
+        with _lock:
             _cache[key] = result
             _save_cache()
-            logger.debug(f"Anime cache: '{title}' → {'anime' if result else 'not anime'}")
+        logger.debug(f"Anime cache: '{title}' → {'anime' if result else 'not anime'}")
 
-        return result
+    return result
 
 
 def check_titles_batch(raw_names: list[str]) -> Dict[str, Optional[bool]]:
@@ -526,6 +528,8 @@ def check_titles_batch(raw_names: list[str]) -> Dict[str, Optional[bool]]:
     unchecked titles get None.
     """
     results: Dict[str, Optional[bool]] = {}
+    to_query: list[tuple[str, str, Optional[int], str]] = []
+    # Phase 1: cache hits under the lock.
     with _lock:
         _load_cache()
 
@@ -537,15 +541,21 @@ def check_titles_batch(raw_names: list[str]) -> Dict[str, Optional[bool]]:
             if key in _cache:
                 results[raw] = _cache[key]
                 continue
+            to_query.append((raw, title, release_year, key))
 
-            # Try lookup (will block briefly for rate-limit slots)
-            r = _query_jikan(title, release_year=release_year)
-            if r is not None:
-                _cache[key] = r
-                results[raw] = r
-            else:
-                results[raw] = None  # rate-limited
+    # Phase 2: Jikan lookups without the lock (they block for rate-limit slots).
+    fresh: Dict[str, bool] = {}
+    for raw, title, release_year, key in to_query:
+        r = _query_jikan(title, release_year=release_year)
+        if r is not None:
+            fresh[key] = r
+            results[raw] = r
+        else:
+            results[raw] = None  # rate-limited
 
+    # Phase 3: write the new results back under the lock.
+    with _lock:
+        _cache.update(fresh)
         _save_cache()
     return results
 

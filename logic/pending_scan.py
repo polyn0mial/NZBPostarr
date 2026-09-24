@@ -258,7 +258,16 @@ def _tv_pack_episode_rejection_reason(path: Path, video_extensions: Set[str]) ->
 
         configured = getattr(get_config(), "tv_pack_ignore", {}) or {}
         if isinstance(configured, dict):
-            rules.update({key: bool(value) for key, value in configured.items() if key in rules})
+            # Older configs still use the pre-merge keys; map them onto the current ones.
+            compatibility_map = {
+                "ignore_non_video": "ignore_non_episode",
+                "ignore_extras": "ignore_non_episode",
+                "require_sxxexx": "require_episode",
+            }
+            for key, value in configured.items():
+                normalized_key = compatibility_map.get(key, key)
+                if normalized_key in rules:
+                    rules[normalized_key] = bool(value)
     except Exception:
         pass
 
@@ -274,11 +283,11 @@ def _tv_pack_episode_rejection_reason(path: Path, video_extensions: Set[str]) ->
     )
     has_episode_pattern = bool(has_sxxexx_pattern or _looks_like_tv_episode_name(stem, anime_mode=True))
     has_source_token = bool(_TV_PACK_SOURCE_RE.search(stem))
-    if rules.get("ignore_non_video", True) and path.suffix.lower() not in video_extensions:
+    if rules.get("ignore_non_episode", True) and path.suffix.lower() not in video_extensions:
         return "TV season pack extra/non-video content"
     # Allow legit episodic releases whose episode title includes words like "Extras".
     if (
-        rules.get("ignore_extras", True)
+        rules.get("ignore_non_episode", True)
         and _is_tv_pack_extra_name(name)
         and not (has_episode_pattern and has_source_token)
     ):
@@ -287,8 +296,10 @@ def _tv_pack_episode_rejection_reason(path: Path, video_extensions: Set[str]) ->
         return "TV episode missing media source token"
     # Resolution is descriptive metadata, not evidence that an upload should
     # be ignored. Valid SD and source-native releases may omit this token.
-    if rules.get("require_sxxexx", True) and not has_sxxexx_pattern:
-        return "No S##E## episode pattern"
+    # Anime-style numbering counts too (has_episode_pattern includes the S##E##,
+    # guessit and sports-event signals).
+    if rules.get("require_episode", True) and not has_episode_pattern:
+        return "No recognized episode pattern"
     return ""
 
 def _split_tv_video_files(
@@ -614,7 +625,9 @@ def _resolve_explicit_movie(state: _ExplicitVideoState) -> Optional[ExplicitPath
         explicit_category_hint=state.category_hint if state.respect_explicit_hint else "",
         explicit_itype_hint=state.itype_hint if state.respect_explicit_hint else "",
     )
-    if classification.category != "movies" or state.strict_tv_pack:
+    # A year-named folder ("Show (2019)") holding episode files is not a movie.
+    has_episodic_files = any(_matches_episode_pattern(path.name) for path in state.video_files)
+    if classification.category != "movies" or state.strict_tv_pack or has_episodic_files:
         return None
     return ExplicitPathResolution(
         source_path=state.entry,
