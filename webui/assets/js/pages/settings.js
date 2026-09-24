@@ -99,6 +99,7 @@ function applySettingsAuthUploadFolders(self, data) {
             ? f.folder_paths.map(fp => self.normalizeFolderPathEntry(fp))
             : [],
     };
+    self.backupJob.lastSavedFolder = self.settings.folders.backup_folder;
 }
 
 function applySettingsCategoriesAndServers(self, data) {
@@ -311,6 +312,16 @@ const vm = createVuePage({
                 rollingBack: false,
                 showManualUpdate: false,
             },
+            backupJob: {
+                creating: false,
+                lastArchivePath: '',
+                lastArchiveSizeBytes: 0,
+                skipTmpContents: true,
+                folderEditable: false,
+                savingFolder: false,
+                folderSaveError: '',
+                lastSavedFolder: '',
+            },
 
             // Track YAML editor focus as Vue state (replaces document.activeElement checks)
             isEditingRawYaml: false,
@@ -337,6 +348,9 @@ const vm = createVuePage({
 
     created() {
         this.debouncedUpdateYamlPreview = debounce(() => this.updateYamlPreview(), 1000);
+        this.backupFolderAutosaveDebounced = debounce(() => {
+            void this.persistBackupFolder();
+        }, 500);
     },
 
     computed: {
@@ -1187,6 +1201,73 @@ const vm = createVuePage({
                 this.showToast('error', 'Rollback', e.message || 'Rollback failed');
             } finally {
                 this.updater.rollingBack = false;
+            }
+        },
+
+        async createFullBackup() {
+            if (this.backupJob.creating) return;
+            this.backupJob.creating = true;
+            try {
+                const res = await this.apiFetch('/api/system/backup/create', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        skip_tmp_contents: this.backupJob.skipTmpContents,
+                    }),
+                });
+                this.backupJob.lastArchivePath = res.archive_path || '';
+                this.backupJob.lastArchiveSizeBytes = res.size_bytes || 0;
+                this.showToast('success', 'Backup Created', res.archive_name || 'Full backup completed.');
+            } catch (e) {
+                this.showToast('error', 'Backup Failed', e.message || 'Failed to create backup.');
+            } finally {
+                this.backupJob.creating = false;
+            }
+        },
+
+        buildFoldersSettingsPayload() {
+            return {
+                base_folder: this.settings.folders.base,
+                backup_folder: this.settings.folders.backup_folder,
+                folder_paths: this.buildFolderPathPayload(),
+            };
+        },
+
+        onBackupFolderInput() {
+            this.backupJob.folderSaveError = '';
+            this.backupJob.lastSavedFolder = '';
+            if (!this.backupJob.folderEditable || !this.backupFolderAutosaveDebounced) return;
+            this.backupFolderAutosaveDebounced();
+        },
+
+        toggleBackupFolderEditing() {
+            if (this.backupJob.folderEditable) {
+                // Save while still unlocked: persistBackupFolder() only writes an editable field.
+                void this.persistBackupFolder().finally(() => {
+                    this.backupJob.folderEditable = false;
+                });
+                return;
+            }
+            this.backupJob.folderEditable = true;
+        },
+
+        async persistBackupFolder() {
+            if (!this.backupJob.folderEditable) return;
+            const nextFolder = String(this.settings?.folders?.backup_folder || '').trim();
+            if (!nextFolder) {
+                this.backupJob.folderSaveError = 'Backup folder cannot be empty.';
+                return;
+            }
+            if (nextFolder === this.backupJob.lastSavedFolder) return;
+            this.backupJob.savingFolder = true;
+            this.backupJob.folderSaveError = '';
+            try {
+                await this.apiPut('/api/settings/folders', this.buildFoldersSettingsPayload());
+                this.backupJob.lastSavedFolder = nextFolder;
+                this.showStatus('Backup folder saved', false);
+            } catch (e) {
+                this.backupJob.folderSaveError = e?.message || 'Failed to autosave backup folder.';
+            } finally {
+                this.backupJob.savingFolder = false;
             }
         },
 

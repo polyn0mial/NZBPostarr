@@ -180,6 +180,7 @@ def test_settings_page_source_uses_server_keys_and_layout() -> None:
         "require_resolution: false,",
         "category_appearance_profiles: data.ui.category_appearance_profiles || {},",
         "backup_folder: this.settings.folders.backup_folder,",
+        "'/api/system/backup/create'",
     ):
         assert needle in settings_js, needle
 
