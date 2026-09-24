@@ -566,7 +566,7 @@ def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
 
     indexers = [
         ("geek", "NZBGeek", "https://nzbgeek.info"),
-        ("su", "NZB.su", "https://nzb.su"),
+        ("su", "NZB.Life", "https://nzb.life"),
         ("planet", "NZBPlanet", "https://nzbplanet.net"),
         ("slug", "DrunkenSlug", "https://drunkenslug.com"),
         ("in", "NZBs.in", "https://nzbs.in"),
