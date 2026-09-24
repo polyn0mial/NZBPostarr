@@ -1,4 +1,7 @@
 // Auto-split from queue.js - verbatim computed bodies.
+import { categoryMeta, categoryLabel } from "page-base";
+import { FILTER_MODE_OPTIONS, deepFreezePendingTree } from "./queue.js";
+
 export default {
 normalizedSelectedCategories() {
       const raw = Array.isArray(this.selectedCategories) ? this.selectedCategories : [];
@@ -86,57 +89,41 @@ selectedActionCount() {
       return this.selectedCount;
     },
 
-_cachedActionEntries() {
-      return this.getSelectedActionEntries();
-    },
-
-_groupSelectableItems() {
-      // Precomputes selectable nodes per group. Does NOT read selectedItems,
-      // so it only recomputes when items/filters change - not on every click.
-      const map = /* @__PURE__ */ new Map();
-      (this.items.external || []).forEach((group) => {
-        const gKey = this.externalGroupKey(group);
-        const selectable = [];
-        (group.items || []).forEach((item) => {
-          selectable.push(...this.collectVisibleSelectableExternalNodes(item));
-        });
-        map.set(gKey, selectable);
-      });
-      return map;
-    },
-
-_extGroupAllSelectedMap() {
-      // Uses _groupSelectableItems (cached), so only does Set lookups per click.
-      if (this.selectedItems.size === 0) return /* @__PURE__ */ new Map();
-      const map = /* @__PURE__ */ new Map();
-      for (const [gKey, selectable] of this._groupSelectableItems) {
-        const allSelected = selectable.length > 0 &&
-          selectable.every((node) => this.selectedItems.has(node.key));
-        map.set(gKey, allSelected);
-      }
-      return map;
-    },
-
 selectedBreakdown() {
       let packs = 0;
-      const episodeFiles = /* @__PURE__ */ new Set();
+      let packEpisodes = 0;
+      const standaloneFiles = /* @__PURE__ */ new Set();
+      const selectedPackPaths = /* @__PURE__ */ new Set();
       const visible = this.getVisibleSelectableItemsMap();
       for (const key of this.selectedItems) {
         const meta = visible.get(key) || this.selectedMeta.get(key);
         const path = meta && meta.path || "";
-        const isDir = this._selectionKeyIsDirectory(key, path);
-        if (isDir) packs += 1;
-        else if (path || key) episodeFiles.add(this.normalizePathKey(path || key));
-      }
-      for (const entry of this._cachedActionEntries) {
-        const item = entry && entry.item;
-        if (!item) continue;
-        const path = item.path || item.key || item.name;
-        if (!this._selectionKeyIsDirectory(item.key || path, path)) {
-          episodeFiles.add(this.normalizePathKey(path));
+        const isDir = (meta && typeof meta.is_dir === "boolean") ? meta.is_dir : this._selectionKeyIsDirectory(key, path);
+        if (isDir) {
+          packs += 1;
+          const np = path ? this.normalizePathKey(path) : null;
+          if (np) selectedPackPaths.add(np);
+          packEpisodes += Number(meta && meta.child_count || 0);
         }
       }
-      return { packs, files: episodeFiles.size, total: this.selectedItems.size };
+      const _isChildOfPack = (fp) => {
+        if (!fp || selectedPackPaths.size === 0) return false;
+        const norm = this.normalizePathKey(fp);
+        for (const pp of selectedPackPaths) {
+          if (norm.startsWith(pp + "/") || norm.startsWith(pp + "\\")) return true;
+        }
+        return false;
+      };
+      for (const key of this.selectedItems) {
+        const meta = visible.get(key) || this.selectedMeta.get(key);
+        const path = meta && meta.path || "";
+        const isDir = (meta && typeof meta.is_dir === "boolean") ? meta.is_dir : this._selectionKeyIsDirectory(key, path);
+        if (!isDir && !_isChildOfPack(path || key)) {
+          standaloneFiles.add(this.normalizePathKey(path || key));
+        }
+      }
+      const files = packEpisodes + standaloneFiles.size;
+      return { packs, files, total: packs + files };
     },
 
 selectedSummaryLabel() {
@@ -154,6 +141,7 @@ selectedSummaryLabel() {
 uploadPrepCounters() {
       const singleFiles = /* @__PURE__ */ new Set();
       const seasonalPacks = /* @__PURE__ */ new Set();
+      let nestedEpisodes = 0;
       const addPreparedItem = (item) => {
         if (!item) return;
         const path = item.path || item.target_path || item.source_path || item.name || item.key;
@@ -161,7 +149,10 @@ uploadPrepCounters() {
         const key = this.normalizePathKey(path);
         const isDir = typeof item.is_dir === "boolean" ? item.is_dir : this._selectionKeyIsDirectory(item.key || key, path);
         if (isDir) {
-          if (this.isSeasonalPackItem(item)) seasonalPacks.add(key);
+          if (this.isSeasonalPackItem(item)) {
+            if (!seasonalPacks.has(key)) nestedEpisodes += Number(item.child_count || 0);
+            seasonalPacks.add(key);
+          }
           return;
         }
         singleFiles.add(key);
@@ -177,7 +168,7 @@ uploadPrepCounters() {
       (this.items.external || []).forEach((group) => {
         (group.items || []).forEach(visitSelectedSeasonPack);
       });
-      for (const entry of this._cachedActionEntries) {
+      for (const entry of this.getSelectedActionEntries()) {
         addPreparedItem(entry.item);
       }
       for (const item of this.queueItems || []) {
@@ -190,7 +181,7 @@ uploadPrepCounters() {
           itype: item.itype
         });
       }
-      return { singleFiles: singleFiles.size, seasonalPacks: seasonalPacks.size };
+      return { singleFiles: singleFiles.size + nestedEpisodes, seasonalPacks: seasonalPacks.size };
     },
 
 singleFilePrepCount() {
@@ -525,7 +516,8 @@ hasVisiblePendingItems() {
     },
 
 allCategoryMeta() {
-      return Object.values(categoryMeta);
+      const internal = new Set(["external", "both"]);
+      return Object.values(categoryMeta).filter((c2) => !internal.has(c2.id));
     },
 
 /**

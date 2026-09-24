@@ -30,14 +30,18 @@ def test_bulk_force_upload_bypasses_review_and_staging() -> None:
 
 def test_nested_external_lookup_includes_lazy_loaded_and_ignored_groups() -> None:
     queue_js = _queue_source()
-    lookup_block = queue_js.split("findExternalNodeByKey(targetKey) {", 1)[1].split(
-        "resolveExternalNode(itemOrKey) {",
+    # Lazily loaded children are grafted into the item tree itself, so the lookup walks
+    # children/files of every section and never skips a group.
+    lookup_block = queue_js.split('_findPendingNodeByKey(items, targetKey, targetPath = "") {', 1)[1].split(
+        "_findCurrentPendingNode(",
         1,
     )[0]
 
-    assert "this.extLoadedChildren[node.key]" in lookup_block
-    assert "visited.has(node)" in lookup_block
+    assert "if (Array.isArray(node.children)) childLists.push(node.children);" in lookup_block
+    assert "childLists.push(node.files)" in lookup_block
+    assert "for (const section of Object.values(items)) {" in lookup_block
     assert "allow_bulk_selection === false" not in lookup_block
+    assert "extLoadedChildren" not in queue_js
 
 
 def test_job_names_use_release_folder_without_item_count(tmp_path) -> None:
@@ -60,7 +64,8 @@ def test_queue_job_count_is_below_progress_and_describes_remaining_items() -> No
     progress_bar = queue_html.index('class="h-1.5 bg-notion-bg-secondary')
     remaining_count = queue_html.index("{{ jobItemCount(job) }}", progress_bar)
     assert remaining_count > progress_bar
-    assert "{{ isJobQueueActiveEntry(job) ? jobTitle(job) : jobDisplayName(job) }}" not in queue_html
+    # Consolidation decision: the active job row shows what is uploading now (server layout).
+    assert "{{ isJobQueueActiveEntry(job) ? jobTitle(job) : jobDisplayName(job) }}" in queue_html
     assert "Release the whole-queue hold" not in queue_html
 
 
@@ -68,10 +73,11 @@ def test_pending_rows_restore_compact_category_and_status_badges() -> None:
     queue_js = _queue_source()
     queue_html = _read_repo_text("webui", "queue.html")
 
-    assert queue_html.count(">Done</span>") >= 4
-    assert queue_html.count("h-6 px-2 rounded border text-[10px]") >= 3
-    assert "categorySelectWidthClass" not in queue_js
-    assert "categorySelectWidthClass" not in queue_html
+    # Consolidation decision: the server's status capsules sit before an 88px capsule select.
+    assert queue_html.count('title="Completed">') >= 4
+    assert queue_html.count(">Done</span>") == 0
+    assert queue_html.count("h-[1.05rem] px-1.5 rounded-full border border-notion-border/70 text-[8px]") == 3
+    assert "categorySelectWidthClass(cat) {" in queue_js
 
 
 def test_upload_service_passes_target_paths_to_processing_run_job():

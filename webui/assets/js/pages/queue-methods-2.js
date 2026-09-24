@@ -1,4 +1,14 @@
 // Auto-split from queue.js - verbatim methods bodies.
+import { itypeToCategory as sharedItypeToCategory, categoryToItype } from "page-base";
+import { CACHE_KEY, EXTERNAL_GROUP_ORDER_KEY, EXTERNAL_GROUP_LOCK_KEY, SESSION_CACHE_MAX_BYTES, deepFreezePendingTree } from "./queue.js";
+
+// Release-source tags (WEB-DL, BluRay, ...). Only used to decide whether a folder shows
+// the 'Ignored' warning bubble; category detection stays on the server.
+const SOURCE_TOKEN_PATTERN = /(?:^|[.\s_-])(?:WEB(?:[.\s_-]?DL|[.\s_-]?Rip|[.\s_-]?HD)?|WEBDL|WEBRip|WEBHD|BluRay|BDRip|BRRip|REMUX|HDRip|PDRip|HDTV|PDTV|SDTV|TV|TVRip|HQSATRip|SATRip|DSR|DVB|DVDRip|DVD|VHS(?:Rip)?|DV|UHD|AMZN|NF|NFLX|DSNP|PCOK|HMAX|MAX|HULU|ATVP|AUBC|iT|iP|STAN|CR|PMTP|PMNT|CTV|CBC|BBC|PBS|TBS|TNT|NBC|ABC|CBS|FOX|HBO|SHOWTIME|SHO)(?:[.\s_-]|$)/i;
+function hasSourceToken(name) {
+  return SOURCE_TOKEN_PATTERN.test(String(name || ""));
+}
+
 export default {
 async loadExternalGroupOrderState(forceRefresh = false) {
       if (this.pendingExternalGroupOrderLoaded && !forceRefresh) {
@@ -199,7 +209,11 @@ _applyDetectedCategories() {
     },
 
 seriesSignature(value) {
-      return String(value || "").replace(/\.[a-z0-9]{2,5}$/i, " ").replace(/\bS\d{1,2}[.\s_-]*E\d{1,3}\b/gi, " ").replace(/\bS\d{1,2}\b/gi, " ").replace(/\bE\d{1,3}\b/gi, " ").replace(/\b(?:19|20)\d{2}\b/g, " ").replace(/\b(?:2160p|1080p|1080i|720p|576p|480p|blu[ ._-]?ray|bdrip|brrip|remux|web[ ._-]?dl|webrip|hdtv|dvd|dvdrip|x26[45]|h\.?26[45]|avc|hevc|aac|flac|dts|dual|audio|nano|10bit)\b/gi, " ").replace(/[^a-z0-9]+/gi, " ").replace(/\b\d{1,3}\b/g, " ").trim().toLowerCase();
+      const normalized = String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const seriesOnly = normalized
+        .replace(/[_.\s]*S\d{1,2}[._\s-]*E\d{1,3}.*/gi, "")
+        .replace(/[_.\s]*\b(?:19|20)\d{2}\b.*/g, "");
+      return seriesOnly.replace(/[^a-z0-9]+/gi, " ").trim().toLowerCase();
     },
 
 /**
@@ -294,8 +308,10 @@ resolveUploadItype(itype, category) {
 isSelectionIgnored(item) {
       if (!item) return false;
       if (this.isAutoIgnoreOverridden(item)) return false;
-      if (this.getCategoryForItem(item) === "disc") return false;
-      if ((item.itype || "").toString().toUpperCase() === "DISC") return false;
+      if (this.isPackOnlyExternalChild(item)) return false;
+      const resolvedCategory = this.getCategoryForItem(item);
+      if (["disc", "music", "books", "ebooks", "audiobooks"].includes(resolvedCategory)) return false;
+      if (["DISC", "MUSIC", "EBOOK", "AUDIOBOOK"].includes((item.itype || "").toString().toUpperCase())) return false;
       const status = String(item.status || "").toUpperCase();
       return item.ignored === true
         || item.auto_select_ignored === true
@@ -305,9 +321,11 @@ isSelectionIgnored(item) {
 
 isAutoSelectable(item) {
       if (!item || this.isItemSkipped(item) || this.isItemExcluded(item)) return false;
+      if (this.isPackOnlyExternalChild(item)) return false;
       if (String(item.status || "").toUpperCase() === "VALID" && item.eligible !== false && item.ignored !== true) return true;
-      if (this.getCategoryForItem(item) === "disc") return true;
-      if ((item.itype || "").toString().toUpperCase() === "DISC") return true;
+      const resolvedCategory = this.getCategoryForItem(item);
+      if (["disc", "music", "books", "ebooks", "audiobooks"].includes(resolvedCategory)) return true;
+      if (["DISC", "MUSIC", "EBOOK", "AUDIOBOOK"].includes((item.itype || "").toString().toUpperCase())) return true;
       if (this.isSelectionIgnored(item)) return false;
       return item.auto_selectable !== false;
     },
@@ -337,6 +355,7 @@ isPartiallyIgnored(item) {
 isFullyIgnoredTree(item) {
       if (!item) return false;
       if (!item.is_dir || !Array.isArray(item.children) || item.children.length === 0) {
+        if (item.child_count > 0) return false;
         return this.isSelectionIgnored(item);
       }
       let leafCount = 0;
@@ -359,7 +378,12 @@ isFullyIgnoredTree(item) {
 
 shouldShowYieldBubble(item) {
       if (!item) return false;
-      if (item.is_dir) return this.isSelectionIgnored(item) || this.isPartiallyIgnored(item) || this.isFullyIgnoredTree(item);
+      if (item.is_dir) {
+        const folderName = String(item.name || item.path || "");
+        if (hasSourceToken(folderName)) return false;
+        if (/(?:\bTV\b|season|series|S\d{1,2})/i.test(folderName)) return false;
+        return this.isFullyIgnoredTree(item);
+      }
       return this.isSelectionIgnored(item) && !this.isPartiallyIgnored(item);
     },
 
@@ -374,6 +398,9 @@ getDetectionLabel(item) {
 
 getSelectionTitle(item) {
       if (!item) return "";
+      if (this.isPackOnlyExternalChild(item)) {
+        return "This item inherits the parent pack category and can only be uploaded through the parent pack.";
+      }
       if (this.isSelectionIgnored(item)) return item.auto_select_reason || "Ignored";
       if (this.isPartiallyIgnored(item)) return item.auto_select_reason || "Mixed folder: some children are ignored and some remain selectable";
       if (!this.isAutoSelectable(item) && item.children && item.children.length > 0) {
@@ -389,9 +416,11 @@ getVisibleSelectableItemsMap() {
           visible.set(item.key, this._buildSelectionMeta(item, cat.id));
         }
       });
-      for (const [, selectable] of this._groupSelectableItems) {
-        for (const node of selectable) {
-          visible.set(node.key, this._buildSelectionMeta(node));
+      for (const group of this.items.external || []) {
+        for (const item of group.items || []) {
+          this.visitVisibleExternalNodes(item, (node) => {
+            visible.set(node.key, this._buildSelectionMeta(node));
+          });
         }
       }
       return visible;
@@ -422,7 +451,8 @@ _buildSelectionMeta(item, categoryOverride = null) {
         path: item.path,
         category,
         itype: item.itype || "External",
-        is_dir: !!item.is_dir,
+        is_dir: typeof item.is_dir === "boolean" ? item.is_dir : null,
+        child_count: Number(item.child_count || 0),
         manual_category: item.key ? this.manualExternalCategories[item.key] || "" : "",
         detected_category: item.detected_category || category || "",
         detection_method: item.detection_method || "",
@@ -436,7 +466,8 @@ _selectionKeyIsDirectory(key, fallbackPath = "") {
       const meta = this.selectedMeta.get(key);
       if (meta && typeof meta.is_dir === "boolean") return meta.is_dir;
       const path = fallbackPath || meta && meta.path || "";
-      const lastSeg = String(path).replace(/\\/g, "/").split("/").pop() || "";
+      const effectivePath = path || (key ? String(key).replace(/^ext:[^:]*:/, "").replace(/\\/g, "/") : "");
+      const lastSeg = String(effectivePath).replace(/\\/g, "/").split("/").pop() || "";
       return !/\.(mkv|mp4|avi|ts|m4v|mov|wmv|rar|zip|7z|nzb|iso|img|epub|m4b|mp3|flac|pdf)$/i.test(lastSeg);
     },
 
@@ -493,9 +524,7 @@ collectVisibleExternalNodes(item) {
 collectVisibleSelectableExternalNodes(item) {
       const nodes = [];
       this.visitVisibleExternalNodes(item, (node) => {
-        if (this.isAutoSelectable(node)) {
-          nodes.push(node);
-        }
+        nodes.push(node);
       });
       return nodes;
     },
@@ -532,7 +561,7 @@ _externalNodeHasHiddenDescendants(item) {
 collectSelectedExternalActionEntries(item) {
       if (!item || !this.extItemPassesFilters(item)) return [];
       const visibleChildren = (item.children || []).filter((child) => this.extItemPassesFilters(child));
-      const itemSelected = this.selectedItems.has(item.key) && this.isAutoSelectable(item);
+      const itemSelected = this.selectedItems.has(item.key);
       const expandSeasonPack = (this.isSeasonalPackItem(item) || this.isMultiSeasonRangeItem(item)) && visibleChildren.length > 0;
       if (visibleChildren.length === 0) {
         return itemSelected ? [{ item, categoryOverride: null }] : [];
@@ -575,13 +604,11 @@ getSelectedActionEntries() {
           entries.push({ item, categoryOverride: cat.id });
         });
       });
-      for (const [, selectable] of this._groupSelectableItems) {
-        for (const node of selectable) {
-          if (this.selectedItems.has(node.key)) {
-            entries.push({ item: node, categoryOverride: null });
-          }
-        }
-      }
+      (this.items.external || []).forEach((group) => {
+        (group.items || []).forEach((item) => {
+          entries.push(...this.collectSelectedExternalActionEntries(item));
+        });
+      });
       return this._dedupeSelectionEntries(entries);
     },
 
@@ -665,6 +692,9 @@ setExternalCategory(key, value) {
       else delete nextManual[key];
       this.manualExternalCategories = nextManual;
       this._applyDetectedCategories();
+      this.apiPost("/api/pending/category-overrides", { key, category: value || null }).catch((e2) => {
+        console.warn("Failed to save category override", e2);
+      });
       const resolvedCategory = this._resolveExtCategory(key) || "external";
       if (this.selectedMeta.size === 0) return;
       const nextMeta = new Map(this.selectedMeta);

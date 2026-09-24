@@ -13,6 +13,7 @@ import methods3 from "./queue-methods-3.js";
 import methods4 from "./queue-methods-4.js";
 import methods5 from "./queue-methods-5.js";
 import methods6 from "./queue-methods-6.js";
+import methods7 from "./queue-methods-7.js";
 import computed1 from "./queue-computed-1.js";
 
 var CACHE_KEY = "nzbpostarr_pending_cache";
@@ -26,17 +27,6 @@ var FILTER_MODE_OPTIONS = [
   { value: "hideIgnored", label: "Hide Ignored" }
 ];
 var SESSION_CACHE_MAX_BYTES = 2e6;
-function normalizeExtChild(child, inheritedCategory, normalizePathKey) {
-  if (!child || typeof child !== "object") return;
-  if (!child.key && child.path) {
-    child.key = `path:${normalizePathKey(child.path)}`;
-  }
-  child.files = [];
-  const childCategory = child.detected_category || child.category || inheritedCategory || "";
-  child.assigned_category_safe = childCategory;
-  if (!child.detected_category && childCategory) child.detected_category = childCategory;
-}
-
 function deepFreezePendingTree(items) {
   if (!items || typeof items !== "object") return items;
   const visit = (node) => {
@@ -53,8 +43,7 @@ function deepFreezePendingTree(items) {
   if (Array.isArray(items.external)) {
     for (const group of items.external) {
       if (Array.isArray(group.items)) {
-        // Don't freeze individual external items - their .children must stay
-        // mutable so ensureExtChildrenLoaded can write lazy-loaded children back.
+        for (const it2 of group.items) visit(it2);
         Object.freeze(group.items);
       }
       Object.freeze(group);
@@ -219,9 +208,10 @@ async function runPendingLoad(self, forceRefresh, silent) {
     if (!forceRefresh && self._lastLoadSig === sig && self.cachedAt != null) {
       params.append("known_cached_at", String(self.cachedAt));
     }
-    const data = await self.apiFetch(`/api/pending/items?${params}`, { timeoutMs: 15e3 });
+    const data = await self.apiFetch(`/api/pending/items?${params}`, { timeoutMs: 9e4 });
     if (data?.not_modified) {
       syncPendingAnimeWatcher(self, data, "Titles identified - badges updated");
+      self._loadPendingErrShown = false;
       return;
     }
     if (!forceRefresh && self._lastLoadSig === sig && data?.cached_at && self.cachedAt && data.cached_at === self.cachedAt) {
@@ -229,7 +219,11 @@ async function runPendingLoad(self, forceRefresh, silent) {
     }
     await applyLoadedPendingItems(self, data, forceRefresh, sig);
   } catch (e2) {
-    if (!e2.isOffline) {
+    if (e2 && e2.status === 401) {
+      if (self._animeWatcher) { clearInterval(self._animeWatcher); self._animeWatcher = null; }
+      window.location.href = "/login?next=" + encodeURIComponent(window.location.pathname);
+    } else if (!e2.isOffline && !(e2.status >= 500) && !self._loadPendingErrShown) {
+      self._loadPendingErrShown = true;
       self.showToast("error", "Error", "Failed to load pending items");
     }
   } finally {
@@ -247,12 +241,12 @@ async function runPendingLoad(self, forceRefresh, silent) {
 // carry all of this branching itself.
 async function applyLoadedPendingItems(self, data, forceRefresh, sig) {
   const rawItems = data.items || { movies: [], misc: [], external: [] };
+  self._graftLoadedChildren(rawItems);
   self._lastRawItems = rawItems;
   self.skipFiles = data.skip_files || { enabled: false, display_mode: "disabled" };
   const itemsForState = self.skipFiles.enabled && self.skipFiles.display_mode === "hidden" ? self._stripHiddenSkippedItems(rawItems) : rawItems;
   self._normalizePendingItemsForState(itemsForState);
   self.items = deepFreezePendingTree(itemsForState);
-  if (forceRefresh) self.extLoadedChildren = {};
   self.activeIndexers = (data.indexers || []).slice();
   self.summary = data.summary || { movies: 0, misc: 0, external: 0, total: 0 };
   self.cachedAt = data.cached_at || null;
@@ -266,13 +260,15 @@ async function applyLoadedPendingItems(self, data, forceRefresh, sig) {
   self.$nextTick(() => self.initPendingExternalGroupsSortable());
   self.categorySelectionReady = true;
   self._normalizeSelectedCategories();
-  syncPendingAnimeWatcher(self, data, "Titles identified — badges updated");
+  syncPendingAnimeWatcher(self, data, "Titles identified - badges updated");
+  await self._hydrateExpandedExtChildren();
   const sel = {};
   self.activeIndexers.forEach((idx) => {
     sel[idx.id] = true;
   });
   self.markIndexerSelection = sel;
   self._saveSessionCache(data);
+  self._loadPendingErrShown = false;
 }
 
 function normalizePendingExternalGroups(self, items) {
@@ -300,7 +296,9 @@ function normalizePendingExternalGroups(self, items) {
   });
 }
 
-var vm = createVuePage({
+var vm = null;
+try {
+  vm = createVuePage({
 persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterMode", "ignoredPaths", "unignoredPaths", "queueSectionExpanded", "manualExternalCategories", "bulkSelectCategoriesSelected"],
 revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
   data() {
@@ -333,6 +331,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       cachedAt: null,
       // Processing filter state
       processingFilters: {},
+      folderPathEntries: [],
       // Search & filter
       searchQuery: "",
       literalSearch: false,
@@ -346,7 +345,8 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       _searchTimer: null,
       _lastLoadSig: null,
       expandedExtItems: {},
-      extLoadedChildren: {},
+      _expandedExtHydrationPromise: null,
+      _loadingExtChildren: {},
       allExpanded: false,
       // Category collapse
       collapsedCategories: {
@@ -473,6 +473,30 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     };
   },
   created() {
+    if (!this.manualExternalCategories || typeof this.manualExternalCategories !== "object" || Array.isArray(this.manualExternalCategories)) {
+      this.manualExternalCategories = {};
+    }
+    if (!this.externalCategories || typeof this.externalCategories !== "object" || Array.isArray(this.externalCategories)) {
+      this.externalCategories = {};
+    }
+    if (!this.expandedExtItems || typeof this.expandedExtItems !== "object" || Array.isArray(this.expandedExtItems)) {
+      this.expandedExtItems = {};
+    }
+    if (!this.collapsedCategories || typeof this.collapsedCategories !== "object" || Array.isArray(this.collapsedCategories)) {
+      this.collapsedCategories = {
+        movies: false,
+        misc: false
+      };
+    }
+    if (!Array.isArray(this.pendingExternalGroupOrder)) {
+      this.pendingExternalGroupOrder = [];
+    }
+    if (!Array.isArray(this.bulkSelectCategoriesSelected)) {
+      this.bulkSelectCategoriesSelected = [];
+    }
+    if (!this.markIndexerSelection || typeof this.markIndexerSelection !== "object" || Array.isArray(this.markIndexerSelection)) {
+      this.markIndexerSelection = {};
+    }
     if (!Array.isArray(this.selectedCategories)) {
       const legacy = typeof this.filterCategory === "string" && this.filterCategory ? this.filterCategory : "all";
       this.selectedCategories = [legacy];
@@ -525,6 +549,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     ...methods4,
     ...methods5,
     ...methods6,
+    ...methods7,
   },
   watch: {
     searchQuery() {
@@ -560,7 +585,7 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
       this._queuedJobModalSortable = null;
       this.loadSummary();
       this.loadQueuedPaths();
-      this.loadProcessingSettings().then(() => this.loadPending()).catch((e2) => console.error("loadProcessingSettings/loadPending failed", e2));
+      Promise.all([this.loadCategoryOverrides(), this.loadProcessingSettings()]).then(() => this.loadPending()).catch((e2) => console.error("loadProcessingSettings/loadPending failed", e2));
       this.loadQueueItems();
       this.loadJobs();
       let _idleTick = 0;
@@ -610,4 +635,28 @@ revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
     this.destroyQueuedJobModalSortable();
     this.destroyPendingExternalGroupsSortable();
   }
-});
+  });
+} catch (e2) {
+  console.error("Queue page bootstrap failed:", e2);
+  try {
+    window.__queueShowOverlay && window.__queueShowOverlay("Queue page bootstrap error", String(e2 && (e2.stack || e2.message || e2)));
+  } catch (_overlayError) {
+  }
+}
+// The split method modules call these module-level helpers; export them so each
+// module can import what it uses instead of relying on a shared bundle scope.
+export {
+  CACHE_KEY,
+  EXTERNAL_GROUP_ORDER_KEY,
+  EXTERNAL_GROUP_LOCK_KEY,
+  FILTER_MODE_OPTIONS,
+  SESSION_CACHE_MAX_BYTES,
+  deepFreezePendingTree,
+  resolvePreferredJobId,
+  maybeRevalidateQueuedJobs,
+  syncActiveJobModal,
+  syncQueuedJobModal,
+  normalizePendingNode,
+  normalizePendingExternalGroups,
+  runPendingLoad,
+};

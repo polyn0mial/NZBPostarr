@@ -1,4 +1,6 @@
 // Auto-split from queue.js - verbatim methods bodies.
+import Sortable from "sortablejs";
+import { EXTERNAL_GROUP_ORDER_KEY, normalizePendingNode, normalizePendingExternalGroups, runPendingLoad } from "./queue.js";
 export default {
 /**
      * Extracted from _visibilityIndex: builds the flat (non-external)
@@ -317,21 +319,22 @@ visibleExtTopLevel(group) {
       return idx.extTopByGroupKey.get(this.externalGroupKey(group)) || [];
     },
 
+_getLoadedRowChildren(item) {
+      if (!item || typeof item !== "object") return [];
+      if (Array.isArray(item.children) && item.children.length > 0) return item.children;
+      if (Array.isArray(item.files) && item.files.length > 0) return item.files;
+      return [];
+    },
+
+hasLoadedRowChildren(item) {
+      return this._getLoadedRowChildren(item).length > 0;
+    },
+
 visibleExtChildrenOf(item) {
-      // 1. Children loaded by lazy API call (reactive store).
-      const loaded = this.extLoadedChildren[item.key];
-      if (loaded && loaded.length > 0) {
-        return loaded.filter((child) => this.extItemPassesFilters(child));
-      }
-      // 2. Children already present in item from initial API response.
-      const direct = this.getRowChildren(item);
-      if (direct.length > 0) {
-        return direct.filter((child) => this.extItemPassesFilters(child));
-      }
-      // 3. Pre-computed visibility index (fallback).
       const idx = this._visibilityIndex;
-      const mapped = idx.extChildrenByKey.get(item.key);
-      return mapped !== undefined ? mapped : [];
+      const visible = idx.extChildrenByKey.get(item.key);
+      if (Array.isArray(visible) && visible.length > 0) return visible;
+      return this._getLoadedRowChildren(item);
     },
 
 hasRowChildren(item) {
@@ -343,74 +346,25 @@ hasRowChildren(item) {
     },
 
 getRowChildren(item) {
-      if (!item || typeof item !== "object") return [];
-      if (Array.isArray(item.children) && item.children.length > 0) return item.children;
-      if (Array.isArray(item.files) && item.files.length > 0) return item.files;
-      return [];
+      return this._getLoadedRowChildren(item);
     },
 
 getRowChildCount(item) {
       if (!item || typeof item !== "object") return 0;
-      const inlineChildren = this.getRowChildren(item);
-      if (inlineChildren.length > 0) return inlineChildren.length;
-      const declaredCount = Number(item.child_count || 0);
-      return Number.isFinite(declaredCount) && declaredCount > 0 ? declaredCount : 0;
-    },
-
-findExternalNodeByKey(targetKey) {
-      if (!targetKey) return null;
-      const visited = new Set();
-      const walk = (node) => {
-        if (!node || typeof node !== "object") return null;
-        if (visited.has(node)) return null;
-        visited.add(node);
-        if (node.key === targetKey) return node;
-        const directChildren = Array.isArray(node.children) ? node.children : [];
-        const loadedChildren = Array.isArray(this.extLoadedChildren[node.key]) ? this.extLoadedChildren[node.key] : [];
-        const children = [...directChildren, ...loadedChildren];
-        for (const child of children) {
-          const found = walk(child);
-          if (found) return found;
-        }
-        return null;
+      const counted = /* @__PURE__ */ new Set();
+      let total = 0;
+      const visit = (node) => {
+        if (!node || typeof node !== "object") return;
+        const key = node.key || node.path || node.name || null;
+        if (key && counted.has(key)) return;
+        if (key) counted.add(key);
+        total += 1;
+        const children = Array.isArray(node.children) ? node.children : Array.isArray(node.files) ? node.files : [];
+        children.forEach(visit);
       };
-      for (const group of this.items.external || []) {
-        for (const item of group.items || []) {
-          const found = walk(item);
-          if (found) return found;
-        }
-      }
-      return null;
-    },
-
-async ensureExtChildrenLoaded(itemOrKey) {
-      const key = typeof itemOrKey === "string" ? itemOrKey : (itemOrKey && itemOrKey.key);
-      // Already loaded into reactive store - skip the API call.
-      if (key && this.extLoadedChildren[key] && this.extLoadedChildren[key].length > 0) return;
-      const node = typeof itemOrKey === "string" ? this.findExternalNodeByKey(itemOrKey) : itemOrKey;
-      if (!node || typeof node !== "object") return;
-      const expectedChildren = Number(node.child_count || 0);
-      if (expectedChildren <= 0) return;
-      // Nodes are deep-frozen so node.__childrenLoading can't be written.
-      // Track in-flight requests in a mutable Set on `this` instead.
-      if (!this._extLoadingKeys) this._extLoadingKeys = new Set();
-      if (this._extLoadingKeys.has(key)) return;
-      this._extLoadingKeys.add(key);
-      try {
-        const params = new URLSearchParams();
-        if (node.key) params.set("key", node.key);
-        if (node.path) params.set("path", node.path);
-        const data = await this.apiFetch(`/api/pending/children?${params.toString()}`);
-        const children = Array.isArray(data == null ? void 0 : data.children) ? data.children : [];
-        const inheritedCategory = node.assigned_category_safe || this.getCategoryForItem(node) || "";
-        children.forEach((child) => normalizeExtChild(child, inheritedCategory, (p) => this.normalizePathKey(p)));
-        // Write into Vue-reactive store so visibleExtChildrenOf re-evaluates.
-        if (node.key) this.extLoadedChildren[node.key] = children;
-      } catch (error) {
-        console.warn("Failed to load pending children", error);
-      } finally {
-        if (this._extLoadingKeys) this._extLoadingKeys.delete(key);
-      }
+      const roots = Array.isArray(item.children) && item.children.length > 0 ? item.children : Array.isArray(item.files) ? item.files : [];
+      roots.forEach(visit);
+      return total || Number(item.child_count || 0) || 0;
     },
 
 extDisclosureChildPassesFilters(child, parent = null) {
@@ -440,6 +394,39 @@ findExternalAncestorCategory(item) {
         if (root) return this.getCategoryForItem(root);
       }
       return "";
+    },
+
+isExternalDescendantNode(item) {
+      const key = item?.key || "";
+      if (!key.startsWith("ext:")) return false;
+      const rel = key.split(":").slice(2).join(":");
+      return !!rel && rel.indexOf("/") !== -1;
+    },
+
+isPackOnlyExternalChild(item) {
+      if (!item || !this.isExternalDescendantNode(item)) return false;
+      const ancestorCategory = this.findExternalAncestorCategory(item);
+      if (!ancestorCategory || ["tv", "anime"].includes(ancestorCategory)) return false;
+      return true;
+    },
+
+findFolderEntryForGroup(group) {
+      if (!group || typeof group !== "object") return null;
+      const groupPath = this.normalizePathKey(group.folder_path || group.key || "");
+      if (!groupPath) return null;
+      const entries = Array.isArray(this.folderPathEntries) ? this.folderPathEntries : [];
+      for (const entry of entries) {
+        const entryPath = this.normalizePathKey(entry && entry.path ? entry.path : "");
+        if (entryPath && entryPath === groupPath) {
+          return entry;
+        }
+      }
+      return null;
+    },
+
+isGroupManualSelectionOnly(group) {
+      const entry = this.findFolderEntryForGroup(group);
+      return !!(entry && entry.manual_select_only);
     },
 
 /**
@@ -507,6 +494,8 @@ visibleExtGroupCount(group) {
         const settings = await this.apiFetch("/api/settings");
         if (settings && settings.processing) {
           this.processingFilters = {};
+          const folderEntries = settings && settings.folders ? settings.folders.folder_paths : null;
+          this.folderPathEntries = Array.isArray(folderEntries) ? folderEntries.slice() : [];
           if (this.categorySelectionReady) {
             this._normalizeSelectedCategories();
           }
@@ -633,6 +622,19 @@ isItemQueued(item) {
           }
         }
       } catch (e2) {
+      }
+    },
+
+async loadCategoryOverrides() {
+      try {
+        const data = await this.apiFetch("/api/pending/category-overrides");
+        const serverOverrides = (data && data.overrides) || {};
+        // Server is the durable source; anything already chosen locally in
+        // this browser (e.g. a change made moments ago, not yet round-tripped)
+        // wins so we never clobber an in-flight edit.
+        this.manualExternalCategories = { ...serverOverrides, ...this.manualExternalCategories };
+      } catch (e2) {
+        console.warn("Failed to load category overrides", e2);
       }
     },
 
