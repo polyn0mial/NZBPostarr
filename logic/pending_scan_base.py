@@ -152,37 +152,40 @@ _TV_PACK_RESOLUTION_RE = re.compile(
     r"(?:^|[.\s_-])(?:2160p|1080p|1080i|720p|576p|576i|480p|480i|ntsc|pal)(?:[.\s_-]|$)",
     re.IGNORECASE,
 )
+# Only real media source tokens count; streaming-service and network tags
+# (AMZN, NF, DSNP, network names, bare TV/DV/UHD) alone do not.
 _TV_PACK_SOURCE_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:"
-    r"WEB(?:[.\s_-]?DL|[.\s_-]?Rip|[.\s_-]?HD)?|WEBDL|WEBRip|WEBHD|BluRay|BDRip|BRRip|REMUX|HDRip|PDRip|HDTV|PDTV|"
-    r"SDTV|TV|TVRip|SATRip|DSR|DVB|DVDRip|DVD|VHS(?:Rip)?|DV|UHD|AMZN|NF|NFLX|DSNP|PCOK|HMAX|MAX|HULU|ATVP|AUBC|iT|iP|STAN|CR|"
-    r"PMTP|PMNT|CTV|CBC|BBC|PBS|TBS|TNT|NBC|ABC|CBS|FOX|HBO|SHOWTIME|SHO|MIXED"
+    r"WEB(?:[.\s_-]?DL|[.\s_-]?Rip|[.\s_-]?HD|[.\s_-]?Cap)|WEBDL|WEBRip|WEBHD|WEBCap|WEB|VODRip|"
+    r"BluRay(?:[.\s_-]?Screener)?|UHD(?:[.\s_-]?BluRay)?|BDRip|BRRip|BDScr|REMUX|HDRip|PDRip|"
+    r"HDTV|PDTV|SDTV|TVRip|SATRip|DSR(?:ip)?|DVB(?:Rip)?|"
+    r"DVDRip|DVD(?:5|9|[.\s_-]?R|[.\s_-]?Screener)?|DVDSCR|"
+    r"VHS(?:Rip)?|Laserdisc|DDC|WP|CAM(?:Rip)?|TS|TC|R5(?:[.\s_-]?Line)?|"
+    r"Telesync|Telecine|DCP|HC[.\s_-]?HD[.\s_-]?Rip"
     r")(?![A-Za-z0-9])",
     re.IGNORECASE,
 )
 _TV_PACK_EXTRA_RE = re.compile(
-    r"(?:^|[.\s_\[-])(?:sample|samples|nced|ncop|proof|screens?|subs?|subtitles?|extras?|featurettes?|trailer)(?:[.\s_\]-]|$)",
+    r"(?:^|[.\s_\[-])(?:sample|samples|nced|ncop|op|ed|ova|oad|preview|pv|proof|screens?|subs?|subtitles?|extras?|featurettes?|trailer|teaser|special|specials)(?:[.\s_\]-]|$)",
     re.IGNORECASE,
 )
 _TV_PACK_HARD_EXTRA_RE = re.compile(
-    r"(?:^|[.\s_\[-])(?:sample|samples|nced|ncop|proof|screens?|subs?|subtitles?|featurettes?|trailer)(?:[.\s_\]-]|$)",
+    r"(?:^|[.\s_\[-])(?:sample|samples|nced|ncop|op|ed|ova|oad|preview|pv|proof|screens?|subs?|subtitles?|featurettes?|trailer|teaser|special|specials)(?:[.\s_\]-]|$)",
     re.IGNORECASE,
 )
 _TV_PACK_EXTRAS_WORD_RE = re.compile(r"(?:^|[.\s_\[-])extras?(?:[.\s_\]-]|$)", re.IGNORECASE)
 DEFAULT_TV_PACK_IGNORE_RULES: dict[str, bool] = {
     "enabled": True,
-    "ignore_non_video": True,
-    "ignore_extras": True,
-    "require_sxxexx": True,
+    "ignore_non_episode": True,
+    "require_episode": True,
     "require_resolution": False,
     "require_source": True,
 }
 TV_PACK_IGNORE_RULE_LABELS: dict[str, str] = {
-    "ignore_non_video": "Non-video files",
-    "ignore_extras": "Samples, NFO, proof, screens, subtitles, extras, featurettes, trailers, NCOP, NCED",
-    "require_sxxexx": "Files without S##E## episode numbering",
+    "ignore_non_episode": "Non-episode files",
+    "require_episode": "Files without recognized episode numbering",
     "require_resolution": "Files without quality/format such as NTSC/PAL/480i/480p/576i/576p/720p/1080p/2160p",
-    "require_source": "Files without a media source token such as WEB, WEB-DL, WEBRip, BluRay, BRRip, HDRip, PDRip, REMUX, HDTV, SDTV, PDTV, TV, DVD, DVDRip, VHS",
+    "require_source": "Files without a media source token such as WEB-DL, WEBRip, BluRay, REMUX, HDTV, DVDRip, VHSRip",
 }
 TV_PACK_IGNORED_FILE_TYPES: tuple[str, ...] = (
     ".nfo",
@@ -207,6 +210,8 @@ TV_PACK_IGNORED_NAME_PATTERNS: tuple[str, ...] = (
     "sample",
     "samples",
     "nfo",
+    "preview",
+    "pv",
     "proof",
     "screen",
     "screens",
@@ -216,6 +221,13 @@ TV_PACK_IGNORED_NAME_PATTERNS: tuple[str, ...] = (
     "featurette",
     "featurettes",
     "trailer",
+    "teaser",
+    "special",
+    "specials",
+    "ova",
+    "oad",
+    "op",
+    "ed",
     "ncop",
     "nced",
 )

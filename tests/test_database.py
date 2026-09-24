@@ -246,7 +246,7 @@ def test_database_e2e_smoke() -> None:
     mapping = db.get_upload_map(["geek", "omg"])
     assert mapping.get(key1) == {"geek", "omg"}
 
-    fully_done, dash_map, _failed_map = db.get_dashboard_data(["geek", "omg"])
+    fully_done, dash_map, _failed_map, _sizes = db.get_dashboard_data(["geek", "omg"])
     assert key1 in dash_map
     assert key1 in fully_done
 

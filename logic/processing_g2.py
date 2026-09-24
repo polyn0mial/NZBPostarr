@@ -107,6 +107,13 @@ def _inject_inferred_tv_pack_entries(
         for path, cat in raw_items
         if cat in {"tv", "anime"} and path.is_dir()
     }
+    # A staged or selected pack shares its season folder's name, so a parent
+    # whose name is already queued must not be staged a second time.
+    existing_dir_names = {
+        path.name
+        for path, cat in raw_items
+        if cat in {"tv", "anime"} and path.is_dir()
+    }
     episodes_by_parent: dict[Path, list[Path]] = defaultdict(list)
     for path, cat in raw_items:
         if cat in {"tv", "anime"} and path.is_file():
@@ -120,6 +127,7 @@ def _inject_inferred_tv_pack_entries(
             already_staged_source_dirs is None
             or _normalize_runtime_path(parent) not in already_staged_source_dirs
         )
+        and parent.name not in existing_dir_names
         and _looks_like_tv_season_pack_folder(parent, episode_paths)
     }
     if not pack_parents:
@@ -260,8 +268,17 @@ def _build_duplicate_prefetch_state(
 
     prefetched_dupes: Dict[str, Dict[str, Optional[str]]] = {}
     if eligible_indexer_ids:
+        from logic.processing import _live_size_bytes
+
         item_keys = [item_db_keys[_normalize_runtime_path(item)] for item, _cat in sorted_items]
-        prefetched_dupes = get_duplicate_status_batch(item_keys, eligible_indexer_ids)
+        # Current on-disk size per item key -- lets get_duplicate_status_batch tell
+        # a genuine re-upload of the same name apart from a locally-replaced file
+        # (same name, different size) instead of treating every name match as done.
+        item_filesizes: Dict[str, int] = {
+            item_db_keys[_normalize_runtime_path(item)]: _live_size_bytes(item)
+            for item, _cat in sorted_items
+        }
+        prefetched_dupes = get_duplicate_status_batch(item_keys, eligible_indexer_ids, filesizes=item_filesizes)
 
     return item_db_keys, prefetched_dupes, source_root_for
 
@@ -284,6 +301,12 @@ def _iter_work_items(
 
     total = len(sorted_items)
     while targeted_lookup:
+        # Items removed from the active job (QueueService.remove_active_job_item)
+        # are dropped here, so a removal is honoured and not only hidden.
+        for removed_path in list(runtime_job.get("_removed_item_paths") or []):
+            targeted_lookup.pop(_normalize_runtime_path(Path(str(removed_path))), None)
+        if not targeted_lookup:
+            break
         runtime_paths = _normalize_runtime_target_paths(runtime_job, paths)
         next_key = None
         for raw_path in runtime_paths:
@@ -374,8 +397,16 @@ def _plan_upload_runs(
     is_new: bool,
     global_backfill: bool,
 ) -> list[tuple[dict[str, Any], Any]]:
-    """Map logical upload sets to concrete server executions."""
-    server_to_sets: dict[tuple[str, bool], tuple[Any, list[str], list[str]]] = {}
+    """Map logical upload sets to concrete server executions.
+
+    Same-server destinations are merged into ONE physical upload regardless of
+    priority, so an item is posted to Usenet once per server. The priority
+    split is kept only as ``submission_groups``, so each indexer group still
+    gets its own API submission (and its own "Priority " name prefix) without
+    a second NNTP post. A set that includes priority destinations keeps the
+    " (P)" suffix in its id so the uploader still labels the post as priority.
+    """
+    server_to_group: dict[str, dict[str, Any]] = {}
     selected_backbones: list[str] = []
 
     for upload_set in upload_sets:
@@ -414,21 +445,42 @@ def _plan_upload_runs(
         server = _select_upload_server(upload_set["backbone"], all_servers, selected_backbones)
         selected_backbones.extend(backbone.lower() for backbone in server.backbone)
 
-        group_key = (server.name, is_priority)
-        if group_key not in server_to_sets:
-            server_to_sets[group_key] = (server, [], [])
-        server_to_sets[group_key][1].extend(needed_dests)
-        server_to_sets[group_key][2].append(upload_set["id"])
+        bucket = server_to_group.setdefault(
+            server.name,
+            {"server": server, "priority_dests": [], "priority_ids": [], "normal_dests": [], "normal_ids": []},
+        )
+        if is_priority:
+            bucket["priority_dests"].extend(needed_dests)
+            bucket["priority_ids"].append(upload_set["id"])
+        else:
+            bucket["normal_dests"].extend(needed_dests)
+            bucket["normal_ids"].append(upload_set["id"])
 
     raw_sets: list[tuple[dict[str, Any], Any]] = []
-    for (_, is_priority), (server, dests, ids) in server_to_sets.items():
+    for bucket in server_to_group.values():
+        server = bucket["server"]
+        submission_groups: list[dict[str, Any]] = []
+        all_ids: list[str] = []
+        all_dests: list[str] = []
+
+        if bucket["priority_dests"]:
+            submission_groups.append({"dests": list(dict.fromkeys(bucket["priority_dests"])), "priority": True})
+            all_ids.extend(bucket["priority_ids"])
+            all_dests.extend(bucket["priority_dests"])
+        if bucket["normal_dests"]:
+            submission_groups.append({"dests": list(dict.fromkeys(bucket["normal_dests"])), "priority": False})
+            all_ids.extend(bucket["normal_ids"])
+            all_dests.extend(bucket["normal_dests"])
+
+        has_priority = bool(bucket["priority_dests"])
         raw_sets.append(
             (
                 {
-                    "id": "/".join(dict.fromkeys(ids)) + (" (P)" if is_priority else " (NP)"),
-                    "dests": list(dict.fromkeys(dests)),
+                    "id": "/".join(dict.fromkeys(all_ids)) + (" (P)" if has_priority else ""),
+                    "dests": list(dict.fromkeys(all_dests)),
                     "backbone": server.backbone[0] if server.backbone else "Unknown",
-                    "priority": is_priority,
+                    "priority": has_priority,
+                    "submission_groups": submission_groups,
                 },
                 server,
             )
@@ -514,6 +566,14 @@ class _JobRunState:
     active_upload_validation: Optional[QueueItemValidation] = None
     stop_processing: bool = False
     limit_reached: bool = False
+    consecutive_failures: int = 0
+    max_consecutive_failures: int = 5
+
+    def note_failure(self) -> None:
+        """Count a failed item and warn on long failure runs; the job keeps going."""
+        self.consecutive_failures += 1
+        if self.consecutive_failures >= self.max_consecutive_failures:
+            log_info(f"{self.consecutive_failures} consecutive item failures - continuing job.", "WARN")
 
     def publish_counts(self) -> None:
         update_job_progress(
@@ -535,6 +595,7 @@ class _JobRunState:
             _complete_runtime_item_checkpoint(current_job, self.active_upload_validation.path)
 
         if result == 0:
+            self.consecutive_failures = 0
             self.success_count += 1
             self.completed_count += 1
             prefix = "[TEST] " if self.test_mode else ""
@@ -556,6 +617,7 @@ class _JobRunState:
             self.failure_count += 1
             self.completed_count += 1
             self.publish_counts()
+            self.note_failure()
 
         self.active_upload_future = None
         self.active_upload_validation = None

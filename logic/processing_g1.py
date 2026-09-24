@@ -49,6 +49,22 @@ def _mediainfo_output_path(path: Path, conf: Any) -> Path:
     """Return the canonical mediainfo sidecar path for an item."""
     return conf.mediainfo_sub / f"{path.name}.mediainfo.nfo"
 
+def _mediainfo_sidecar_has_escaped_names(info_path: Path) -> bool:
+    """True for sidecars written by the old re.escape code ('Movie\\.2020\\ 1080p').
+
+    Sanitized names use forward slashes only, so a backslash on a name line
+    marks an old sidecar that must be regenerated instead of reused.
+    """
+    try:
+        text = info_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(
+        "\\" in line
+        for line in text.splitlines()
+        if line.startswith(("Complete name", "Folder name", "File name"))
+    )
+
 def _sanitize_mediainfo_output(output: str, target: Path, conf: Any) -> str:
     """Strip absolute host paths from the mediainfo text artifact."""
     try:
@@ -60,18 +76,19 @@ def _sanitize_mediainfo_output(output: str, target: Path, conf: Any) -> str:
 
     sanitized_output = output
     patterns = [
-        (
-            r"^(Complete name\s+:\s+).*",
-            r"\g<1>" + re.escape(str(rel_target).replace("\\", "/")),
-        ),
-        (
-            r"^(Folder name\s+:\s+).*",
-            r"\g<1>" + re.escape(str(rel_folder).replace("\\", "/")),
-        ),
-        (r"^(File name\s+:\s+).*", r"\g<1>" + re.escape(target.name)),
+        (r"^(Complete name\s+:\s+).*", str(rel_target).replace("\\", "/")),
+        (r"^(Folder name\s+:\s+).*", str(rel_folder).replace("\\", "/")),
+        (r"^(File name\s+:\s+).*", target.name),
     ]
-    for pattern, replacement in patterns:
-        sanitized_output = re.sub(pattern, replacement, sanitized_output, flags=re.MULTILINE)
+    for pattern, text in patterns:
+        # A callable replacement inserts the name literally: no backslash
+        # escapes and no group-reference parsing of names starting with digits.
+        sanitized_output = re.sub(
+            pattern,
+            lambda match, value=text: match.group(1) + value,
+            sanitized_output,
+            flags=re.MULTILINE,
+        )
     return sanitized_output
 
 def _find_nfo_path(path: Path) -> Optional[Path]:
@@ -189,7 +206,21 @@ def _build_item_key(path: Path, base_folder: Optional[Path]) -> str:
             return str(path.relative_to(base_folder)).replace("\\", "/")
     except ValueError:
         pass
+    # Files outside a configured root (staged pack episodes) are keyed by
+    # their pack folder too, so same-named episodes of two packs stay apart.
+    if not path.is_dir():
+        parent_name = path.parent.name
+        if parent_name and parent_name not in {"", "."}:
+            return f"{parent_name}/{path.name}"
     return path.name
+
+def _already_exists_skip_message(path: Path, source_root: Optional[Path], size_bytes: int) -> str:
+    """Name the pack folder and size so the log shows which copy was skipped."""
+    skip_folder = path.parent.name if (source_root is None or path.parent != source_root) else ""
+    skip_mb = round(size_bytes / (1024 * 1024)) if size_bytes else 0
+    size_part = f" ({skip_mb} MB)" if skip_mb else ""
+    folder_part = f" [{skip_folder}]" if skip_folder else ""
+    return f"⏩ '{path.name}'{folder_part}{size_part} already exists on all selected destinations - skipped"
 
 def _folder_log_itype(category: str) -> str:
     normalized = str(category or "").strip().lower()

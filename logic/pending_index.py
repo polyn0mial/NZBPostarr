@@ -1,7 +1,8 @@
 """Background pending-index manager.
 
 Keeps the expensive pending snapshot warm off the request path. The index is
-refreshed on manual requests plus periodic reconcile.
+refreshed on manual requests, periodic reconcile, and (debounced) filesystem
+renames/deletes/moves in the watched folders.
 """
 
 from __future__ import annotations
@@ -12,20 +13,46 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional
 
 from loguru import logger
+from watchdog.events import FileSystemEvent, FileSystemEventHandler
 
 from core import config as config_mod
+from core.utils import start_watchdog_observer, stop_watchdog_observer
+
+
+class _PendingIndexEventHandler(FileSystemEventHandler):  # type: ignore[misc]
+    def __init__(self, manager: "PendingIndexManager"):
+        super().__init__()
+        self._manager = manager
+
+    def on_any_event(self, event: FileSystemEvent) -> None:
+        # Skip directory-modified and file-created: torrent downloads produce one
+        # file-created event per file and would cause a refresh storm.
+        if event.is_directory and event.event_type == "modified":
+            return
+        if not event.is_directory and event.event_type == "created":
+            return
+
+        src_path = getattr(event, "src_path", "")
+        if src_path:
+            path = Path(str(src_path))
+            if any(part.startswith(".") for part in path.parts):
+                return
+
+        self._manager.request_refresh(reason="watchdog")
 
 
 class PendingIndexManager:
     """Maintains a background-refreshed pending snapshot."""
 
-    def __init__(self, reconcile_interval_s: float = 180.0):
+    def __init__(self, reconcile_interval_s: float = 180.0, watchdog_debounce_s: float = 2.5):
         self._reconcile_interval_s = max(5.0, float(reconcile_interval_s))
+        self._watchdog_debounce_s = max(0.1, float(watchdog_debounce_s))
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._dirty_event = threading.Event()
 
         self._thread: Optional[threading.Thread] = None
+        self._observer: Optional[Any] = None
 
         self._scan_fn: Optional[Callable[[], Dict[str, Any]]] = None
 
@@ -35,6 +62,7 @@ class PendingIndexManager:
         self._ready: bool = False
         self._last_error: Optional[str] = None
         self._pending_reason: Optional[str] = None
+        self._last_watchdog_request_ts: float = 0.0
 
     def configure(self, scan_fn: Callable[[], Dict[str, Any]]) -> None:
         with self._lock:
@@ -43,13 +71,13 @@ class PendingIndexManager:
     def start(self, watched_folders: list[Path]) -> None:
         with self._lock:
             if self._thread and self._thread.is_alive():
-                self._log_refresh_mode(watched_folders)
+                self._restart_observer_locked(watched_folders)
                 self.request_refresh(reason="start-reconfigure")
                 return
 
             self._stop_event.clear()
             self._dirty_event.set()
-            self._log_refresh_mode(watched_folders)
+            self._restart_observer_locked(watched_folders)
             self._thread = threading.Thread(
                 target=self._worker_loop,
                 name="nzbpostarr-pending-index",
@@ -63,17 +91,25 @@ class PendingIndexManager:
             self._dirty_event.set()
             worker = self._thread
             self._thread = None
+            self._stop_observer_locked()
 
         if worker and worker.is_alive():
             worker.join(timeout=5)
 
     def restart_watched_folders(self, watched_folders: list[Path]) -> None:
         with self._lock:
-            self._log_refresh_mode(watched_folders)
+            self._restart_observer_locked(watched_folders)
         self.request_refresh(reason="watch-folders-restart")
 
     def request_refresh(self, reason: str = "manual") -> None:
         with self._lock:
+            if reason == "watchdog":
+                now = time.monotonic()
+                if self._dirty_event.is_set():
+                    return
+                if (now - self._last_watchdog_request_ts) < self._watchdog_debounce_s:
+                    return
+                self._last_watchdog_request_ts = now
             self._pending_reason = reason
         logger.debug(f"Pending index marked dirty ({reason})")
         self._dirty_event.set()
@@ -144,16 +180,30 @@ class PendingIndexManager:
             with self._lock:
                 self._refreshing = False
 
-    @staticmethod
-    def _log_refresh_mode(watched_folders: list[Path]) -> None:
-        # Recursive watchdog observers over large torrent roots can create an
-        # inotify storm and pin the app CPU, making the UI unresponsive. Keep
-        # refreshes explicit/periodic so the queue stays usable.
-        if watched_folders:
-            logger.debug(
-                "Pending index filesystem watchdog disabled; "
-                f"using manual/periodic refresh for {len(watched_folders)} folder(s)"
+    def _stop_observer_locked(self) -> None:
+        if self._observer is None:
+            return
+        stop_watchdog_observer(self._observer)
+        self._observer = None
+
+    def _restart_observer_locked(self, watched_folders: list[Path]) -> None:
+        self._stop_observer_locked()
+        if not watched_folders:
+            return
+
+        # File-created events are filtered out (they storm during active
+        # downloads); renames, deletes and moves trigger a debounced refresh.
+        handler = _PendingIndexEventHandler(self)
+        try:
+            observer, scheduled = start_watchdog_observer(
+                [(handler, folder, True) for folder in watched_folders]
             )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.warning(f"Could not start pending index watchdog: {exc}")
+            return
+        self._observer = observer
+        if observer is not None:
+            logger.debug(f"Pending index watchdog active for {scheduled} folder(s)")
 
 
 _MANAGER = PendingIndexManager()

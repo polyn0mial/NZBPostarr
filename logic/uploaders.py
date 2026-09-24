@@ -10,6 +10,7 @@ import math
 import random
 import re
 import time
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Optional, Sequence
@@ -524,6 +525,8 @@ def submit_api(
 
         # Sanitize release name
         rls_name = re.sub(r"\.(nzb|mkv|mp4|avi|ts|m4v|wmv)$", "", clean_name, flags=re.I)
+        # Transliterate accents ("Pokémon" -> "Pokemon") instead of turning them into dots.
+        rls_name = unicodedata.normalize("NFKD", rls_name).encode("ascii", "ignore").decode("ascii")
         rls_name = rls_name.replace(" & ", ".and.").replace("&", ".and.")
         rls_name = rls_name.replace("'", "")
         rls_name = re.sub(r"[^a-zA-Z0-9.\-_]", ".", rls_name)

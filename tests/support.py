@@ -452,9 +452,17 @@ def _configure_pending_snapshot_environment(
 
     monkeypatch.setattr(pending_snapshot_mod, "get_config", lambda: conf)
     if callable(dashboard_data):
-        monkeypatch.setattr(pending_snapshot_mod.database, "get_dashboard_data", dashboard_data)
+        monkeypatch.setattr(
+            pending_snapshot_mod.database,
+            "get_dashboard_data",
+            lambda ids: _as_dashboard_data(dashboard_data(ids)),
+        )
     else:
-        monkeypatch.setattr(pending_snapshot_mod.database, "get_dashboard_data", lambda _ids: dashboard_data)
+        monkeypatch.setattr(
+            pending_snapshot_mod.database,
+            "get_dashboard_data",
+            lambda _ids: _as_dashboard_data(dashboard_data),
+        )
     monkeypatch.setattr(
         pending_snapshot_mod,
         "get_configured_category_folders",
@@ -469,12 +477,23 @@ def _configure_pending_snapshot_environment(
         resolve_backfill or (lambda _idx, _conf: False),
     )
 
+def _as_dashboard_data(value):
+    """Return get_dashboard_data's 4-tuple (fully_done, upload_map, failed_map, filesize_by_indexer).
+
+    Older fixtures give only the first three values; the missing filesize map
+    means "no stored sizes", which keeps name-only completion matching.
+    """
+    values = tuple(value)
+    if len(values) == 3:
+        return (*values, {})
+    return values
+
 def _configure_pending_scan_all(
     monkeypatch,
     folder_category: str,
     folder_path: Path,
     *,
-    dashboard_data=(set(), {}, {}),
+    dashboard_data=(set(), {}, {}, {}),
     anime_cache_lookup=lambda _name: False,
     indexers: list[object] | None = None,
     available_categories: list[object] | None = None,
@@ -491,7 +510,7 @@ def _configure_pending_scan_all(
             return list(indexers or [])
 
     monkeypatch.setattr(app_mod, "get_config", lambda: _Conf())
-    monkeypatch.setattr(app_mod.database, "get_dashboard_data", lambda _ids: dashboard_data)
+    monkeypatch.setattr(app_mod.database, "get_dashboard_data", lambda _ids: _as_dashboard_data(dashboard_data))
     monkeypatch.setattr(
         app_mod,
         "get_configured_category_folders",

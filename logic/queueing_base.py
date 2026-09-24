@@ -94,6 +94,7 @@ class ProcessingJobRequest:
     item_hints: tuple[dict[str, Any], ...] = ()
     enable_duplicate_check: Optional[bool] = None
     force: Optional[bool] = None
+    skip_pack_expansion: bool = False
 @dataclass(frozen=True)
 class StreamJobRequest:
     """Normalized execution request for a streamed NZB repost job."""

@@ -1449,8 +1449,9 @@ def test_resolve_explicit_path_tv_pack_ignores_non_episode_files(tmp_path) -> No
     assert result.itype == "TV Show"
     assert result.detection_method == "Episode pattern"
     assert result.queue_paths == (episode_one, episode_two)
+    # queue-backend-11: OP/ED/OVA/preview/special files are pack extras.
     assert _ignored_path_reasons(result) == [
-        (opening, "No S##E## episode pattern"),
+        (opening, "TV season pack extra/sample"),
         (notes, "TV season pack extra/non-video content"),
     ]
 
@@ -1700,7 +1701,10 @@ def test_upload_service_dashboard_summary_uses_pending_index_state(monkeypatch) 
         else:
             assert pending_manager.reasons == [expected_refresh_reason], case_name
 
-def test_scan_pending_snapshot_external_tree_avoids_recursive_size_rewalk(tmp_path, monkeypatch) -> None:
+def test_scan_pending_snapshot_lazy_tree_sizes_each_top_level_folder_once(tmp_path, monkeypatch) -> None:
+    # queue-backend-16 (DECISIONS: lazy one-level pending tree): top-level folders are
+    # scanned without children, so each is sized once with compute_size_uncached.
+    from core.utils import compute_size_uncached as real_compute_size
     from logic import pending_snapshot as pending_snapshot_mod
 
     external_dir = tmp_path / "external"
@@ -1712,8 +1716,11 @@ def test_scan_pending_snapshot_external_tree_avoids_recursive_size_rewalk(tmp_pa
 
     conf = SimpleNamespace(folder_paths=[{"path": str(external_dir), "category": "external"}], skip_files=None)
 
-    def fail_if_called(_path: Path) -> int:
-        raise AssertionError("compute_size_uncached should not be used for fully scanned external trees")
+    sized: list[Path] = []
+
+    def counting_size(path: Path) -> int:
+        sized.append(path)
+        return real_compute_size(path)
 
     _configure_pending_snapshot_environment(
         monkeypatch,
@@ -1721,13 +1728,16 @@ def test_scan_pending_snapshot_external_tree_avoids_recursive_size_rewalk(tmp_pa
         conf,
         dashboard_data=({}, {}, {}),
         configured_folders=[("external", external_dir)],
-        compute_size_uncached=fail_if_called,
+        compute_size_uncached=counting_size,
     )
 
     payload = pending_snapshot_mod.scan_pending_snapshot()
 
     item = payload["items"]["external"][0]["items"][0]
+    assert sized == [release_dir]
     assert item["size"] == 6
+    assert item["child_count"] == 2
+    assert item["children"] == []
     assert _pending_lazy_children(payload, item)[0]["size"] == 3
     assert payload["summary"]["external"] == 1
 
@@ -1761,13 +1771,15 @@ def test_scan_pending_snapshot_exposes_bulk_selection_policy(tmp_path, monkeypat
 
     assert payload["items"]["external"][0]["allow_bulk_selection"] is False
 
-def test_scan_pending_snapshot_selectable_external_dir_keeps_direct_completion_state(tmp_path, monkeypatch) -> None:
+def test_scan_pending_snapshot_external_dir_completion_rolls_up_from_deferred_children(tmp_path, monkeypatch) -> None:
+    # queue-backend-16 (deferred completion as on the server): a folder is done for an
+    # indexer when all of its direct children are in the upload map.
     from logic import pending_snapshot as pending_snapshot_mod
 
     external_dir = tmp_path / "external"
     release_dir = external_dir / "Movie.Name.2026"
     release_dir.mkdir(parents=True)
-    movie_file = release_dir / "Movie.Name.2026.1080p.mkv"
+    movie_file = release_dir / "Movie.Name.2026.1080p.WEB-DL.mkv"
     movie_file.write_bytes(b"x" * 10)
 
     conf = SimpleNamespace(folder_paths=[{"path": str(external_dir), "category": "external"}], skip_files=None)
@@ -1788,8 +1800,8 @@ def test_scan_pending_snapshot_selectable_external_dir_keeps_direct_completion_s
     item = payload["items"]["external"][0]["items"][0]
     assert item["is_dir"] is True
     assert item["auto_selectable"] is True
-    assert item["completed"] is False
-    assert item["indexers"] == {"idx1": False}
+    assert item["completed"] is True
+    assert item["indexers"] == {"idx1": True}
     children = _pending_lazy_children(payload, item)
     assert children[0]["completed"] is True
     assert children[0]["indexers"] == {"idx1": True}
@@ -1920,7 +1932,11 @@ def test_scan_pending_all_marks_anime_extras_ignored_for_auto_select(monkeypatch
 
     assert top_item["detected_category"] == "anime"
     assert top_item["detection_method"] == "Jikan match"
-    assert child_map[episode.name]["auto_selectable"] is True
+    assert top_item["auto_selectable"] is True
+    # queue-backend-18: an episode needs its own source token for individual upload.
+    assert child_map[episode.name]["auto_selectable"] is False
+    assert child_map[episode.name]["eligible"] is False
+    assert child_map[episode.name]["auto_select_reason"].startswith("Missing quality source in filename")
     assert child_map[extra.name]["auto_select_ignored"] is True
     assert child_map[extra.name]["auto_select_reason"] == "No episode pattern"
 
@@ -2164,7 +2180,9 @@ def test_scan_pending_all_marks_ebook_folder_and_ignores_sidecars(monkeypatch, t
     assert top_item["detected_category"] == "books"
     assert top_item["detection_method"] == "File scan"
     assert child_map[book.name]["auto_selectable"] is True
-    assert child_map[cover.name]["auto_select_ignored"] is True
+    # queue-backend-19 (DECISIONS: only TV/anime keep ignore flags).
+    assert child_map[cover.name]["auto_select_ignored"] is False
+    assert child_map[cover.name]["detected_category"] == "books"
     assert child_map[cover.name]["completed"] is False
 
 

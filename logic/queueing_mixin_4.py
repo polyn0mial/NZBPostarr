@@ -80,32 +80,34 @@ class _QueueServiceMixinPart4:
             if has_running:
                 return
 
-            now_utc = datetime.now(timezone.utc)
-            candidates: list[dict[str, Any]] = []
-            for job in self._jobs.values():
-                if job.get("status") == "paused" and job.get("resume_requested"):
-                    candidates.append(job)
-                    continue
-                if job.get("status") != "queued":
-                    continue
-                due_at = self._parse_iso_datetime_utc(job.get("run_after"))
-                if due_at and due_at > now_utc:
-                    continue
-                candidates.append(job)
-            if not candidates:
-                return
-            next_job = min(
-                candidates,
-                key=lambda job: (
-                    -int(job.get("priority") or 0),
-                    str(job.get("started_at") or ""),
-                ),
-            )
+            def lane_order(job: dict[str, Any]) -> tuple[int, str]:
+                return -int(job.get("priority") or 0), str(job.get("started_at") or "")
 
-            if next_job.get("status") == "paused":
-                self._resume_paused_job_locked(str(next_job.get("job_id") or ""), next_job)
+            # A paused job keeps the lane: nothing else starts until it is resumed
+            # (resume_requested) or stopped.
+            paused_jobs = [job for job in self._jobs.values() if job.get("status") == "paused"]
+            if paused_jobs:
+                resuming = [job for job in paused_jobs if job.get("resume_requested")]
+                if not resuming:
+                    return
+                next_job = min(resuming, key=lane_order)
+                requeued = self._resume_paused_job_locked(str(next_job.get("job_id") or ""), next_job)
                 self._persist_jobs_locked()
-                return
+                if not requeued:
+                    return
+            else:
+                now_utc = datetime.now(timezone.utc)
+                candidates: list[dict[str, Any]] = []
+                for job in self._jobs.values():
+                    if job.get("status") != "queued":
+                        continue
+                    due_at = self._parse_iso_datetime_utc(job.get("run_after"))
+                    if due_at and due_at > now_utc:
+                        continue
+                    candidates.append(job)
+                if not candidates:
+                    return
+                next_job = min(candidates, key=lane_order)
 
         log_info(
             f"Dequeuing job {next_job['job_id']} ({next_job['category']}, source={self._normalize_job_source(next_job.get('source'))})..."
@@ -132,6 +134,8 @@ class _QueueServiceMixinPart4:
                 "_hide_while_stopping",
                 "_pause_ack_callback",
                 "_persist_callback",
+                "_removed_item_paths",
+                "_restored_paused",
             }
             visible_jobs = [
                 job
@@ -220,6 +224,9 @@ class _QueueServiceMixinPart4:
             if status not in ("queued", "paused"):
                 continue
             if not include_paused and status == "paused":
+                continue
+            # A paused job restored after a restart is left alone until the user resumes it.
+            if status == "paused" and str(job.get("progress") or "").startswith("Recovered after restart"):
                 continue
             if str(job.get("job_type") or "processing") != "processing":
                 continue
@@ -560,6 +567,30 @@ class _QueueServiceMixinPart4:
                 return False
 
             self._set_job_target_paths(job, new_order)
+            self._persist_jobs_locked()
+            return True
+
+    def remove_active_job_item(self, job_id: str, path: str) -> bool:
+        """Drop a not-yet-started item from a running or paused job.
+
+        The processing loop re-reads target_paths before each item and skips
+        anything listed in _removed_item_paths, so the item is not uploaded.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job.get("status") not in ("running", "paused"):
+                return False
+            target_identity = self._normalize_job_path_identity(path)
+            if not target_identity:
+                return False
+            current = self._get_job_target_paths(job)
+            removed = [p for p in current if self._normalize_job_path_identity(p) == target_identity]
+            if not removed:
+                return False
+            updated = [p for p in current if self._normalize_job_path_identity(p) != target_identity]
+            job["_removed_item_paths"] = [*self._normalize_paths(job.get("_removed_item_paths")), *removed]
+            self._set_job_target_paths(job, updated)
+            self._record_job_event(job, "item-removed", str(path))
             self._persist_jobs_locked()
             return True
 

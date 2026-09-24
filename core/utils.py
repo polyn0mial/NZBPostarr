@@ -292,10 +292,9 @@ def _run_command_stream_output(
     remainder = ""
     reader_done = False
     while True:
-        if job and not wait_for_job_resume(job):
-            _run_command_terminate(process, log_prefix, " while paused")
-            return reader, _RUN_COMMAND_STOPPED
-
+        # Pause never blocks or kills a running tool: the current item finishes
+        # and the job holds at the next item boundary (wait_for_job_resume in
+        # logic/processing). Only an explicit stop ends the process early.
         if job and job.get("stop_requested"):
             _run_command_terminate(process, log_prefix, "")
             return reader, _RUN_COMMAND_STOPPED
