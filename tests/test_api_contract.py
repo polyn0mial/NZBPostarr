@@ -99,6 +99,25 @@ def test_grouped_errors_route_is_wired() -> None:
     assert "/api/uploads/errors/grouped" in paths
     assert "get" in paths["/api/uploads/errors/grouped"]
 
+def test_server_ported_routes_are_wired() -> None:
+    """Routes the live server serves and the ported UI calls (area app-routes)."""
+    paths = app_mod.app.openapi()["paths"]
+    expected = {
+        "/api/pending/category-overrides": {"get", "post"},
+        "/api/system/backup/create": {"post"},
+        "/api/uploads/queue/{job_id}/active-items": {"get", "delete"},
+        "/api/pending/children": {"get"},
+        "/queue-error-beacon": {"get"},
+    }
+    for path, methods in expected.items():
+        assert path in paths, path
+        assert methods <= set(paths[path]), (path, sorted(paths[path]))
+
+
+def test_background_worker_routes_stay_dropped() -> None:
+    paths = app_mod.app.openapi()["paths"]
+    assert not any(path.startswith("/api/system/workers") for path in paths)
+
 def test_mark_uploaded_rejects_empty_input(monkeypatch) -> None:
     calls: list[tuple] = []
 

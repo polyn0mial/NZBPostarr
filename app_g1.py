@@ -93,6 +93,11 @@ class RestartRequest(BaseModel):
     clear_staged_items: bool = True
     wait_timeout_seconds: float = 15.0
 
+class CreateBackupRequest(BaseModel):
+    """API request model for generating a full NZBPostarr backup archive."""
+
+    skip_tmp_contents: bool = True
+
 class StopAllRequest(BaseModel):
     """API request model for stopping all work and waiting for quiescence."""
 
@@ -470,6 +475,17 @@ async def force_start_queue_item(
         logger.warning(f"[QUEUE-ITEM-START] Started job {jid} but could not remove staged item {item_id}")
     return {"status": "started", "job_id": jid, "item": target}
 
+def _history_database_error(exc: Exception) -> HTTPException:
+    """Readable 503 for History routes when the upload database cannot be used.
+
+    The History page shows ``detail`` as-is, so it must stay a plain string.
+    """
+    logger.warning(f"[HISTORY] Upload database error: {exc}")
+    return HTTPException(
+        status_code=503,
+        detail=f"The upload history database is unavailable ({exc}). Try again in a moment.",
+    )
+
 @uploads_router.get("/recent")
 def get_recent(
     limit: int = 50,
@@ -481,15 +497,18 @@ def get_recent(
     order: str = "desc",
 ) -> Dict[str, Any]:
     """Fetch paginated upload history from the database."""
-    return database.get_recent_uploads(
-        limit=limit,
-        offset=offset,
-        search=search,
-        destination=destination,
-        literal=literal,
-        sort_by=sort_by,
-        order=order,
-    )
+    try:
+        return database.get_recent_uploads(
+            limit=limit,
+            offset=offset,
+            search=search,
+            destination=destination,
+            literal=literal,
+            sort_by=sort_by,
+            order=order,
+        )
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
 
 @uploads_router.get("/grouped")
 def get_grouped(
@@ -502,15 +521,18 @@ def get_grouped(
     order: str = "desc",
 ) -> Dict[str, Any]:
     """Fetch upload history grouped by show name, paginated by group count."""
-    return database.get_grouped_uploads(
-        page=page,
-        per_page=per_page,
-        search=search,
-        destination=destination,
-        literal=literal,
-        sort_by=sort_by,
-        order=order,
-    )
+    try:
+        return database.get_grouped_uploads(
+            page=page,
+            per_page=per_page,
+            search=search,
+            destination=destination,
+            literal=literal,
+            sort_by=sort_by,
+            order=order,
+        )
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
 
 @uploads_router.get("/grouped/items")
 def get_grouped_items(title_key: str, destination: str = "all") -> Dict[str, Any]:
@@ -519,7 +541,10 @@ def get_grouped_items(title_key: str, destination: str = "all") -> Dict[str, Any
     Backs the History page's group expansion; database.get_group_upload_items
     already existed but had no route, so expanding a group 404'd.
     """
-    return database.get_group_upload_items(title_key, destination=destination)
+    try:
+        return database.get_group_upload_items(title_key, destination=destination)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
 
 @uploads_router.get("/errors/grouped")
 def get_grouped_errors(
@@ -534,7 +559,10 @@ def get_grouped_errors(
     across these items, most recently at T" list, one row per indexer per
     distinct underlying error.
     """
-    return database.get_grouped_upload_errors(indexer_id=destination, limit=limit, since_days=since_days, include_muted=include_muted)
+    try:
+        return database.get_grouped_upload_errors(indexer_id=destination, limit=limit, since_days=since_days, include_muted=include_muted)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
 
 class MuteIssueRequest(BaseModel):
     """API request model for muting/unmuting a known-issue group.
@@ -549,24 +577,36 @@ class MuteIssueRequest(BaseModel):
 @uploads_router.post("/errors/mute")
 def mute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
     """Silence a known-issue group so it stops standing out in the default view."""
-    database.mute_upload_issue(body.indexer_id, body.signature)
+    try:
+        database.mute_upload_issue(body.indexer_id, body.signature)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
     return {"status": "success", "muted": True}
 
 @uploads_router.post("/errors/unmute")
 def unmute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
     """Restore a previously muted known-issue group to the default view."""
-    database.unmute_upload_issue(body.indexer_id, body.signature)
+    try:
+        database.unmute_upload_issue(body.indexer_id, body.signature)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
     return {"status": "success", "muted": False}
 
 @uploads_router.get("/history")
 async def get_history(limit: int = 100) -> List[Dict[str, Any]]:
     """Listing of completed upload jobs."""
-    return database.get_job_history(limit)
+    try:
+        return database.get_job_history(limit)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
 
 @uploads_router.get("/history/{job_id}/uploads")
 async def get_job_uploads(job_id: str) -> List[Dict[str, Any]]:
     """Fetch individual items for a given job ID."""
-    return database.get_uploads_for_job(job_id)
+    try:
+        return database.get_uploads_for_job(job_id)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
 
 @uploads_router.delete("/history")
 async def delete_job_history(request: Request) -> Dict[str, Any]:
@@ -575,7 +615,10 @@ async def delete_job_history(request: Request) -> Dict[str, Any]:
     job_ids = body.get("job_ids", [])
     if not job_ids:
         raise HTTPException(status_code=400, detail="No job IDs provided")
-    deleted = database.delete_job_history(job_ids)
+    try:
+        deleted = database.delete_job_history(job_ids)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
     return {"status": "success", "deleted": deleted}
 
 @uploads_router.get("/hourly-stats")
@@ -586,7 +629,11 @@ async def get_hourly_stats() -> Dict[str, Any]:
 @uploads_router.delete("/item/{item_name}")
 async def delete_upload_item(item_name: str) -> Dict[str, Any]:
     """Remove a single item from the history database."""
-    if database.delete_upload_item(item_name):
+    try:
+        deleted = database.delete_upload_item(item_name)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
+    if deleted:
         return {"status": "success"}
     raise HTTPException(status_code=500, detail="Failed to delete item")
 

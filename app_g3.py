@@ -4,7 +4,7 @@ from app_base import (
     Any, Dict, HTTPException, List, Optional, Path, asyncio, database, get_upload_service, logger, pending_router, re, system_router, updater,
 )
 from app_g1 import (PendingGroupOrderLockedRequest, PendingGroupOrderRequest, RestartRequest, StopAllRequest, UpdateRollbackRequest)  # noqa: F401
-from app_g2 import (MarkUploadedRequest, _bulk_selection_excluded_roots, _force_upload_dir_direct_video_count, _force_upload_dir_recursive_video_count, _normalize_force_upload_path, _path_is_at_or_below, _slim_pending_node)  # noqa: F401
+from app_g2 import (CategoryOverrideRequest, MarkUploadedRequest, _bulk_selection_excluded_roots, _force_upload_dir_direct_video_count, _force_upload_dir_recursive_video_count, _normalize_force_upload_path, _path_is_at_or_below, _slim_pending_node)  # noqa: F401
 
 def _filter_bulk_selectable_items(
     items: List[Dict[str, Any]],
@@ -154,6 +154,25 @@ async def update_pending_group_order_locked(req: PendingGroupOrderLockedRequest)
     if save_config({"pending_external_group_order_locked": locked}):
         return {"status": "success", "locked": locked}
     raise HTTPException(status_code=500, detail="Failed to save pending order lock state")
+
+@pending_router.get("/category-overrides")
+def get_category_overrides() -> Dict[str, Any]:
+    """Return all persisted manual category overrides for pending items."""
+    from logic import category_overrides
+
+    return {"overrides": category_overrides.get_all()}
+
+@pending_router.post("/category-overrides")
+def set_category_override(req: CategoryOverrideRequest) -> Dict[str, Any]:
+    """Persist (or clear, when category is empty) a manual category override."""
+    from logic import category_overrides
+
+    key = (req.key or "").strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Missing item key")
+    category = (req.category or "").strip().lower() or None
+    category_overrides.set_override(key, category)
+    return {"status": "success", "key": key, "category": category}
 
 def _slim_pending_items(items: Any) -> Any:
     """Apply `_slim_pending_node` across every section of a pending `items` payload."""

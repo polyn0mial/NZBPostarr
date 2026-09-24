@@ -5,17 +5,17 @@ FastAPI application: API routes and app setup.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 from app_base import (
-    APIRouter as APIRouter, ASSETS_DIR as ASSETS_DIR, Any as Any, AsyncExitStack as AsyncExitStack, AsyncGenerator as AsyncGenerator,
+    APIRouter as APIRouter, APP_ROOT as APP_ROOT, ASSETS_DIR as ASSETS_DIR, Any as Any, AsyncExitStack as AsyncExitStack, AsyncGenerator as AsyncGenerator,
     BaseModel as BaseModel, Callable as Callable, Depends as Depends, Dict as Dict, FastAPI as FastAPI, Field as Field, File as File,
     FileResponse as FileResponse, FileSystemEventHandler as FileSystemEventHandler, Form as Form, GZipMiddleware as GZipMiddleware,
     HTMLResponse as HTMLResponse, HTTPException as HTTPException, JSONResponse as JSONResponse, Jinja2Templates as Jinja2Templates, List as List,
     Observer as Observer, Optional as Optional, Path as Path, ProcessingJobRequest as ProcessingJobRequest, RedirectResponse as RedirectResponse,
     Request as Request, Response as Response, SECRET_MASK as SECRET_MASK, Set as Set, Settings as Settings, StaticFiles as StaticFiles,
     UploadFile as UploadFile, UploadService as UploadService, VIDEO_EXTENSIONS as VIDEO_EXTENSIONS, WEBUI_ROOT as WEBUI_ROOT,
-    _ANIME_CHECK_COOLDOWN_S as _ANIME_CHECK_COOLDOWN_S, _AUTH_COOKIE as _AUTH_COOKIE, _AUTH_COOKIE_MAX_AGE as _AUTH_COOKIE_MAX_AGE,
+    _AUTH_COOKIE as _AUTH_COOKIE, _AUTH_COOKIE_MAX_AGE as _AUTH_COOKIE_MAX_AGE,
     _AUTH_PUBLIC_PATHS as _AUTH_PUBLIC_PATHS, _AUTH_PUBLIC_PREFIXES as _AUTH_PUBLIC_PREFIXES, _MCP_ASGI_APP as _MCP_ASGI_APP, _MCP_PATH as _MCP_PATH,
     _PENDING_BUILD_SUMMARY as _PENDING_BUILD_SUMMARY, _PENDING_FILTER as _PENDING_FILTER, _anime_check_inflight as _anime_check_inflight,
-    _anime_check_last_attempt as _anime_check_last_attempt, _anime_check_lock as _anime_check_lock, _anime_check_thread as _anime_check_thread,
+    _anime_check_lock as _anime_check_lock, _anime_check_thread as _anime_check_thread,
     _boot_reaper_task as _boot_reaper_task, _pending_index as _pending_index, _pending_refresh_lock as _pending_refresh_lock,
     _shared_dashboard_stats_enabled as _shared_dashboard_stats_enabled, _shared_history_tracking_enabled as _shared_history_tracking_enabled,
     _shared_stats_page_enabled as _shared_stats_page_enabled, asynccontextmanager as asynccontextmanager, asyncio as asyncio, console as console,
@@ -30,7 +30,7 @@ from app_base import (
     usenet_stream as usenet_stream,
 )
 from app_g1 import (
-    AddQueueItemsRequest as AddQueueItemsRequest, BulkDeleteRequest as BulkDeleteRequest,
+    AddQueueItemsRequest as AddQueueItemsRequest, BulkDeleteRequest as BulkDeleteRequest, CreateBackupRequest as CreateBackupRequest,
     PendingGroupOrderLockedRequest as PendingGroupOrderLockedRequest, PendingGroupOrderRequest as PendingGroupOrderRequest,
     QueuePriorityRequest as QueuePriorityRequest, QueueRevalidateRequest as QueueRevalidateRequest, QueueScheduleRequest as QueueScheduleRequest,
     MuteIssueRequest as MuteIssueRequest, RemoveQueuedJobItemRequest as RemoveQueuedJobItemRequest, RenameJobRequest as RenameJobRequest,
@@ -38,7 +38,7 @@ from app_g1 import (
     ReorderQueuedJobItemsRequest as ReorderQueuedJobItemsRequest, RestartRequest as RestartRequest, StartQueueRequest as StartQueueRequest,
     StopAllRequest as StopAllRequest, StreamStartResponse as StreamStartResponse, UpdateInstallRequest as UpdateInstallRequest,
     UpdateRollbackRequest as UpdateRollbackRequest, UploadRequest as UploadRequest, _default_itype_for_category as _default_itype_for_category,
-    _mask_config_secrets as _mask_config_secrets, _merge_masked_secret_updates as _merge_masked_secret_updates,
+    _history_database_error as _history_database_error, _mask_config_secrets as _mask_config_secrets, _merge_masked_secret_updates as _merge_masked_secret_updates,
     _normalize_request_strings as _normalize_request_strings, _resolved_policy_path as _resolved_policy_path, browse_folders as browse_folders,
     clear_completed as clear_completed, clear_queue as clear_queue, clear_queue_items as clear_queue_items,
     database_health_check as database_health_check, delete_job_history as delete_job_history, delete_job_route as delete_job_route,
@@ -56,9 +56,10 @@ from app_g1 import (
     unmute_grouped_error as unmute_grouped_error,
 )
 from app_g2 import (
-    AnimeCacheCorrectionRequest as AnimeCacheCorrectionRequest, ForceUploadRequest as ForceUploadRequest, MarkUploadedRequest as MarkUploadedRequest,
+    AnimeCacheCorrectionRequest as AnimeCacheCorrectionRequest, CategoryOverrideRequest as CategoryOverrideRequest,
+    ForceUploadRequest as ForceUploadRequest, MarkUploadedRequest as MarkUploadedRequest,
     _build_pending_summary as _build_pending_summary, _bulk_selection_excluded_roots as _bulk_selection_excluded_roots,
-    _classify_video_name as _classify_video_name, _collect_anime_check_names as _collect_anime_check_names,
+    _classify_video_name as _classify_video_name, _create_full_backup_archive as _create_full_backup_archive, _collect_anime_check_names as _collect_anime_check_names,
     _collect_uncached_anime_check_names as _collect_uncached_anime_check_names, _detect_content_itype as _detect_content_itype,
     _detect_external_category as _detect_external_category, _filter_pending as _filter_pending,
     _force_upload_dir_direct_video_count as _force_upload_dir_direct_video_count,
@@ -67,10 +68,11 @@ from app_g2 import (
     _normalize_upload_categories as _normalize_upload_categories, _path_is_at_or_below as _path_is_at_or_below,
     _pending_watch_folders as _pending_watch_folders, _preview_selected_items as _preview_selected_items, _run_startup_reaper as _run_startup_reaper,
     _runtime_revision as _runtime_revision, _slim_pending_node as _slim_pending_node, bulk_delete_upload_items as bulk_delete_upload_items,
-    check_for_updates_now as check_for_updates_now, get_raw_config as get_raw_config, get_readme_file as get_readme_file,
+    check_for_updates_now as check_for_updates_now, create_full_backup as create_full_backup, get_raw_config as get_raw_config, get_readme_file as get_readme_file,
     get_runtime_revision as get_runtime_revision, get_update_backups as get_update_backups, get_update_releases as get_update_releases,
     get_update_status as get_update_status, health as health, install_update_from_github as install_update_from_github,
-    install_update_from_upload as install_update_from_upload, ping as ping, remove_queued_job_item_route as remove_queued_job_item_route,
+    install_update_from_upload as install_update_from_upload, ping as ping,
+    remove_active_job_item_route as remove_active_job_item_route, remove_queued_job_item_route as remove_queued_job_item_route,
     rename_upload_job as rename_upload_job, reorder_active_job_items_route as reorder_active_job_items_route, reorder_queue_items as reorder_queue_items,
     reorder_queued_job_items_route as reorder_queued_job_items_route, revalidate_queue_jobs as revalidate_queue_jobs,
     save_readme_file as save_readme_file, set_queued_job_priority as set_queued_job_priority, set_queued_job_schedule as set_queued_job_schedule,
@@ -79,6 +81,7 @@ from app_g2 import (
 from app_g3 import (
     _collapse_force_upload_items as _collapse_force_upload_items, _filter_bulk_selectable_items as _filter_bulk_selectable_items,
     _should_preserve_force_upload_dir as _should_preserve_force_upload_dir, _slim_pending_items as _slim_pending_items,
+    get_category_overrides as get_category_overrides, set_category_override as set_category_override,
     mark_items_uploaded as mark_items_uploaded, restart_service as restart_service, rollback_update as rollback_update,
     stop_all_service_activity as stop_all_service_activity, update_pending_group_order as update_pending_group_order,
     update_pending_group_order_locked as update_pending_group_order_locked,
@@ -550,10 +553,9 @@ async def get_current_settings() -> Dict[str, Any]:
                 "tv_pack_ignore",
                 {
                     "enabled": True,
-                    "ignore_non_video": True,
-                    "ignore_extras": True,
-                    "require_sxxexx": True,
-                    "require_resolution": True,
+                    "ignore_non_episode": True,
+                    "require_episode": True,
+                    "require_resolution": False,
                     "require_source": True,
                 },
             ),
@@ -571,6 +573,7 @@ async def get_current_settings() -> Dict[str, Any]:
         "folders": {
             "base_folder": str(conf.base_folder),
             "folder_paths": conf.get_folder_path_entries(),
+            "backup_folder": str(getattr(conf, "backup_folder", APP_ROOT / "backups")),
         },
         "nntp_servers": [_mask_config_secrets(s.model_dump()) for s in conf.nntp_servers],
         "api_keys": _mask_config_secrets(conf.api_keys, key="api_keys"),
@@ -584,6 +587,7 @@ async def get_current_settings() -> Dict[str, Any]:
                 ["cpu", "memory", "disk", "free_space", "upload", "download"],
             ),
             "stats_page_enabled": getattr(conf, "stats_page_enabled", True),
+            "category_appearance_profiles": getattr(conf, "category_appearance_profiles", {}),
         },
         "skip_files": getattr(
             conf,
@@ -788,8 +792,8 @@ def _scan_pending_all() -> Dict[str, Any]:
 
 def _refresh_pending_snapshot_now(reason: str = "manual") -> Dict[str, Any]:
     """Rebuild the pending snapshot synchronously and replace the cache."""
-    if not _pending_refresh_lock.acquire(blocking=False):
-        # A refresh is already running; avoid duplicate heavy scans.
+    if not _pending_refresh_lock.acquire(blocking=True, timeout=30):
+        # Timed out waiting for lock - return cached data.
         state = _pending_index.get_state()
         cached = state.get("snapshot")
         if isinstance(cached, dict):
@@ -817,7 +821,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
     Runs in a daemon thread.  Rate-limit-safe - ``check_titles_batch``
     respects 3/sec and 60/min limits internally.
     """
-    global _anime_check_inflight, _anime_check_thread, _anime_check_last_attempt
+    global _anime_check_inflight, _anime_check_thread
     from logic.anime_cache import check_titles_batch
 
     names = _collect_uncached_anime_check_names(data)
@@ -845,8 +849,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
             except Exception as _exc:
                 logger.debug(f"Anime check re-scan failed: {_exc}")
         else:
-            _anime_check_last_attempt = time.time()
-            logger.debug("Anime check: no new anime found among candidate titles - next check in 1h")
+            logger.debug("Anime check: no new anime found among candidate titles")
     finally:
         with _anime_check_lock:
             _anime_check_inflight = False
@@ -912,9 +915,8 @@ def get_pending_items(
     data = state.get("snapshot")
 
     if refresh:
-        # Non-blocking refresh: on large libraries, synchronous snapshot rebuilds
-        # can stall request threads and make the queue UI appear frozen.
-        _pending_index.request_refresh(reason="items-refresh")
+        # Synchronous refresh so the Refresh button returns fresh data immediately.
+        _refresh_pending_snapshot_now(reason="items-refresh")
         state = _pending_index.get_state()
         data = state.get("snapshot")
 
@@ -946,8 +948,7 @@ def get_pending_items(
         }
 
     anime_enabled = bool(getattr(get_config(), "enable_anime_checking", False))
-    _anime_cooldown_ok = (time.time() - _anime_check_last_attempt) >= _ANIME_CHECK_COOLDOWN_S
-    if anime_enabled and _anime_cooldown_ok and _collect_uncached_anime_check_names(data):
+    if anime_enabled and _collect_uncached_anime_check_names(data):
         with _anime_check_lock:
             can_start = not _anime_check_inflight and (_anime_check_thread is None or not _anime_check_thread.is_alive())
             if can_start:
@@ -1014,6 +1015,15 @@ def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, A
         "category": category,
     }
 
+def _force_upload_request_extras() -> Dict[str, Any]:
+    """ProcessingJobRequest options Force Upload adds when the queue layer supports them.
+
+    ``skip_pack_expansion`` is the queue layer's ProcessingJobRequest field (as on the
+    server); a request built before that field exists simply omits it.
+    """
+    fields = getattr(ProcessingJobRequest, "__dataclass_fields__", {})
+    return {"skip_pack_expansion": True} if "skip_pack_expansion" in fields else {}
+
 @pending_router.post("/force-upload")
 async def force_upload_items(
     req: ForceUploadRequest,
@@ -1053,7 +1063,11 @@ async def force_upload_items(
                 paths=tuple(str(item["path"]) for item in valid_items),
                 item_hints=tuple(dict(item) for item in valid_items),
                 enable_duplicate_check=req.enable_duplicate_check,
-                force=req.force,
+                # Preserve an explicit API force override; otherwise respect enable_duplicate_check.
+                force=None if req.force is None else bool(req.force),
+                # Skip pre-flight pack expansion - paths are already explicit;
+                # expansion happens lazily inside the job thread instead of here.
+                **_force_upload_request_extras(),
             )
         ],
         source="pending-force-upload",
@@ -1532,6 +1546,20 @@ async def redirect_pending_to_queue(request: Request) -> Response:
 async def redirect_uploads_to_history(request: Request) -> Response:
     """Redirect legacy uploads-page URLs to /history."""
     return RedirectResponse(url="/history", status_code=301)
+
+def _beacon_text(value: str, limit: int) -> str:
+    """Single-line, length-capped copy of a browser-supplied beacon field."""
+    return re.sub(r"[\x00-\x1f\x7f]+", " ", str(value or ""))[:limit].strip()
+
+@app.get("/queue-error-beacon")
+async def queue_error_beacon(title: str = "", detail: str = "", rev: str = "") -> Response:
+    """Log a queue page load/runtime error reported by its inline overlay script."""
+    logger.warning(
+        f"[QUEUE-UI] Browser error beacon (rev={_beacon_text(rev, 64) or 'unknown'}): "
+        f"{_beacon_text(title, 300) or 'Queue error'}"
+        + (f" | {_beacon_text(detail, 1500)}" if detail else "")
+    )
+    return Response(status_code=204)
 
 @app.get("/{page_name}", response_class=HTMLResponse)
 async def get_page(request: Request, page_name: str) -> Response:

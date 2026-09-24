@@ -831,6 +831,16 @@ def test_get_current_settings_preserves_folder_path_categories(monkeypatch) -> N
         {"path": "D:/watch/external-a", "category": "auto", "monitor": False},
         {"path": "D:/watch/movies", "category": "auto", "monitor": True},
     ]
+    # Fallbacks for configs that predate these keys (app-routes-01/03/04).
+    assert result["processing"]["tv_pack_ignore"] == {
+        "enabled": True,
+        "ignore_non_episode": True,
+        "require_episode": True,
+        "require_resolution": False,
+        "require_source": True,
+    }
+    assert result["folders"]["backup_folder"] == str(config_mod.APP_ROOT / "backups")
+    assert result["ui"]["category_appearance_profiles"] == {}
 
 def test_normalize_folder_paths_payload_preserves_explicit_categories() -> None:
     normalized = config_mod._normalize_folder_paths_payload(
