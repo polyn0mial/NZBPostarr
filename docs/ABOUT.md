@@ -43,7 +43,7 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 ### Architecture
 
 - `(root: app.py, main.py, setup.py, version.py)` - FastAPI app + all HTTP routes (app.py); bootstrap/launcher/daemon control (main.py); interactive first-run installer (setup.py); single source of the version string (version.py).
-- `webui/` - Server-rendered Jinja pages plus vanilla-JS page controllers (queue, dashboard, history, settings, stats), built with esbuild/Tailwind via bun.
+- `webui/` - Server-rendered Jinja pages plus Vue 3 ES-module page controllers (queue, dashboard, history, settings, stats), built with esbuild/Tailwind via npm.
 - `logic/` - Business logic: upload queue and job execution, pending-folder scan/classification, indexer uploaders, Usenet streaming/reposting, folder + stream monitors, stats collector, self-updater, optional MCP endpoint.
 - `core/` - Shared foundation: Pydantic config model, SQLAlchemy models/queries, the indexer YAML registry and submission builder, guessit-backed release-name parsing, misc utils.
 - `indexers/` - One YAML file per Usenet indexer (auth, categories, submission shape) - the entire indexer plugin surface; add a site with no code change.
