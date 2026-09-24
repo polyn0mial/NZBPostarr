@@ -146,14 +146,14 @@ def test_failed_retry_never_overwrites_prior_success() -> None:
         assert result.error is None
         assert result.server_name == "first"
 
-    success_map, failed_map = db.get_dashboard_data(["geek"])[1:3]
+    _fully_done, success_map, failed_map, _sizes = db.get_dashboard_data(["geek"])
     assert success_map[key] == {"geek"}
     assert key not in failed_map
 
     # A failure with no prior success is still recorded.
     other = "Show/Show.S01E04.1080p.WEB-DL.mkv"
     assert update_db_destination("geek", other, 100, other, status="failed", error="boom") is True
-    failed_map = db.get_dashboard_data(["geek"])[2]
+    _fully_done, _success_map, failed_map, _sizes = db.get_dashboard_data(["geek"])
     assert failed_map[other] == {"geek": "boom"}
 
 
@@ -199,7 +199,33 @@ def test_duplicate_status_batch_is_size_aware() -> None:
     assert replaced[sized]["geek"] is None
 
 
-# --- db-registry-09 / 10 / 11 -------------------------------------------------
+# --- db-registry-07 -----------------------------------------------------------
+
+
+@pytest.mark.usefixtures("isolated_sqlite_db")
+def test_dashboard_data_returns_filesize_by_indexer() -> None:
+    assert db.get_dashboard_data([]) == (set(), {}, {}, {})
+
+    int_key = "Show/Show.S04E01.mkv"
+    text_key = "Show/Show.S04E02.mkv"
+    bad_key = "Show/Show.S04E03.mkv"
+    for key in (int_key, text_key, bad_key):
+        assert _success(key, size=123) is True
+        assert _success(key, dest="omg", size=123) is True
+    # The live schema stores filesize as TEXT; legacy rows may hold text values.
+    _set_filesize(text_key, "456")
+    _set_filesize(bad_key, "not-a-size")
+
+    fully_done, success_map, failed_map, sizes = db.get_dashboard_data(["geek", "omg"])
+    assert {int_key, text_key, bad_key} <= fully_done
+    assert success_map[int_key] == {"geek", "omg"}
+    assert failed_map == {}
+    assert sizes[int_key] == {"geek": 123, "omg": 123}
+    assert sizes[text_key] == {"geek": 456, "omg": 456}
+    assert bad_key not in sizes
+
+
+# --- db-registry-08 / 09 / 10 / 11 --------------------------------------------
 
 
 def _curl_indexer(**overrides) -> IndexerDefinition:
@@ -239,6 +265,44 @@ def _capture_logs() -> tuple[list[str], int]:
     messages: list[str] = []
     sink_id = logger.add(lambda message: messages.append(str(message)), level="DEBUG")
     return messages, sink_id
+
+
+def test_curl_submission_follows_redirects_and_uses_final_page(tmp_path, monkeypatch) -> None:
+    seen: dict[str, object] = {}
+
+    def fake_request(*_args, **kwargs):
+        seen.update(kwargs)
+        return _response(200, "<html><body>Upload successful</body></html>", "OK")
+
+    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
+    ok, status, _reason = submit_to_indexer(
+        indexer=_curl_indexer(),
+        rls_name="Some.Release.2026.1080p.WEB-DL",
+        nzb_path=_make_sample_nzb(tmp_path),
+        config=_DummySubmitConfig(api_key=""),
+    )
+
+    assert "allow_redirects" not in seen  # requests follows redirects by default
+    assert seen["verify"] is False
+    assert (ok, status) == (True, "success")
+    assert not hasattr(registry_mod, "_curl_redirect_result")
+
+
+def test_curl_submission_error_page_after_redirect_is_a_network_error(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        registry_mod.requests,
+        "request",
+        lambda *_args, **_kwargs: _response(500, "<html><title>Error</title><p>inf=err3</p></html>", "Internal Server Error"),
+    )
+    ok, status, reason = submit_to_indexer(
+        indexer=_curl_indexer(),
+        rls_name="Some.Release.2026.1080p.WEB-DL",
+        nzb_path=_make_sample_nzb(tmp_path),
+        config=_DummySubmitConfig(api_key=""),
+    )
+
+    assert (ok, status) == (False, "network_error")
+    assert reason == "HTTP 500 Internal Server Error | Body: Error inf=err3"
 
 
 def test_http_error_message_uses_status_line_and_meta_description(tmp_path, monkeypatch) -> None:
@@ -319,6 +383,15 @@ def test_successful_submission_logs_redacted_response_body(tmp_path, monkeypatch
 
 
 # --- db-registry-D03 / D04 ----------------------------------------------------
+
+
+def test_available_categories_do_not_mirror_audiobooks(monkeypatch) -> None:
+    books = registry_mod.CategoryMapping(books="7020")
+    indexer = _api_indexer().model_copy(update={"categories": books})
+    monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(all=lambda: [indexer]))
+
+    assert [cat["id"] for cat in registry_mod.get_available_categories()] == ["books"]
+    assert books.resolve_code("audiobooks")[0] == "7020"  # submit-time fallback stays
 
 
 def _server_indexers_dir() -> Path | None:

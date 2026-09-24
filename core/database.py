@@ -1211,24 +1211,29 @@ def get_upload_map(active_ids: List[str]) -> Dict[str, Set[str]]:
 
 def get_dashboard_data(
     active_ids: List[str],
-) -> Tuple[Set[str], Dict[str, Set[str]], Dict[str, Dict[str, str]]]:
-    """Fetch the 'all-done' set, per-indexer success map, and per-indexer failed map.
+) -> Tuple[Set[str], Dict[str, Set[str]], Dict[str, Dict[str, str]], Dict[str, Dict[str, int]]]:
+    """Fetch the 'all-done' set, per-indexer success map, per-indexer failed map,
+    and the stored filesize behind each (item_name, indexer_id) success.
 
     Returns:
-        (fully_done_names, success_map, failed_map)
+        (fully_done_names, success_map, failed_map, filesize_by_indexer)
         - success_map: {item_name: {indexer_ids that succeeded}}
         - failed_map:  {item_name: {indexer_id: error_message}} for items
           that have a 'failed' result but no 'success' result for that indexer.
+        - filesize_by_indexer: {item_name: {indexer_id: filesize}} for the
+          Upload row behind that success, used by callers to confirm a
+          "completed" name still refers to the same file/folder size that
+          was actually uploaded, not just the same name.
     """
     if not active_ids:
-        return set(), {}, {}
+        return set(), {}, {}, {}
 
     started = time.perf_counter()
     try:
         with session_scope() as session:
-            # Fetch distinct (item_name, indexer_id) pairs for active indexers (SUCCESS).
+            # Fetch distinct (item_name, indexer_id, filesize) rows for active indexers (SUCCESS).
             stmt = (
-                select(Upload.item_name, UploadResult.indexer_id)
+                select(Upload.item_name, UploadResult.indexer_id, Upload.filesize)
                 .join(UploadResult)
                 .filter(UploadResult.indexer_id.in_(active_ids))
                 .where(UploadResult.status == "success")
@@ -1236,10 +1241,20 @@ def get_dashboard_data(
             )
 
             mapping: Dict[str, Set[str]] = {}
-            for name, idx_id in session.execute(stmt):
+            filesize_by_indexer: Dict[str, Dict[str, int]] = {}
+            for name, idx_id, filesize in session.execute(stmt):
                 if name not in mapping:
                     mapping[name] = set()
                 mapping[name].add(idx_id)
+                if filesize is not None:
+                    # The filesize column has legacy mixed-type storage (some
+                    # historical rows stored it as text) - coerce to int so
+                    # downstream size comparisons never fail on a str/int
+                    # mismatch between otherwise-equal values.
+                    try:
+                        filesize_by_indexer.setdefault(name, {})[idx_id] = int(filesize)
+                    except (TypeError, ValueError):
+                        pass
 
             # Fetch failed results (only where there is NO success for that indexer)
             failed_stmt = (
@@ -1270,7 +1285,7 @@ def get_dashboard_data(
                 context=f"active_ids={len(active_ids)} mapped_items={len(mapping)} fully_done={len(fully_done)} failed={len(failed_map)}",
                 warn_threshold_s=0.75,
             )
-            return fully_done, mapping, failed_map
+            return fully_done, mapping, failed_map, filesize_by_indexer
     except Exception as e:
         logger.error(f"Failed to fetch dashboard data: {e}")
         raise DatabaseOperationalError("Failed to fetch dashboard data") from e

@@ -624,8 +624,6 @@ def get_available_categories() -> List[Dict[str, Any]]:
 
     for indexer in registry.all():
         mapping = indexer.categories.model_dump()
-        if mapping.get("books") and not mapping.get("audiobooks"):
-            mapping["audiobooks"] = mapping["books"]
         for yaml_key, code in mapping.items():
             if yaml_key == "default" or not code:
                 continue
@@ -948,7 +946,6 @@ def _request_with_cloudflare_retry(
                 files=files_payload,
                 timeout=indexer.timeout,
                 verify=not submission.is_curl,
-                allow_redirects=not submission.is_curl,
             )
 
         is_cloudflare_challenge = response.status_code == 403 and "just a moment" in response.text[:500].lower()
@@ -968,31 +965,6 @@ def _request_with_cloudflare_retry(
         break
 
     return response
-
-
-def _curl_redirect_result(
-    indexer: IndexerDefinition,
-    response: requests.Response,
-    rls_name: str,
-) -> Optional[SubmitResult]:
-    """Interpret CURL-style redirect status without treating error pages as transport failures."""
-    if not getattr(response, "is_redirect", False):
-        return None
-
-    location = response.headers.get("Location", "")
-    location_lower = location.lower()
-    if "inf=ok" in location_lower or "inf=success" in location_lower:
-        log_success(f"{indexer.log_name} Accepted: {rls_name}")
-        return True, "success", "Indexer accepted submission"
-
-    safe_location = redact_url(location)
-    for duplicate_pattern in indexer.success.duplicate_patterns:
-        if duplicate_pattern.lower() in location_lower:
-            logger.warning(f"{indexer.log_name} Duplicate (redirect): {safe_location}")
-            return False, "duplicate", f"Indexer reported duplicate: {safe_location}"
-
-    logger.warning(f"{indexer.log_name} Rejected (redirect): {safe_location}")
-    return False, "rejected", f"Indexer rejected submission: {safe_location}"
 
 
 def _duplicate_bypass_name(rls_name: str) -> str:
@@ -1082,11 +1054,6 @@ def submit_to_indexer(
         if response is None:
             logger.error(f"{indexer.log_name} Failed to get any response from indexer.")
             return False, "network_error", "No response from indexer"
-
-        if submission.is_curl:
-            redirect_result = _curl_redirect_result(indexer, response, rls_name)
-            if redirect_result is not None:
-                return redirect_result
 
         response.raise_for_status()
 
