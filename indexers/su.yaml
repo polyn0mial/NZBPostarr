@@ -1,11 +1,11 @@
-# NZB.su Indexer Definition
-# https://nzb.su
+# NZB.Life Indexer Definition (rebranded from NZB.su)
+# https://nzb.life
 
 id: su
-name: NZB.su
-description: NZB.su indexer with newznab API
-website: https://nzb.su
-favicon_url: https://nzb.su/templates/default/images/favicon.ico
+name: NZB.Life
+description: NZB.Life indexer with newznab API (formerly NZB.su)
+website: https://nzb.life
+favicon_url: https://www.nzb.life/templates/dev/images/icons/favicon.ico
 search_url: https://www.nzb.life/search/%22-{poster}%22
 api_key: '' # Set in config.yaml
 icon: database
