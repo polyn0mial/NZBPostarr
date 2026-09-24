@@ -34,7 +34,7 @@ from pydantic import BaseModel, Field
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 from core import database
-from core.config import get_config
+from core.config import APP_ROOT, get_config
 from core.redaction import SECRET_MASK
 from core.utils import VIDEO_EXTENSIONS, start_watchdog_observer, stop_watchdog_observer
 from logic import pending_snapshot as pending_snapshot_mod
@@ -68,8 +68,6 @@ _anime_check_inflight: bool = False  # True while Jikan background check is runn
 _anime_check_lock = threading.Lock()
 _anime_check_thread: Optional[threading.Thread] = None
 _pending_refresh_lock = threading.Lock()
-_anime_check_last_attempt: float = 0.0
-_ANIME_CHECK_COOLDOWN_S: float = 3600.0
 _boot_reaper_task: Optional[asyncio.Task[Any]] = None
 WEBUI_ROOT = Path(__file__).parent / "webui"
 ASSETS_DIR = WEBUI_ROOT / "assets"
@@ -86,14 +84,14 @@ _MCP_PATH = "/mcp"
 Settings = get_config
 
 __all__ = [
-    'APIRouter', 'ASSETS_DIR', 'Any', 'AsyncExitStack', 'AsyncGenerator', 'BaseModel', 'Callable', 'Depends',
+    'APIRouter', 'APP_ROOT', 'ASSETS_DIR', 'Any', 'AsyncExitStack', 'AsyncGenerator', 'BaseModel', 'Callable', 'Depends',
     'Dict', 'FastAPI', 'Field', 'File', 'FileResponse', 'FileSystemEventHandler', 'Form', 'GZipMiddleware',
     'HTMLResponse', 'HTTPException', 'JSONResponse', 'Jinja2Templates', 'List', 'Observer', 'Optional', 'Path',
     'ProcessingJobRequest', 'RedirectResponse', 'Request', 'Response', 'SECRET_MASK', 'Set', 'Settings',
-    'StaticFiles', 'UploadFile', 'UploadService', 'VIDEO_EXTENSIONS', 'WEBUI_ROOT', '_ANIME_CHECK_COOLDOWN_S',
+    'StaticFiles', 'UploadFile', 'UploadService', 'VIDEO_EXTENSIONS', 'WEBUI_ROOT',
     '_AUTH_COOKIE', '_AUTH_COOKIE_MAX_AGE', '_AUTH_PUBLIC_PATHS', '_AUTH_PUBLIC_PREFIXES', '_MCP_ASGI_APP',
     '_MCP_PATH', '_PENDING_BUILD_SUMMARY', '_PENDING_FILTER', '_anime_check_inflight',
-    '_anime_check_last_attempt', '_anime_check_lock', '_anime_check_thread', '_boot_reaper_task',
+    '_anime_check_lock', '_anime_check_thread', '_boot_reaper_task',
     '_pending_index', '_pending_refresh_lock', '_shared_dashboard_stats_enabled',
     '_shared_history_tracking_enabled', '_shared_stats_page_enabled', 'asynccontextmanager', 'asyncio',
     'console', 'console_router', 'copy', 'dashboard_router', 'database', 'get_config',

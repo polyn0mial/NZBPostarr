@@ -1,11 +1,13 @@
 # Auto-split from app.py - verbatim symbol bodies, synthesized imports.
 
+from typing import Iterator
+
 from app_base import (
     Any, BaseModel, Depends, Dict, File, Form, HTTPException, List, Optional, Path, Set, UploadFile, UploadService, VIDEO_EXTENSIONS,
     _PENDING_BUILD_SUMMARY, _PENDING_FILTER, asyncio, database, get_configured_folders, get_upload_service, json, logger, os, pending_snapshot_mod,
     processing, settings_router, system_router, tempfile, tests_router, time, updater, uploads_router, usenet_stream,
 )
-from app_g1 import (BulkDeleteRequest, QueuePriorityRequest, QueueRevalidateRequest, QueueScheduleRequest, RemoveQueuedJobItemRequest, RenameJobRequest, ReorderQueueRequest, ReorderQueuedJobItemsRequest, StartQueueRequest, StreamStartResponse, UpdateInstallRequest, _mask_config_secrets, _normalize_request_strings, _resolved_policy_path)  # noqa: F401
+from app_g1 import (BulkDeleteRequest, CreateBackupRequest, QueuePriorityRequest, QueueRevalidateRequest, QueueScheduleRequest, RemoveQueuedJobItemRequest, RenameJobRequest, ReorderQueueRequest, ReorderQueuedJobItemsRequest, StartQueueRequest, StreamStartResponse, UpdateInstallRequest, _history_database_error, _mask_config_secrets, _normalize_request_strings, _resolved_policy_path)  # noqa: F401
 
 def _bulk_selection_excluded_roots(conf: Any) -> tuple[Path, ...]:
     """Return configured roots which must not participate in mass selection."""
@@ -297,6 +299,26 @@ async def reorder_active_job_items_route(
         raise HTTPException(status_code=409, detail="Job is not active")
     raise HTTPException(status_code=400, detail="Invalid remaining-item order for active job")
 
+@uploads_router.delete("/queue/{job_id}/active-items")
+async def remove_active_job_item_route(
+    job_id: str,
+    req: RemoveQueuedJobItemRequest,
+    service: UploadService = Depends(get_upload_service),
+) -> Dict[str, Any]:
+    """Remove a single target path from a running or paused job."""
+    if not req.path:
+        raise HTTPException(status_code=400, detail="No path provided")
+
+    if service.remove_active_job_item(job_id, req.path):
+        return {"status": "removed", "job_id": job_id, "path": req.path}
+
+    job = service.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.get("status") not in ("running", "paused"):
+        raise HTTPException(status_code=409, detail="Job is not active")
+    raise HTTPException(status_code=404, detail="Path not found in active job")
+
 @uploads_router.delete("/queue/{job_id}/items")
 async def remove_queued_job_item_route(
     job_id: str,
@@ -361,7 +383,10 @@ async def bulk_delete_upload_items(req: BulkDeleteRequest) -> Dict[str, Any]:
     if not req.item_names:
         return {"status": "success", "deleted_count": 0}
 
-    deleted_count = database.bulk_delete_upload_items(req.item_names)
+    try:
+        deleted_count = database.bulk_delete_upload_items(req.item_names)
+    except database.DatabaseOperationalError as exc:
+        raise _history_database_error(exc) from exc
     return {"status": "success", "deleted_count": deleted_count}
 
 @settings_router.get("/raw")
@@ -474,6 +499,149 @@ async def get_update_backups(limit: int = 20) -> Dict[str, Any]:
     backups = await asyncio.to_thread(updater.list_backups, limit=limit)
     return {"backups": backups}
 
+def _create_full_backup_archive(skip_tmp_contents: bool = True) -> Dict[str, Any]:
+    """Create a thorough tar.gz backup of the important NZBPostarr state.
+
+    The archive holds .env and the config file, so it is written owner-only (0600).
+    """
+    import io
+    import socket
+    import tarfile
+    from datetime import datetime
+
+    from core.config import APP_ROOT, get_config
+
+    conf = get_config()
+    source_root = APP_ROOT
+    backup_root = Path(getattr(conf, "backup_folder", APP_ROOT / "backups")).expanduser()
+    backup_root.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    archive_name = f"nzbpostarr_full_backup_{timestamp}.tar.gz"
+    archive_path = backup_root / archive_name
+
+    log_db = getattr(conf, "log_db", None)
+    important_targets = [
+        source_root,
+        source_root / ".config" / "nzbpostarr",
+        source_root / "data",
+        source_root / "anime_cache.json",
+        *([Path(log_db)] if log_db else []),
+        source_root / ".env",
+        Path("/etc/systemd/system/nzbpostarr.service"),
+    ]
+    excluded_roots = [
+        source_root / ".git",
+        source_root / ".venv",
+        source_root / "venv",
+        source_root / "tmp_vt",
+        source_root / ".local",
+        source_root / "backups",
+        backup_root,
+    ]
+    tmp_root = (source_root / "data" / "tmp").resolve()
+    skip_named_dirs: Set[str] = set()
+    stateful_tmp_suffixes = {
+        ".json", ".yaml", ".yml", ".toml", ".ini", ".txt", ".log", ".db", ".sqlite", ".sqlite3",
+    }
+
+    def is_within(path: Path, root: Path) -> bool:
+        try:
+            path.resolve().relative_to(root.resolve())
+            return True
+        except (ValueError, OSError):
+            return False
+
+    def should_skip(path: Path) -> bool:
+        resolved = path.resolve() if path.exists() else path
+        if any(part in skip_named_dirs for part in resolved.parts):
+            return True
+        for prefix in excluded_roots:
+            if prefix.exists() and is_within(resolved, prefix):
+                return True
+        if skip_tmp_contents and is_within(resolved, tmp_root):
+            if resolved == tmp_root or path.is_dir():
+                return False
+            return path.suffix.lower() not in stateful_tmp_suffixes
+        return False
+
+    def iter_backup_paths(target: Path) -> Iterator[Path]:
+        if not target.exists():
+            return
+        if target.is_file():
+            if not should_skip(target):
+                yield target
+            return
+        yield target
+        for path in sorted(target.rglob("*")):
+            if should_skip(path):
+                continue
+            yield path
+
+    def archive_name_for(path: Path) -> str:
+        if is_within(path, source_root):
+            return str(Path(source_root.name) / path.resolve().relative_to(source_root.resolve()))
+        return str(Path("system") / path.relative_to(path.anchor))
+
+    file_count = 0
+    added_names: set[str] = set()
+    # Create the file owner-only before any secret is written into it.
+    fd = os.open(str(archive_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_BINARY", 0), 0o600)
+    with os.fdopen(fd, "wb") as raw_archive, tarfile.open(fileobj=raw_archive, mode="w:gz") as tar:
+        for target in important_targets:
+            for path in iter_backup_paths(target):
+                arcname = archive_name_for(path)
+                if arcname in added_names:
+                    continue
+                tar.add(path, arcname=arcname, recursive=False)
+                added_names.add(arcname)
+                file_count += 1
+
+        manifest = {
+            "created_at": datetime.now().isoformat(),
+            "hostname": socket.gethostname(),
+            "source_root": str(source_root),
+            "backup_root": str(backup_root),
+            "archive_name": archive_name,
+            "skip_tmp_contents": skip_tmp_contents,
+            "included_targets": [str(path) for path in important_targets if path.exists()],
+            "excluded_roots": [str(path) for path in excluded_roots],
+            "tmp_stateful_suffixes": sorted(stateful_tmp_suffixes),
+        }
+        payload = json.dumps(manifest, indent=2).encode("utf-8")
+        info = tarfile.TarInfo(name=f"{source_root.name}/backup-manifest.json")
+        info.size = len(payload)
+        info.mtime = int(time.time())
+        tar.addfile(info, io.BytesIO(payload))
+        file_count += 1
+    try:
+        os.chmod(archive_path, 0o600)
+    except OSError:
+        pass
+
+    size_bytes = archive_path.stat().st_size if archive_path.exists() else 0
+    return {
+        "status": "success",
+        "archive_path": str(archive_path),
+        "archive_name": archive_name,
+        "size_bytes": size_bytes,
+        "file_count": file_count,
+        "skip_tmp_contents": skip_tmp_contents,
+        "backup_root": str(backup_root),
+        "included_targets": [str(path) for path in important_targets if path.exists()],
+    }
+
+@system_router.post("/backup/create")
+async def create_full_backup(req: CreateBackupRequest) -> Dict[str, Any]:
+    """Create a full NZBPostarr backup archive in the configured backup folder."""
+    try:
+        return await asyncio.to_thread(
+            _create_full_backup_archive,
+            skip_tmp_contents=req.skip_tmp_contents,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create backup: {exc}") from exc
+
 @system_router.post("/update/install/github")
 async def install_update_from_github(req: UpdateInstallRequest) -> Dict[str, Any]:
     """Install the latest (or selected) update directly from GitHub."""
@@ -541,6 +709,12 @@ class ForceUploadRequest(BaseModel):
     indexer_id: Optional[str] = None
     force: Optional[bool] = None
     bulk_selection: bool = False
+
+class CategoryOverrideRequest(BaseModel):
+    """API request model for persisting a manual category override for a pending item."""
+
+    key: str
+    category: Optional[str] = None
 
 class AnimeCacheCorrectionRequest(BaseModel):
     """Persist a user correction for one title's anime detector result."""
