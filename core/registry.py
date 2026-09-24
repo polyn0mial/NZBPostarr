@@ -624,8 +624,6 @@ def get_available_categories() -> List[Dict[str, Any]]:
 
     for indexer in registry.all():
         mapping = indexer.categories.model_dump()
-        if mapping.get("books") and not mapping.get("audiobooks"):
-            mapping["audiobooks"] = mapping["books"]
         for yaml_key, code in mapping.items():
             if yaml_key == "default" or not code:
                 continue
@@ -948,7 +946,6 @@ def _request_with_cloudflare_retry(
                 files=files_payload,
                 timeout=indexer.timeout,
                 verify=not submission.is_curl,
-                allow_redirects=not submission.is_curl,
             )
 
         is_cloudflare_challenge = response.status_code == 403 and "just a moment" in response.text[:500].lower()
@@ -968,31 +965,6 @@ def _request_with_cloudflare_retry(
         break
 
     return response
-
-
-def _curl_redirect_result(
-    indexer: IndexerDefinition,
-    response: requests.Response,
-    rls_name: str,
-) -> Optional[SubmitResult]:
-    """Interpret CURL-style redirect status without treating error pages as transport failures."""
-    if not getattr(response, "is_redirect", False):
-        return None
-
-    location = response.headers.get("Location", "")
-    location_lower = location.lower()
-    if "inf=ok" in location_lower or "inf=success" in location_lower:
-        log_success(f"{indexer.log_name} Accepted: {rls_name}")
-        return True, "success", "Indexer accepted submission"
-
-    safe_location = redact_url(location)
-    for duplicate_pattern in indexer.success.duplicate_patterns:
-        if duplicate_pattern.lower() in location_lower:
-            logger.warning(f"{indexer.log_name} Duplicate (redirect): {safe_location}")
-            return False, "duplicate", f"Indexer reported duplicate: {safe_location}"
-
-    logger.warning(f"{indexer.log_name} Rejected (redirect): {safe_location}")
-    return False, "rejected", f"Indexer rejected submission: {safe_location}"
 
 
 def _duplicate_bypass_name(rls_name: str) -> str:
@@ -1083,11 +1055,6 @@ def submit_to_indexer(
             logger.error(f"{indexer.log_name} Failed to get any response from indexer.")
             return False, "network_error", "No response from indexer"
 
-        if submission.is_curl:
-            redirect_result = _curl_redirect_result(indexer, response, rls_name)
-            if redirect_result is not None:
-                return redirect_result
-
         response.raise_for_status()
 
         success, is_duplicate = _check_success(indexer, response)
@@ -1113,6 +1080,8 @@ def submit_to_indexer(
 
         if success:
             log_success(f"{indexer.log_name} Accepted: {rls_name}")
+            resp_body = redact_text(response.text[:300].replace(chr(10), " ").strip(), secrets=(api_key, username))
+            logger.info(f"{indexer.log_name} Response: HTTP {response.status_code} | {resp_body}")
             return True, "success", "Indexer accepted submission"
 
         # Failed submission - log response for debugging
@@ -1135,15 +1104,37 @@ def submit_to_indexer(
         return False, "rejected", f"Indexer rejected submission: {resp_trunc or 'unknown rejection'}"
 
     except requests.RequestException as e:
-        # Check for 400/401/etc and log body if available
+        # Keep the status terse so we do not leak full URLs with API keys.
         response_secrets = (api_key, username)
-        err_msg = redact_text(e, secrets=response_secrets)
         if hasattr(e, "response") and e.response is not None:
-            resp_body = redact_text(
-                e.response.text[:200].replace("\n", " ").strip(),
-                secrets=response_secrets,
+            err_msg = f"HTTP {e.response.status_code} {e.response.reason or 'Error'}"
+        else:
+            # Connection-level errors (SSL, timeout, connection reset, etc.)
+            # have no HTTP response at all. The bare exception class name
+            # ("SSLError") gives no way to distinguish a cert failure from a
+            # reset connection from a handshake timeout, so include the
+            # exception's own message too -- redacted, since urllib3's error
+            # text can embed the full request URL including the API key.
+            detail = redact_text(e, secrets=response_secrets)[:300].replace("\n", " ").strip()
+            err_msg = f"{type(e).__name__}: {detail}" if detail else type(e).__name__
+        if hasattr(e, "response") and e.response is not None:
+            body = e.response.text[:3000]
+            meta = re.search(
+                r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']{1,300})',
+                body,
+                re.IGNORECASE,
+            ) or re.search(
+                r'<meta[^>]+content=["\']([^"\']{1,300})["\'][^>]+name=["\']description["\']',
+                body,
+                re.IGNORECASE,
             )
-            err_msg += f" | Body: {resp_body}"
+            if meta:
+                resp_body = meta.group(1).strip()
+            elif body.strip().startswith("<"):
+                resp_body = " ".join(re.sub(r"<[^>]+>", " ", body).split())[:200]
+            else:
+                resp_body = body[:200].replace("\n", " ").strip()
+            err_msg += f" | Body: {redact_text(resp_body, secrets=response_secrets)}"
 
         logger.warning(f"{indexer.log_name} submission failed: {err_msg}")
 
