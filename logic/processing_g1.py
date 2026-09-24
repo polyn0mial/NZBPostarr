@@ -49,6 +49,22 @@ def _mediainfo_output_path(path: Path, conf: Any) -> Path:
     """Return the canonical mediainfo sidecar path for an item."""
     return conf.mediainfo_sub / f"{path.name}.mediainfo.nfo"
 
+def _mediainfo_sidecar_has_escaped_names(info_path: Path) -> bool:
+    """True for sidecars written by the old re.escape code ('Movie\\.2020\\ 1080p').
+
+    Sanitized names use forward slashes only, so a backslash on a name line
+    marks an old sidecar that must be regenerated instead of reused.
+    """
+    try:
+        text = info_path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(
+        "\\" in line
+        for line in text.splitlines()
+        if line.startswith(("Complete name", "Folder name", "File name"))
+    )
+
 def _sanitize_mediainfo_output(output: str, target: Path, conf: Any) -> str:
     """Strip absolute host paths from the mediainfo text artifact."""
     try:

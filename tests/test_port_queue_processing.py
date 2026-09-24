@@ -36,6 +36,17 @@ def test_mediainfo_names_are_written_literally(tmp_path) -> None:
     assert "\\" not in sanitized
 
 
+def test_old_escaped_mediainfo_sidecars_are_not_reused(tmp_path) -> None:
+    # processing-D04: sidecars written by the old re.escape code are regenerated once.
+    old = tmp_path / "old.mediainfo.nfo"
+    old.write_text("General\nComplete name : Movies/Movie\\.2020\\ 1080p\\-GRP\\.mkv\n", encoding="utf-8")
+    new = tmp_path / "new.mediainfo.nfo"
+    new.write_text("General\nComplete name : Movies/Movie.2020 1080p-GRP.mkv\n", encoding="utf-8")
+
+    assert processing._mediainfo_sidecar_has_escaped_names(old) is True
+    assert processing._mediainfo_sidecar_has_escaped_names(new) is False
+
+
 def test_rootless_file_key_includes_pack_folder(tmp_path) -> None:
     # processing-06: same-named episodes of two packs get distinct keys.
     first = _touch_file(tmp_path / "X.S01.playWEB" / "ep.mkv")

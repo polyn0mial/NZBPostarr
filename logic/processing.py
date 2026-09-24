@@ -37,6 +37,7 @@ from logic.processing_g1 import (
     _processing_cached_anime_lookup as _processing_cached_anime_lookup, _processing_tool_commands as _processing_tool_commands,
     _resolve_ambiguous_submission_category as _resolve_ambiguous_submission_category, _resolve_targeted_path as _resolve_targeted_path,
     _runtime_checkpoint_path_key as _runtime_checkpoint_path_key, _safe_fs_component as _safe_fs_component, _safe_mtime as _safe_mtime,
+    _mediainfo_sidecar_has_escaped_names as _mediainfo_sidecar_has_escaped_names,
     _sanitize_mediainfo_output as _sanitize_mediainfo_output, _scan_release_media as _scan_release_media, _select_upload_server as _select_upload_server,
     _selected_indexers as _selected_indexers, _should_skip_completed_item as _should_skip_completed_item,
     _split_parallel_server_connections as _split_parallel_server_connections, _submission_category_label as _submission_category_label,
@@ -243,6 +244,7 @@ def generate_mediainfo(
             info_path.is_file()
             and info_path.stat().st_size > 0
             and info_path.stat().st_mtime >= target.stat().st_mtime
+            and not _mediainfo_sidecar_has_escaped_names(info_path)
         ):
             log_verbose(f"Reusing current Mediainfo for {path.name}")
             return info_path
