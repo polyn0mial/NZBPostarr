@@ -274,7 +274,7 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
     ]
 
 
-def test_books_mapping_advertises_audiobook_fallback_for_all_jobs(monkeypatch) -> None:
+def test_books_mapping_advertises_only_books_for_all_jobs(monkeypatch) -> None:
     from logic import processing
 
     indexer = IndexerDefinition(
@@ -290,9 +290,10 @@ def test_books_mapping_advertises_audiobook_fallback_for_all_jobs(monkeypatch) -
     )
 
     categories = registry_mod.get_available_categories()
-    assert [category["id"] for category in categories] == ["audiobooks", "books"]
-    assert processing._resolve_job_categories("all") == ["audiobooks", "books"]
-    assert processing._resolve_job_categories("mixed") == ["audiobooks", "books"]
+    # D03: a books-only mapping no longer mirrors an Audiobooks category.
+    assert [category["id"] for category in categories] == ["books"]
+    assert processing._resolve_job_categories("all") == ["books"]
+    assert processing._resolve_job_categories("mixed") == ["books"]
 
 
 def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch) -> None:
@@ -502,40 +503,6 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
         assert ok is True, case_name
         assert status == "success", case_name
         assert seen[capture_key][capture_field] == expected_value, case_name
-
-def test_submit_to_indexer_interprets_and_redacts_curl_redirect(tmp_path, monkeypatch) -> None:
-    class DummyResponse:
-        status_code = 302
-        text = ""
-        is_redirect = True
-        headers = {
-            "Location": "https://example.invalid/result?inf=duplicate&apikey=do-not-return",
-        }
-
-        def raise_for_status(self) -> None:
-            raise AssertionError("redirect response must be interpreted before raise_for_status")
-
-    monkeypatch.setattr(registry_mod.requests, "request", lambda *_args, **_kwargs: DummyResponse())
-
-    indexer = IndexerDefinition(
-        id="curl-redirect",
-        name="CURL Redirect",
-        submit_url="https://example.invalid/api-upload.php",
-        method="CURL",
-        auth=AuthConfig(method="none"),
-        success=registry_mod.SuccessPatterns(duplicate_patterns=["duplicate"]),
-    )
-    ok, status, reason = submit_to_indexer(
-        indexer=indexer,
-        rls_name="Some.Release.2026.1080p.WEB-DL",
-        nzb_path=_make_sample_nzb(tmp_path),
-        config=_DummySubmitConfig(api_key=""),
-    )
-
-    assert ok is False
-    assert status == "duplicate"
-    assert "do-not-return" not in reason
-    assert "apikey=%5BREDACTED%5D" in reason
 
 def test_build_pending_summary_prefers_backfill_indexers_for_task_totals() -> None:
     summary = app_mod._build_pending_summary(

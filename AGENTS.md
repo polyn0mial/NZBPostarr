@@ -219,8 +219,9 @@ weakening an assertion unless the product contract intentionally changed.
   actual submission endpoint, authorization, fields, categories, and success
   response from that indexer's documentation or a live authorized test.
   Newznab defines retrieval, not a universal upload API.
-- `_curl_redirect_result` is OMGwtfnzbs-specific. Generalize redirect success
-  patterns in the schema only after a second verified CURL-style target exists.
+- CURL-style submissions (OMGwtfnzbs) follow redirects like any other request
+  and are judged by the final page with the indexer's normal success and
+  duplicate rules. Do not reintroduce a redirect-only success verdict.
 - This is a source-released application, not a Python distribution. The absence
   of a `[project]` table in `pyproject.toml` is intentional; CI enforces the
   Python 3.12 floor on 3.12 and 3.13. Revisit packaging metadata only if the app

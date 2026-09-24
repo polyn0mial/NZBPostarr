@@ -425,8 +425,9 @@ findFolderEntryForGroup(group) {
     },
 
 isGroupManualSelectionOnly(group) {
+      // A configured directory with bulk selection turned off is manual selection only.
       const entry = this.findFolderEntryForGroup(group);
-      return !!(entry && entry.manual_select_only);
+      return !!(entry && entry.allow_bulk_selection === false);
     },
 
 /**

@@ -1,5 +1,5 @@
 // Auto-split from queue.js - verbatim methods bodies.
-import { categoryMeta, categoryLabel } from "page-base";
+import { queueCategoryMeta as categoryMeta, categoryLabel } from "page-base";
 export default {
 async correctAnimeCache(item, isAnime) {
       if (!item || !item.name) return;
