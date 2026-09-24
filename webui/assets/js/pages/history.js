@@ -156,6 +156,23 @@ function buildUploadGroupFromServerGroup(sg) {
     return group;
 }
 
+// The history routes report a database failure (e.g. a locked DB) either as an error status
+// with a `detail` message or as an empty payload carrying an `error` message. Treat the latter
+// as a failure too, so an unreadable history is never shown as an empty one.
+function throwIfHistoryError(result) {
+    if (result && typeof result === 'object' && !Array.isArray(result) && typeof result.error === 'string' && result.error) {
+        throw new Error(result.error);
+    }
+    return result;
+}
+
+// Toast text for a failed history request: the generic failure plus the server's message.
+function historyErrorMessage(error, fallback) {
+    const message = typeof error?.message === 'string' ? error.message.trim() : '';
+    if (!message || message === '[object Object]') return fallback;
+    return `${fallback}: ${message}`;
+}
+
 // Grouped-view fetch branch of loadUploads: pull one page of server-side upload groups.
 // Returns false when a newer request has already superseded this one (`self._uploadsRequestSeq`
 // moved on), matching the original inline `return;` that used to skip the post-fetch cleanup too.
@@ -173,6 +190,7 @@ async function fetchGroupedUploadsPage(self, requestSeq) {
 
     const result = await self.apiFetch(`/api/uploads/grouped?${params}`);
     if (requestSeq !== self._uploadsRequestSeq) return false;
+    throwIfHistoryError(result);
     self.serverGroups = result.groups || [];
     self.totalGroups = result.total_groups || 0;
     self.totalCount = self.totalGroups;
@@ -198,6 +216,7 @@ async function fetchFlatUploadsPage(self, requestSeq) {
 
     const result = await self.apiFetch(`/api/uploads/recent?${params}`);
     if (requestSeq !== self._uploadsRequestSeq) return false;
+    throwIfHistoryError(result);
 
     if (Array.isArray(result)) {
         self.uploads = result;
@@ -219,6 +238,8 @@ const vm = createVuePage({
             // Uploads data
             uploads: [],
             loading: true,
+            // Server message from the last failed list load (e.g. a database error); '' when it loaded
+            uploadsError: '',
 
             // Stats
             stats: {
@@ -340,6 +361,7 @@ const vm = createVuePage({
 
         // Empty state message for the table
         emptyStateMessage() {
+            if (this.uploadsError) return historyErrorMessage({ message: this.uploadsError }, 'Could not load upload history');
             return this.searchQuery
                 ? 'No matches found for "' + this.searchQuery + '"'
                 : 'No uploads found';
@@ -520,10 +542,10 @@ const vm = createVuePage({
             this.loading = true;
             this.selectedJobIds = [];
             try {
-                this.jobsList = await this.apiFetch('/api/uploads/history?limit=100');
+                this.jobsList = throwIfHistoryError(await this.apiFetch('/api/uploads/history?limit=100'));
             } catch (e) {
                 if (!e.isOffline) {
-                    this.showToast('error', 'Error', 'Failed to load job history');
+                    this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to load job history'));
                 }
             } finally {
                 this.loading = false;
@@ -538,10 +560,10 @@ const vm = createVuePage({
             this.jobModalOpen = true;
             this.$nextTick(() => this.refreshIcons());
             try {
-                this.jobModalUploads = await this.apiFetch(`/api/uploads/history/${job.job_id}/uploads`);
+                this.jobModalUploads = throwIfHistoryError(await this.apiFetch(`/api/uploads/history/${job.job_id}/uploads`));
             } catch (e) {
                 if (!e.isOffline) {
-                    this.showToast('error', 'Error', 'Failed to load upload details');
+                    this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to load upload details'));
                 }
             } finally {
                 this.jobModalLoading = false;
@@ -612,16 +634,16 @@ const vm = createVuePage({
             });
             if (!ok) return;
             try {
-                await this.apiFetch('/api/uploads/history', {
+                throwIfHistoryError(await this.apiFetch('/api/uploads/history', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ job_ids: [jobId] }),
-                });
+                }));
                 this.showToast('success', 'Deleted', 'Job removed from history');
                 await this.loadJobs();
             } catch (e) {
                 if (!e.isOffline) {
-                    this.showToast('error', 'Error', 'Failed to delete job');
+                    this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to delete job'));
                 }
             }
         },
@@ -637,17 +659,17 @@ const vm = createVuePage({
             });
             if (!ok) return;
             try {
-                await this.apiFetch('/api/uploads/history', {
+                throwIfHistoryError(await this.apiFetch('/api/uploads/history', {
                     method: 'DELETE',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ job_ids: [...this.selectedJobIds] }),
-                });
+                }));
                 this.showToast('success', 'Deleted', `${count} job${count !== 1 ? 's' : ''} removed`);
                 this.selectedJobIds = [];
                 await this.loadJobs();
             } catch (e) {
                 if (!e.isOffline) {
-                    this.showToast('error', 'Error', 'Failed to delete jobs');
+                    this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to delete jobs'));
                 }
             }
         },
@@ -743,6 +765,7 @@ const vm = createVuePage({
                     ? await fetchGroupedUploadsPage(this, requestSeq)
                     : await fetchFlatUploadsPage(this, requestSeq);
                 if (!fetched) return;
+                this.uploadsError = '';
 
                 // Clamp current page if needed
                 if (this.currentPage > this.totalPages) {
@@ -754,8 +777,11 @@ const vm = createVuePage({
                 this.selectAll = false;
 
             } catch (e) {
-                if (requestSeq === this._uploadsRequestSeq && !isSilent && !e.isOffline) {
-                    this.showToast('error', 'Error', 'Failed to load uploads');
+                if (requestSeq === this._uploadsRequestSeq && !e.isOffline) {
+                    this.uploadsError = e.message || 'Unknown error';
+                    if (!isSilent) {
+                        this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to load uploads'));
+                    }
                 }
             } finally {
                 if (requestSeq === this._uploadsRequestSeq) {
@@ -852,13 +878,13 @@ const vm = createVuePage({
             });
             if (!ok) return;
             try {
-                await this.apiDelete(`/api/uploads/item/${encodeURIComponent(itemName)}`);
+                throwIfHistoryError(await this.apiDelete(`/api/uploads/item/${encodeURIComponent(itemName)}`));
                 this.loadUploads(false);
                 this.loadStats();
                 this.showToast('success', 'Deleted', 'Item removed from history');
             } catch (e) {
                 console.error('Delete failed:', e);
-                this.showToast('error', 'Error', 'Failed to delete item');
+                this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to delete item'));
             }
         },
 
@@ -875,13 +901,13 @@ const vm = createVuePage({
             if (!ok) return;
 
             try {
-                await this.apiPost('/api/uploads/item/bulk-delete', { item_names: selected });
+                throwIfHistoryError(await this.apiPost('/api/uploads/item/bulk-delete', { item_names: selected }));
                 this.showToast('success', 'Deleted', `${selected.length} items removed from history`);
                 this.loadUploads(false);
                 this.loadStats();
             } catch (e) {
                 console.error('Bulk delete failed:', e);
-                this.showToast('error', 'Error', 'Failed to delete items');
+                this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to delete items'));
             }
         },
 
@@ -942,7 +968,7 @@ const vm = createVuePage({
             try {
                 const params = new URLSearchParams({ title_key: group.titleKey });
                 if (this.filterDestination !== 'all') params.append('destination', this.filterDestination);
-                const data = await this.apiFetch(`/api/uploads/grouped/items?${params}`);
+                const data = throwIfHistoryError(await this.apiFetch(`/api/uploads/grouped/items?${params}`));
                 const items = Array.isArray(data.items) ? data.items : [];
                 this.serverGroups = this.serverGroups.map(sg => {
                     const sgKey = sg.title_key || (sg.show_name || '').toLowerCase();
@@ -957,7 +983,7 @@ const vm = createVuePage({
                 this.uploads = this.serverGroups.flatMap(sg => Array.isArray(sg.items) ? sg.items : []);
             } catch (e) {
                 if (!e.isOffline) {
-                    this.showToast('error', 'Error', 'Failed to load group details');
+                    this.showToast('error', 'Error', historyErrorMessage(e, 'Failed to load group details'));
                 }
                 this.expandedGroups[group.key] = false;
             } finally {

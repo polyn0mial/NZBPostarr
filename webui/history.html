@@ -1,5 +1,62 @@
-{% extends "base.html" %} {% block title %}History{% endblock %} {% block page_title %}History{% endblock %} {% block header_title %}History{% endblock %} {% block header_subtitle %}History of completed uploads to indexers{% endblock %} {% block header_divider_classes %}pb-1 mb-0{% endblock %} {%
-block content %}
+{% extends "base.html" %} {% block title %}History{% endblock %} {% block page_title %}History{% endblock %} {% block header_title %}History{% endblock %} {% block header_subtitle %}History of completed uploads to indexers{% endblock %} {% block header_divider_classes %}pb-1 mb-0{% endblock %} {% block extra_head %}
+<style>
+    /* ── History page-scoped tooltip styles ── */
+    /* Wider, centred tooltips inside the uploads table so long errors and group counts are not clipped. */
+    .uploads-table .infotip-content {
+        min-width: 140px;
+        max-width: min(320px, calc(100vw - 32px));
+    }
+    .uploads-table .infotip-header {
+        justify-content: center;
+        text-align: center;
+        white-space: nowrap;
+    }
+    .uploads-table .infotip-footer {
+        text-align: center;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    /* Destination tooltip card: favicon + name title row, then the upload result. */
+    .uploads-table .dest-infotip {
+        min-width: 0;
+        width: max-content;
+        max-width: min(280px, calc(100vw - 32px));
+        overflow: visible !important;
+    }
+    .dest-infotip-title {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.45rem;
+        margin: 0;
+        padding: 0 0 0.4rem;
+        border-bottom: 1px solid var(--notion-divider);
+        color: var(--notion-text-secondary);
+        font-size: 9.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        line-height: 1.2;
+        text-align: center;
+        text-transform: uppercase;
+        white-space: nowrap;
+    }
+    .dest-infotip-body {
+        margin: 0;
+        padding-top: 0.45rem;
+        color: var(--notion-text-primary);
+        font-size: 10px;
+        font-weight: 500;
+        line-height: 1.35;
+        text-align: center;
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: break-word;
+    }
+    .dest-infotip-body.is-failed {
+        color: var(--notion-error);
+    }
+</style>
+{% endblock %} {% block content %}
 <div class="flex flex-wrap gap-2">
     <div class="bg-notion-bg border border-notion-border rounded-lg px-4 py-2 text-center flex-1 min-w-25 cursor-help" title="Total TV show items (episodes and packs) uploaded successfully in the last 60 minutes">
         <p class="text-xl font-semibold text-cyan-400" v-text="stats.tvLastHour"></p>
@@ -194,7 +251,7 @@ block content %}
                 </tr>
                 <!-- Upload Rows: FLAT view -->
                 <template v-else-if="viewMode === 'flat'">
-                    <tr v-for="item in (uploads || [])" :key="item?.item_name || Math.random()" class="hover:bg-notion-bg-hover transition-colors group cursor-pointer" @click="openUploadDetails(item)">
+                    <tr v-for="(item, itemIndex) in (uploads || [])" :key="item?.item_name || Math.random()" class="hover:bg-notion-bg-hover transition-colors group cursor-pointer" @click="openUploadDetails(item)">
                         <td class="pl-3 pr-1 py-1.5 align-middle">
                             <input type="checkbox" :checked="isItemSelected(item?.item_name)" @click.stop @change="toggleItemSelection(item?.item_name, $event.target.checked)" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
                         </td>
@@ -218,6 +275,7 @@ block content %}
                                     v-for="dest in getDestinationDots(item)"
                                     :key="dest.id"
                                     class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                    :class="itemIndex < 2 ? 'infotip-bottom' : ''"
                                     :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.status === 'success' ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
                                     <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
                                     <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -225,13 +283,13 @@ block content %}
                                         <path d="M3 5v14a9 3 0 0 0 18 0V5" />
                                         <path d="M3 12a9 3 0 0 0 18 0" />
                                     </svg>
-                                    <div class="infotip-content">
-                                        <div class="infotip-header">
+                                    <div class="infotip-content dest-infotip">
+                                        <div class="dest-infotip-title">
                                             <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-3 object-cover" />
                                             {{ dest.name }}
                                         </div>
-                                        <div v-if="dest.status === 'failed'" class="infotip-footer" style="color: var(--notion-error)">Failed: {{ dest.error || 'Unknown Error' }}</div>
-                                        <div v-else class="infotip-footer">Successful Upload</div>
+                                        <div v-if="dest.status === 'failed'" class="dest-infotip-body is-failed">Failed: {{ dest.error || 'Unknown Error' }}</div>
+                                        <div v-else class="dest-infotip-body">Successful Upload</div>
                                         <div class="infotip-arrow"></div>
                                     </div>
                                 </span>
@@ -254,7 +312,7 @@ block content %}
                 </template>
                 <!-- Upload Rows: GROUPED view -->
                 <template v-else-if="viewMode === 'grouped'">
-                    <template v-for="row in groupedRows" :key="row.key">
+                    <template v-for="(row, rowIndex) in groupedRows" :key="row.key">
                         <!-- ── GROUP HEADER ── -->
                         <tr v-if="row.type === 'group'" class="bg-notion-bg-elevated cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleGroup(row.group.key)">
                             <td class="pl-3 pr-1 py-2 align-middle" @click.stop>
@@ -316,6 +374,7 @@ block content %}
                                         v-for="dest in getGroupDests(row.group)"
                                         :key="dest.id"
                                         class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                        :class="rowIndex < 2 ? 'infotip-bottom' : ''"
                                         :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.allDone ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
                                         <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
                                         <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -385,6 +444,7 @@ block content %}
                                         v-for="dest in getGroupDests(row.season)"
                                         :key="dest.id"
                                         class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                        :class="rowIndex < 2 ? 'infotip-bottom' : ''"
                                         :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.allDone ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
                                         <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
                                         <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -434,6 +494,7 @@ block content %}
                                         v-for="dest in getDestinationDots(row.item)"
                                         :key="dest.id"
                                         class="infotip-trigger dest-dot-mobile relative inline-flex items-center justify-center size-4 rounded shrink-0"
+                                        :class="rowIndex < 2 ? 'infotip-bottom' : ''"
                                         :style="{ boxShadow: 'inset 0 0 0 1.5px ' + (dest.status === 'success' ? 'var(--notion-success-ring)' : 'var(--notion-error-ring)') }">
                                         <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-2.5 object-cover rounded-sm" @error="dest.faviconError = true" />
                                         <svg v-else class="size-2 text-notion-text-tertiary" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -441,10 +502,13 @@ block content %}
                                             <path d="M3 5v14a9 3 0 0 0 18 0V5" />
                                             <path d="M3 12a9 3 0 0 0 18 0" />
                                         </svg>
-                                        <div class="infotip-content">
-                                            <div class="font-semibold">{{ dest.name }}</div>
-                                            <div v-if="dest.status === 'failed'" class="text-[10px] mt-1 text-notion-error">Failed: {{ dest.error || 'Unknown Error' }}</div>
-                                            <div v-else class="text-[10px] mt-1 text-notion-success">Successful Upload</div>
+                                        <div class="infotip-content dest-infotip">
+                                            <div class="dest-infotip-title">
+                                                <img v-if="dest.favicon && !dest.faviconError" :src="dest.favicon" referrerpolicy="no-referrer" class="size-3 object-cover" />
+                                                {{ dest.name }}
+                                            </div>
+                                            <div v-if="dest.status === 'failed'" class="dest-infotip-body is-failed">Failed: {{ dest.error || 'Unknown Error' }}</div>
+                                            <div v-else class="dest-infotip-body">Successful Upload</div>
                                             <div class="infotip-arrow"></div>
                                         </div>
                                     </span>
