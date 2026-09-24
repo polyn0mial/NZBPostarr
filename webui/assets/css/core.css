@@ -999,12 +999,3 @@ span.border-notion-warning\/50 {
     border-color: rgba(245,158,11,0.75) !important;
     border-width: 1.5px !important;
 }
-
-/* ─── DISC category badge pill (forced grey, appearance reset) ─── */
-.disc-cat-badge {
-    appearance: none !important;
-    -webkit-appearance: none !important;
-    background-color: rgba(100, 116, 139, 0.45) !important;
-    color: #e2e8f0 !important;
-    border-color: rgba(100, 116, 139, 0.5) !important;
-}

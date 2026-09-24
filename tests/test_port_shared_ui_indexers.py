@@ -46,7 +46,6 @@ def test_category_colours_follow_the_served_page_base() -> None:
     assert "misc: { color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' }," in page_base_js
     assert "'emerald': { bg: 'bg-emerald-500/15'" in page_base_js
     assert "'slate': { bg: 'bg-slate-500/15'" in page_base_js
-    assert ".disc-cat-badge {" in core_css
     assert "overflow-y: clip;" in core_css
 
 
