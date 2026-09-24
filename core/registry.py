@@ -1113,6 +1113,8 @@ def submit_to_indexer(
 
         if success:
             log_success(f"{indexer.log_name} Accepted: {rls_name}")
+            resp_body = redact_text(response.text[:300].replace(chr(10), " ").strip(), secrets=(api_key, username))
+            logger.info(f"{indexer.log_name} Response: HTTP {response.status_code} | {resp_body}")
             return True, "success", "Indexer accepted submission"
 
         # Failed submission - log response for debugging
@@ -1135,15 +1137,37 @@ def submit_to_indexer(
         return False, "rejected", f"Indexer rejected submission: {resp_trunc or 'unknown rejection'}"
 
     except requests.RequestException as e:
-        # Check for 400/401/etc and log body if available
+        # Keep the status terse so we do not leak full URLs with API keys.
         response_secrets = (api_key, username)
-        err_msg = redact_text(e, secrets=response_secrets)
         if hasattr(e, "response") and e.response is not None:
-            resp_body = redact_text(
-                e.response.text[:200].replace("\n", " ").strip(),
-                secrets=response_secrets,
+            err_msg = f"HTTP {e.response.status_code} {e.response.reason or 'Error'}"
+        else:
+            # Connection-level errors (SSL, timeout, connection reset, etc.)
+            # have no HTTP response at all. The bare exception class name
+            # ("SSLError") gives no way to distinguish a cert failure from a
+            # reset connection from a handshake timeout, so include the
+            # exception's own message too -- redacted, since urllib3's error
+            # text can embed the full request URL including the API key.
+            detail = redact_text(e, secrets=response_secrets)[:300].replace("\n", " ").strip()
+            err_msg = f"{type(e).__name__}: {detail}" if detail else type(e).__name__
+        if hasattr(e, "response") and e.response is not None:
+            body = e.response.text[:3000]
+            meta = re.search(
+                r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']{1,300})',
+                body,
+                re.IGNORECASE,
+            ) or re.search(
+                r'<meta[^>]+content=["\']([^"\']{1,300})["\'][^>]+name=["\']description["\']',
+                body,
+                re.IGNORECASE,
             )
-            err_msg += f" | Body: {resp_body}"
+            if meta:
+                resp_body = meta.group(1).strip()
+            elif body.strip().startswith("<"):
+                resp_body = " ".join(re.sub(r"<[^>]+>", " ", body).split())[:200]
+            else:
+                resp_body = body[:200].replace("\n", " ").strip()
+            err_msg += f" | Body: {redact_text(resp_body, secrets=response_secrets)}"
 
         logger.warning(f"{indexer.log_name} submission failed: {err_msg}")
 

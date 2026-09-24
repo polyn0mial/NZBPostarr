@@ -55,6 +55,7 @@ from sqlalchemy.orm import (
     selectinload,
     sessionmaker,
 )
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy.pool import QueuePool
 
 from core.release_name import parse_release_name
@@ -309,8 +310,8 @@ def get_engine() -> Engine:
                 engine = create_engine(
                     conn_str,
                     poolclass=QueuePool,
-                    pool_size=2,
-                    max_overflow=3,
+                    pool_size=10,
+                    max_overflow=5,
                     pool_timeout=60,
                     pool_pre_ping=True,
                     connect_args={
@@ -791,14 +792,40 @@ def _get_or_create_upload_row(
         raise
 
 
-def record_nntp_success(item_key: str, size: int, itype: str) -> None:
+def _restore_updated_at(upload: Upload, previous: datetime) -> None:
+    """Pin updated_at back to ``previous`` even when other columns change.
+
+    Re-assigning an unchanged value is not a net change, so SQLAlchemy would leave
+    the column out of the UPDATE and onupdate=_utc_now would still fire.
+    """
+    upload.updated_at = previous
+    flag_modified(upload, "updated_at")
+
+
+def record_nntp_success(item_key: str, size: int, itype: str, *, bump_timestamp: bool = True) -> None:
     """Ensure a record exists in the uploads table after successful NNTP upload."""
     try:
         with session_scope() as session:
             upload = _get_or_create_upload_row(session, item_key, filesize=size, itype=itype)
+            _prev_ts = upload.updated_at
             upload.filesize = size
             upload.itype = itype
-            upload.updated_at = datetime.now(timezone.utc)
+            if bump_timestamp:
+                # Only bump on first upload - resuming a partial job keeps the original
+                # timestamp so history ordering stays stable.
+                has_prior = session.execute(
+                    select(UploadResult.id)
+                    .where(UploadResult.upload_id == upload.id)
+                    .limit(1)
+                ).scalar_one_or_none() is not None
+                if not has_prior:
+                    upload.updated_at = datetime.now(timezone.utc)
+                elif _prev_ts is not None:
+                    _restore_updated_at(upload, _prev_ts)
+            elif _prev_ts is not None:
+                # Restore original timestamp: onupdate=_utc_now fires for any dirty row,
+                # so we must explicitly pin it back when we only want to update other fields.
+                _restore_updated_at(upload, _prev_ts)
             if upload.parsed_title is None:
                 meta = parse_release_name(item_key)
                 upload.parsed_title = meta["parsed_title"]
@@ -819,6 +846,7 @@ def update_db_destination(
     size: int,
     key: str,
     itype: Optional[str] = None,
+    _bump_timestamp: bool = True,
     **stats: Any,
 ) -> bool:
     """Update the database with upload results for a specific destination."""
@@ -826,6 +854,7 @@ def update_db_destination(
     try:
         with session_scope() as session:
             upload = _get_or_create_upload_row(session, key, filesize=size, itype=itype)
+            _prev_ts = upload.updated_at
             if upload.parsed_title is None:
                 meta = parse_release_name(key)
                 upload.parsed_title = meta["parsed_title"]
@@ -844,14 +873,18 @@ def update_db_destination(
                 session.add(result)
 
             # Update stats
-            result.uploaded_at = datetime.now(timezone.utc)
-            result.duration = stats.get("duration")
-            result.speed_bps = stats.get("speed_bps")
-            result.server_name = stats.get("server_name")
-
-            # Success/Failure Tracking
-            result.status = stats.get("status", "success")
-            result.error = stats.get("error")
+            new_status = stats.get("status", "success")
+            prior_success = result.status == "success"
+            # Don't overwrite a prior success with a failure -- dupe check relies on
+            # success records to skip already-uploaded items.  A failed re-upload attempt
+            # should not erase the fact that the item was previously delivered.
+            if new_status == "success" or not prior_success:
+                result.uploaded_at = datetime.now(timezone.utc)
+                result.duration = stats.get("duration")
+                result.speed_bps = stats.get("speed_bps")
+                result.server_name = stats.get("server_name")
+                result.status = new_status
+                result.error = stats.get("error")
             refresh_needed = result.status == "success"
 
             legacy_columns = {"geek": "uploaded_at_geek", "in": "uploaded_at_in", "omg": "uploaded_at_omg"}
@@ -869,8 +902,21 @@ def update_db_destination(
             if itype:
                 upload.itype = itype
 
-            # Bump the updated_at timestamp to ensure it floats to the top of recent views
-            upload.updated_at = datetime.now(timezone.utc)
+            # Bump updated_at only on the first successful result - so resuming a partial
+            # upload does not push the item to the top of history.
+            if _bump_timestamp:
+                _prior_success = session.execute(
+                    select(UploadResult.id)
+                    .where(UploadResult.upload_id == upload.id, UploadResult.status == "success")
+                    .limit(1)
+                ).scalar_one_or_none() is not None
+                if not _prior_success:
+                    upload.updated_at = datetime.now(timezone.utc)
+                elif _prev_ts is not None:
+                    _restore_updated_at(upload, _prev_ts)
+            elif _prev_ts is not None:
+                # Restore original timestamp: onupdate=_utc_now fires for any dirty row.
+                _restore_updated_at(upload, _prev_ts)
 
         if refresh_needed:
             from logic.queue_metrics import request_live_queue_refresh
@@ -880,6 +926,44 @@ def update_db_destination(
     except Exception as e:
         logger.error(f"DB Update failed for {key} -> {dest}: {e}")
         return False
+
+
+def pin_folder_ts_to_children(folder_key: str) -> None:
+    """Keep the pack/folder just above its newest child in history.
+
+    Writes the timestamp via raw SQL in the same 'YYYY-MM-DD HH:MM:SS.ffffff'
+    format the ORM's SQLite DateTime type stores, so SQLite string ordering
+    stays consistent with ORM-written rows and the onupdate hook is bypassed.
+    """
+    try:
+        with session_scope() as session:
+            folder = session.execute(
+                select(Upload).filter_by(item_name=folder_key)
+            ).scalar_one_or_none()
+            if folder is None:
+                return
+            child_max_raw = session.execute(
+                select(func.max(Upload.updated_at))
+                .where(Upload.item_name.like(folder_key + "/%"))
+            ).scalar_one_or_none()
+            if child_max_raw is None:
+                return
+            # Normalise to a naive datetime regardless of whether SQLAlchemy
+            # returned a datetime object or a raw string from SQLite.
+            if isinstance(child_max_raw, str):
+                child_max_dt = datetime.fromisoformat(child_max_raw.replace("T", " ").split("+")[0])
+            else:
+                child_max_dt = child_max_raw.replace(tzinfo=None) if child_max_raw.tzinfo else child_max_raw
+            target = child_max_dt + timedelta(microseconds=1)
+            # Always emit microseconds so the text matches the ORM's stored format.
+            target_str = target.strftime("%Y-%m-%d %H:%M:%S.%f")
+            # Use raw SQL so ORM datetime serialization cannot change the format
+            session.execute(
+                text("UPDATE uploads SET updated_at = :ts WHERE id = :id AND updated_at != :ts"),
+                {"ts": target_str, "id": folder.id},
+            )
+    except Exception as e:
+        logger.debug(f"pin_folder_ts_to_children non-fatal for {folder_key!r}: {e}")
 
 
 def check_duplicate_dynamic(item_key: str, _itype: str, indexer_ids: List[str], filesize: Optional[int] = None) -> Dict[str, Optional[str]]:
@@ -895,7 +979,11 @@ def check_duplicate_dynamic(item_key: str, _itype: str, indexer_ids: List[str], 
             )
 
             for upload in uploads:
+                stored_name = upload.get("item_name", "")
                 stored_size = upload.get("filesize")
+                if filesize is not None and stored_name != item_key:
+                    if stored_size is None:
+                        continue  # size unknown -- skip basename/suffix matches without size
                 if filesize is not None and stored_size is not None:
                     try:
                         stored_size_int = int(stored_size)
@@ -962,8 +1050,20 @@ def _load_duplicate_upload_payloads(
     return list(payloads_by_name.values())
 
 
-def get_duplicate_status_batch(item_keys: List[str], indexer_ids: List[str]) -> Dict[str, Dict[str, Optional[str]]]:
+def get_duplicate_status_batch(
+    item_keys: List[str],
+    indexer_ids: List[str],
+    filesizes: Optional[Dict[str, int]] = None,
+) -> Dict[str, Dict[str, Optional[str]]]:
     """Batch duplicate lookup for many item keys.
+
+    ``filesizes`` (optional) maps each item key to its CURRENT on-disk size.
+    When provided, a stored upload record whose recorded filesize differs
+    from the current file's size is not counted as a duplicate for that
+    key -- this is what lets a locally-replaced file (same name, different/
+    newer size) be recognized as needing a fresh upload instead of being
+    silently skipped as "already done". Mirrors the same size-aware logic
+    already used by check_duplicate_dynamic() for single-item lookups.
 
     Returns:
         {
@@ -971,6 +1071,7 @@ def get_duplicate_status_batch(item_keys: List[str], indexer_ids: List[str]) -> 
             ...
         }
     """
+    filesizes = filesizes or {}
     unique_keys = list(dict.fromkeys(k for k in item_keys if k))
     results: Dict[str, Dict[str, Optional[str]]] = {key: {idx: None for idx in indexer_ids} for key in unique_keys}
 
@@ -1019,7 +1120,30 @@ def get_duplicate_status_batch(item_keys: List[str], indexer_ids: List[str]) -> 
                 candidates.append(payload)
                 seen_names.add(payload_name)
 
+            current_size = filesizes.get(key)
+
             for payload in candidates:
+                if current_size is not None:
+                    stored_size = payload.get("filesize") if isinstance(payload, dict) else None
+                    if stored_size is None:
+                        # Size unknown for this record -- only trust it when it's an
+                        # exact key match; a basename/suffix match with no recorded
+                        # size is too weak to treat as a confirmed duplicate here.
+                        if str(payload.get("item_name", "")) != key:
+                            continue
+                    else:
+                        try:
+                            stored_size_int = int(stored_size)
+                            current_size_int = int(current_size)
+                        except (TypeError, ValueError):
+                            stored_size_int = current_size_int = None
+                        if (
+                            stored_size_int is not None
+                            and current_size_int is not None
+                            and stored_size_int != current_size_int
+                        ):
+                            continue  # recorded upload was a different-sized file -- not a duplicate of the current one
+
                 payload_results = payload.get("results", {}) if isinstance(payload, dict) else {}
                 for indexer_id, uploaded_at in payload_results.items():
                     if indexer_id in id_set and row[indexer_id] is None:
