@@ -362,7 +362,7 @@ body {
 }
 
 .uploads-table {
-    overflow-y: hidden;
+    overflow-y: clip;
 }
 
 .uploads-table table {
@@ -988,4 +988,23 @@ table tbody tr:nth-child(odd) {
 .pending-virtual-row {
     content-visibility: auto;
     contain-intrinsic-size: auto 30px;
+}
+
+/* ─── Status icon capsule: vivid borders ─── */
+span.border-emerald-500\/50 {
+    border-color: rgba(52,211,153,0.75) !important;
+    border-width: 1.5px !important;
+}
+span.border-notion-warning\/50 {
+    border-color: rgba(245,158,11,0.75) !important;
+    border-width: 1.5px !important;
+}
+
+/* ─── DISC category badge pill (forced grey, appearance reset) ─── */
+.disc-cat-badge {
+    appearance: none !important;
+    -webkit-appearance: none !important;
+    background-color: rgba(100, 116, 139, 0.45) !important;
+    color: #e2e8f0 !important;
+    border-color: rgba(100, 116, 139, 0.5) !important;
 }

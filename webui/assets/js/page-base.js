@@ -184,6 +184,8 @@ export const colorClassMap = {
     'rose': { bg: 'bg-idx-rose/15', text: 'text-idx-rose', dot: 'bg-idx-rose' },
     'red': { bg: 'bg-idx-red/15', text: 'text-idx-red', dot: 'bg-idx-red' },
     'amber': { bg: 'bg-idx-amber/15', text: 'text-idx-amber', dot: 'bg-idx-amber' },
+    'emerald': { bg: 'bg-emerald-500/15', text: 'text-emerald-400', dot: 'bg-emerald-400' },
+    'slate': { bg: 'bg-slate-500/15', text: 'text-slate-400', dot: 'bg-slate-400' },
     'gray': { bg: 'bg-notion-bg-hover', text: 'text-notion-text-secondary', dot: 'bg-gray-400' },
 };
 
@@ -222,19 +224,159 @@ export const statusConfig = {
  * Pages should use these instead of inline icon/color/label maps.
  */
 export const categoryMeta = {
-    tv: { id: 'tv', label: 'TV', icon: 'tv', color: 'cyan', badgeClass: 'bg-cyan-500/15 text-cyan-400' },
+    tv: { id: 'tv', label: 'TV', icon: 'tv', color: 'green', badgeClass: 'bg-green-500/15 text-green-400' },
     movies: { id: 'movies', label: 'Movies', icon: 'film', color: 'purple', badgeClass: 'bg-purple-500/15 text-purple-400' },
-    misc: { id: 'misc', label: 'Misc', icon: 'box', color: 'amber', badgeClass: 'bg-amber-500/15 text-amber-400' },
+    misc: { id: 'misc', label: 'Misc', icon: 'box', color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' },
     anime: { id: 'anime', label: 'Anime', icon: 'tv', color: 'pink', badgeClass: 'bg-pink-500/15 text-pink-400' },
-    disc: { id: 'disc', label: 'DISC', icon: 'disc-3', color: 'slate', badgeClass: 'bg-slate-500/15 text-slate-400' },
-    music: { id: 'music', label: 'Music', icon: 'music', color: 'green', badgeClass: 'bg-green-500/15 text-green-400' },
-    books: { id: 'books', label: 'Books', icon: 'book-open', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
-    apps: { id: 'apps', label: 'Apps', icon: 'app-window', color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' },
+    disc: { id: 'disc', label: 'DISC', icon: 'disc-3', color: 'slate', badgeClass: 'disc-cat-badge' },
+    music: { id: 'music', label: 'Music', icon: 'music', color: 'emerald', badgeClass: 'bg-emerald-500/15 text-emerald-400' },
+    books: { id: 'books', label: 'Books', icon: 'book-open', color: 'amber', badgeClass: 'bg-amber-500/15 text-amber-400' },
+    apps: { id: 'apps', label: 'Apps', icon: 'app-window', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
     audiobooks: { id: 'audiobooks', label: 'Audiobooks', icon: 'headphones', color: 'orange', badgeClass: 'bg-orange-500/15 text-orange-400' },
     ebooks: { id: 'ebooks', label: 'Ebooks', icon: 'book-open', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
     external: { id: 'external', label: 'External', icon: 'folder-input', color: 'gray', badgeClass: 'bg-notion-bg-hover text-notion-text-secondary' },
     both: { id: 'both', label: 'Both', icon: 'layers', color: 'blue', badgeClass: 'bg-blue-500/15 text-blue-400' },
 };
+
+export const CATEGORY_APPEARANCE_STORAGE_KEY = 'nzbpostarr_category_appearance_v2';
+const LEGACY_CATEGORY_APPEARANCE_STORAGE_KEYS = ['nzbpostarr_category_appearance_v1'];
+
+const DEFAULT_CATEGORY_HEX = {
+    tv: '#22d3ee',
+    movies: '#a855f7',
+    misc: '#f59e0b',
+    anime: '#ec4899',
+    disc: '#94a3b8',
+    music: '#22c55e',
+    books: '#3b82f6',
+    apps: '#f97316',
+    audiobooks: '#fb923c',
+    ebooks: '#60a5fa',
+    external: '#9ca3af',
+    both: '#3b82f6',
+};
+
+function makeCategoryAppearanceState() {
+    return {
+        version: 2,
+        categories: {},
+    };
+}
+
+export function normalizeCategoryHexColor(value, fallback = '#9ca3af') {
+    const raw = String(value || '').trim();
+    const base = /^#?[0-9a-f]{6}$/i.test(raw)
+        ? raw.replace(/^#/, '')
+        : /^#?[0-9a-f]{3}$/i.test(raw)
+            ? raw.replace(/^#/, '').split('').map((ch) => ch + ch).join('')
+            : '';
+    return base ? `#${base.toUpperCase()}` : fallback;
+}
+
+export function hexToRgba(hex, alpha = 1) {
+    const normalized = normalizeCategoryHexColor(hex);
+    const base = normalized.replace('#', '');
+    const r = parseInt(base.slice(0, 2), 16);
+    const g = parseInt(base.slice(2, 4), 16);
+    const b = parseInt(base.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+export function getDefaultCategoryHex(catId) {
+    return DEFAULT_CATEGORY_HEX[catId] || '#9ca3af';
+}
+
+function normalizeCategoryAppearanceSave(save, fallbackColor, index = 0) {
+    if (!save || typeof save !== 'object') return null;
+    const id = save.id !== undefined && save.id !== null ? String(save.id) : '';
+    if (!id) return null;
+    return {
+        id,
+        name: String(save.name || `Saved ${index + 1}`),
+        color: normalizeCategoryHexColor(save.color || fallbackColor, fallbackColor),
+        created_at: save.created_at || null,
+    };
+}
+
+function normalizeCategoryAppearanceState(parsed) {
+    const sourceCategories = parsed && typeof parsed === 'object' && parsed.categories && typeof parsed.categories === 'object'
+        ? parsed.categories
+        : {};
+    const categories = {};
+    Object.entries(sourceCategories).forEach(([catId, value]) => {
+        if (!value || typeof value !== 'object') return;
+        const fallbackColor = getDefaultCategoryHex(catId);
+        const saves = Array.isArray(value.saves)
+            ? value.saves.map((save, index) => normalizeCategoryAppearanceSave(save, fallbackColor, index)).filter(Boolean)
+            : [];
+        categories[catId] = {
+            color: normalizeCategoryHexColor(value.color || fallbackColor, fallbackColor),
+            selected_save_id: value.selected_save_id ? String(value.selected_save_id) : '',
+            saves,
+        };
+    });
+    return {
+        version: 2,
+        categories,
+    };
+}
+
+function readCategoryAppearanceStateFromKeys(keys) {
+    for (const key of keys) {
+        try {
+            const raw = localStorage.getItem(key);
+            if (!raw) continue;
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === 'object') {
+                return normalizeCategoryAppearanceState(parsed);
+            }
+        } catch (_err) {
+            continue;
+        }
+    }
+    return null;
+}
+
+export function loadCategoryAppearanceState() {
+    const current = readCategoryAppearanceStateFromKeys([CATEGORY_APPEARANCE_STORAGE_KEY]);
+    if (current) return current;
+
+    const legacy = readCategoryAppearanceStateFromKeys(LEGACY_CATEGORY_APPEARANCE_STORAGE_KEYS);
+    if (legacy) {
+        saveCategoryAppearanceState(legacy);
+        return legacy;
+    }
+    return makeCategoryAppearanceState();
+}
+
+export function saveCategoryAppearanceState(state) {
+    const safeState = normalizeCategoryAppearanceState(state && typeof state === 'object' ? state : makeCategoryAppearanceState());
+    localStorage.setItem(CATEGORY_APPEARANCE_STORAGE_KEY, JSON.stringify(safeState));
+    LEGACY_CATEGORY_APPEARANCE_STORAGE_KEYS.forEach((key) => {
+        try {
+            localStorage.removeItem(key);
+        } catch (_err) {
+            // Ignore legacy cleanup failures.
+        }
+    });
+    return safeState;
+}
+
+export function getCategoryAppearanceEntry(catId, state = null) {
+    const source = state || loadCategoryAppearanceState();
+    const entry = source.categories && source.categories[catId] ? source.categories[catId] : {};
+    const saves = Array.isArray(entry.saves) ? entry.saves.filter((save) => save && save.id) : [];
+    return {
+        color: normalizeCategoryHexColor(entry.color || getDefaultCategoryHex(catId), getDefaultCategoryHex(catId)),
+        selected_save_id: entry.selected_save_id || '',
+        saves: saves.map((save, index) => ({
+            id: String(save.id),
+            name: String(save.name || `Saved ${index + 1}`),
+            color: normalizeCategoryHexColor(save.color || getDefaultCategoryHex(catId), getDefaultCategoryHex(catId)),
+            created_at: save.created_at || null,
+        })),
+    };
+}
 
 /**
  * Get the label for a category id. Returns a title-cased fallback for unknowns.
@@ -1162,26 +1304,37 @@ export function createVuePage(pageOptions = {}) {
                 anime: 'Anime',
                 disc: 'DISC',
                 misc: 'Misc',
-                both: 'Selected Upload',
-                mixed: 'Selected Upload',
-                selected: 'Selected Upload'
+                both: 'Both',
+                mixed: 'Mixed',
+                selected: 'Selected'
             };
             const key = (job && job.category) ? String(job.category) : '';
             return map[key] || key || 'Job';
         },
 
+        jobTargetPathCount(job) {
+            // Full job payloads carry the target_paths array; compact polling
+            // payloads carry only target_path_count.
+            if (Array.isArray(job.target_paths)) return job.target_paths.length;
+            return Number(job.target_path_count || 0);
+        },
+
         jobDisplayName(job) {
             if (!job) return 'Job';
             const custom = (job.display_name || '').trim();
-            if (custom) {
-                const autoCountName = custom.match(/^(.*?)(?:\s*-\s*\d+\s+items?)$/i);
-                if (autoCountName && /^(?:TV|Movies|Anime|DISC|Misc|Both|Mixed|Selected)$/i.test(autoCountName[1].trim())) {
-                    return autoCountName[1].trim().replace(/^Mixed$/i, 'Selected Upload');
-                }
-                return custom;
+            if (custom) return custom;
+
+            const base = this.jobCategoryName(job);
+            const targetCount = this.jobTargetPathCount(job);
+            if (targetCount > 0) {
+                return `${base} - ${targetCount} item${targetCount === 1 ? '' : 's'}`;
             }
 
-            return this.jobCategoryName(job);
+            const total = Number(job.items_total || 0);
+            if (total > 0) {
+                return `${base} - ${total} item${total === 1 ? '' : 's'}`;
+            }
+            return base;
         },
 
         jobTitle(job) {
@@ -1232,17 +1385,16 @@ export function createVuePage(pageOptions = {}) {
 
         jobItemCount(job) {
             const total = Number(job.items_total || 0);
+            const hasCurrentItem = typeof job.current_item === 'string' && job.current_item.trim() !== '';
             if (job.status === 'completed') return `${total} items finished`;
-            if (job.status !== 'failed') {
-                const explicitRemaining = Number(job.target_path_count || 0);
-                const processed = Number(job.items_processed || 0);
-                const calculatedRemaining = total > 0 ? Math.max(total - processed, 0) : 0;
-                const remaining = Math.max(explicitRemaining, calculatedRemaining);
-                if (job.has_explicit_paths || total > 0) {
-                    return `${remaining} item${remaining === 1 ? '' : 's'} not uploaded`;
-                }
+            if (job.has_explicit_paths && job.status !== 'failed') {
+                const remaining = this.jobTargetPathCount(job) + (hasCurrentItem ? 1 : 0);
+                return `${remaining} not uploaded`;
             }
             let current = Number(job.items_processed || 0);
+            if (total > 0 && hasCurrentItem && job.status !== 'failed') {
+                current = Math.min(total, current + 1);
+            }
             return `${current} / ${total} items`;
         },
 
