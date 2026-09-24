@@ -699,6 +699,6 @@ def test_submit_api_batch_isolates_indexer_exceptions(tmp_path, monkeypatch) -> 
     )
 
     assert results == [
-        ("bad", False, "Unhandled submission exception for indexer 'bad': boom"),
-        ("good", True, "ok"),
+        ("bad", False, "Unhandled submission exception for indexer 'bad': boom", "error"),
+        ("good", True, "ok", "success"),
     ]

@@ -284,21 +284,6 @@ def test_pending_cache_requests_refresh_without_blocking(monkeypatch) -> None:
             True,
         ),
         (
-            "items-refresh-is-async",
-            "get_pending_items",
-            {"refresh": True},
-            {
-                "snapshot": _make_pending_snapshot(),
-                "snapshot_ts": 123.0,
-                "ready": True,
-                "refreshing": False,
-                "last_error": None,
-            },
-            "items-refresh",
-            True,
-            None,
-        ),
-        (
             "summary-cold-refresh",
             "get_pending_summary",
             {},

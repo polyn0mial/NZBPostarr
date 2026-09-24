@@ -615,7 +615,6 @@ def _run_pending_items_anime_check(monkeypatch, *, cached_lookup_result) -> tupl
     monkeypatch.setattr(app_mod.threading, "Thread", _DummyThread)
     monkeypatch.setattr(app_mod, "_anime_check_inflight", False)
     monkeypatch.setattr(app_mod, "_anime_check_thread", None)
-    monkeypatch.setattr(app_mod, "_anime_check_last_attempt", 0.0)
     monkeypatch.setattr("logic.anime_cache.get_cached", lambda _name: cached_lookup_result)
 
     _ = app_mod.get_pending_items()
