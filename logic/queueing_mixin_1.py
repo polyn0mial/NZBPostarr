@@ -121,6 +121,8 @@ class _QueueServiceMixinPart1:
             )
             runnable_items.append(queue_item)
 
+        runnable_items = cls._collapse_overlapping_queue_start_items(runnable_items)
+
         return QueueStartSummary(
             runnable_items=tuple(cls._inject_inferred_tv_pack_queue_items(runnable_items)),
             skipped_items=tuple(skipped_items),
@@ -149,25 +151,116 @@ class _QueueServiceMixinPart1:
             return True
         return False
 
+    @staticmethod
+    def _normalize_queue_overlap_path(path: Any) -> str:
+        text = str(path or "").strip()
+        if not text:
+            return ""
+        try:
+            normalized = Path(text).resolve().as_posix()
+        except OSError:
+            normalized = Path(text).as_posix()
+        normalized = normalized.rstrip("/")
+        return normalized.casefold() if os.name == "nt" else normalized
+
+    @classmethod
+    def _should_preserve_queue_start_dir(cls, item: dict[str, Any], category: str, raw_path: Path) -> bool:
+        if category not in {"tv", "anime"} or not raw_path.exists() or not raw_path.is_dir():
+            return False
+
+        item_type = str(item.get("itype") or "").strip().lower()
+        if item_type in {"tv show", "anime"}:
+            return True
+
+        video_suffixes = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v", ".ts"}
+        try:
+            direct_video_count = sum(
+                1 for child in raw_path.iterdir() if child.is_file() and child.suffix.lower() in video_suffixes
+            )
+        except OSError:
+            direct_video_count = 0
+        if direct_video_count >= 1:
+            return True
+
+        try:
+            recursive_video_count = sum(
+                1 for child in raw_path.rglob("*") if child.is_file() and child.suffix.lower() in video_suffixes
+            )
+        except OSError:
+            recursive_video_count = 0
+
+        if recursive_video_count < 2:
+            return False
+
+        folder_name = raw_path.name.lower()
+        if cls._looks_like_queue_tv_pack_folder(raw_path, [raw_path / "placeholder.mkv", raw_path / "placeholder2.mkv"]):
+            return True
+        return any(token in folder_name for token in ("season", "complete")) or bool(
+            re.search(r"(?:^|[^a-z0-9])s\d{1,2}(?:[^a-z0-9]|$)", folder_name)
+        )
+
+    @classmethod
+    def _collapse_overlapping_queue_start_items(cls, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep a staged TV/anime pack folder and drop its separately staged descendants."""
+        grouped: dict[str, list[tuple[int, dict[str, Any], str]]] = {}
+        for idx, item in enumerate(items):
+            category = str(item.get("category") or "").strip().lower()
+            normalized_path = cls._normalize_queue_overlap_path(item.get("path"))
+            if not category or not normalized_path:
+                continue
+            grouped.setdefault(category, []).append((idx, item, normalized_path))
+
+        dropped_indices: set[int] = set()
+        for category, entries in grouped.items():
+            kept_descendants: list[str] = []
+            dropped_here = 0
+            for idx, item, normalized_path in sorted(entries, key=lambda entry: len(entry[2]), reverse=True):
+                raw_path = Path(str(item.get("path") or "").strip())
+                if raw_path.exists() and not raw_path.is_dir():
+                    kept_descendants.append(normalized_path)
+                    continue
+
+                if any(
+                    child_path.startswith(f"{normalized_path}/") for child_path in kept_descendants
+                ) and cls._should_preserve_queue_start_dir(item, category, raw_path):
+                    kept_descendants = [
+                        child_path for child_path in kept_descendants if not child_path.startswith(f"{normalized_path}/")
+                    ]
+                    kept_descendants.append(normalized_path)
+                    dropped_here += 1
+                    dropped_indices.update(
+                        child_idx
+                        for child_idx, _child_item, child_path in entries
+                        if child_idx != idx and child_path.startswith(f"{normalized_path}/")
+                    )
+                    continue
+
+                kept_descendants.append(normalized_path)
+
+            if dropped_here:
+                logger.info(
+                    f"[QUEUE-START] Category '{category}' collapsed {dropped_here} selected parent pack overlap(s)"
+                )
+
+        return [item for idx, item in enumerate(items) if idx not in dropped_indices]
+
     @classmethod
     def _inject_inferred_tv_pack_queue_items(cls, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Insert season-folder pack rows before staged episode files, and expand
-        submitted season-folder items with their child episode files after the pack."""
-        import re as _re
-        _VIDEO_EXTS = {".mkv", ".mp4", ".avi", ".m4v", ".mov", ".wmv", ".ts", ".m2ts"}
-        _EPISODE_RE = _re.compile(r"[Ss]\d{1,2}[Ee]\d{1,2}")
-        TV_CATS = {"tv", "anime"}
+        """Insert season-folder pack rows when staging contains only child episode files.
 
+        Selected pack folders are expanded once, at job creation
+        (_expand_explicit_pack_request_paths), so no child episodes are added here.
+        """
         existing_dirs = {
             os.path.normpath(cls._queue_item_path_text(item))
             for item in items
-            if str(item.get("category") or "").strip().lower() in TV_CATS
+            if str(item.get("category") or "").strip().lower() == "tv"
             and cls._queue_item_path_text(item)
             and Path(cls._queue_item_path_text(item)).is_dir()
         }
         episodes_by_parent: dict[Path, list[Path]] = {}
         for item in items:
-            if str(item.get("category") or "").strip().lower() not in TV_CATS:
+            if str(item.get("category") or "").strip().lower() != "tv":
                 continue
             path_text = cls._queue_item_path_text(item)
             if not path_text:
@@ -182,36 +275,20 @@ class _QueueServiceMixinPart1:
             if os.path.normpath(str(parent)) not in existing_dirs
             and cls._looks_like_queue_tv_pack_folder(parent, episode_paths)
         }
-
-        episodes_already_included: set[str] = {
-            os.path.normpath(cls._queue_item_path_text(it))
-            for it in items
-            if cls._queue_item_path_text(it) and Path(cls._queue_item_path_text(it)).is_file()
-        }
+        if not pack_parents:
+            return items
 
         injected: list[dict[str, Any]] = []
         inserted: set[Path] = set()
         for item in items:
-            path_text = cls._queue_item_path_text(item)
-            path = Path(path_text) if path_text else Path(".")
+            path = Path(cls._queue_item_path_text(item))
             parent = path.parent if path.is_file() else None
             if parent in pack_parents and parent not in inserted:
                 injected.append(cls._build_inferred_pack_row(parent))
                 inserted.add(parent)
             injected.append(item)
-            # Expand submitted pack folder items with their child episode files
-            if (
-                path_text
-                and path.is_dir()
-                and str(item.get("category") or "").strip().lower() in TV_CATS
-            ):
-                cat = str(item.get("category") or "tv").strip().lower()
-                injected.extend(
-                    cls._expand_queue_pack_children(path, cat, _VIDEO_EXTS, _EPISODE_RE, episodes_already_included)
-                )
 
-        if inserted:
-            logger.info(f"[QUEUE-START] inferred {len(inserted)} TV season pack row(s) from staged episodes")
+        logger.info(f"[QUEUE-START] inferred {len(inserted)} TV season pack row(s) from staged episodes")
         return injected
 
     @staticmethod
@@ -225,44 +302,6 @@ class _QueueServiceMixinPart1:
             "is_dir": True,
             "queue_category_source": "inferred-season-pack",
         }
-
-    @staticmethod
-    def _expand_queue_pack_children(
-        path: Path,
-        cat: str,
-        video_exts: set[str],
-        episode_re: Any,
-        episodes_already_included: set[str],
-    ) -> list[dict[str, Any]]:
-        """Build injected episode rows for video files under a submitted pack folder."""
-        expanded: list[dict[str, Any]] = []
-        try:
-            child_eps = sorted(
-                (
-                    child for child in path.iterdir()
-                    if child.is_file()
-                    and child.suffix.lower() in video_exts
-                    and episode_re.search(child.name)
-                    and os.path.normpath(str(child)) not in episodes_already_included
-                ),
-                key=lambda p: p.name.lower(),
-            )
-            for ep in child_eps:
-                expanded.append({
-                    "path": str(ep),
-                    "name": ep.name,
-                    "category": cat,
-                    "detected_category": cat,
-                    "itype": "TV Episode",
-                    "is_dir": False,
-                    "queue_category_source": "inferred-from-pack",
-                })
-                episodes_already_included.add(os.path.normpath(str(ep)))
-            if child_eps:
-                logger.info(f"[QUEUE-START] expanded {path.name}: {len(child_eps)} episode(s) injected")
-        except OSError:
-            pass
-        return expanded
 
     @staticmethod
     def _build_processing_request(category: str, kwargs: dict[str, Any], paths: list[str]) -> ProcessingJobRequest:
@@ -487,8 +526,12 @@ class _QueueServiceMixinPart1:
 
     def start_processing_job_request(self, request: ProcessingJobRequest, **job_kwargs: Any) -> str:
         """Start a processing job from an explicit normalized request."""
-        request = self._with_inferred_tv_pack_request_paths(request)
-        request = self._collapse_overlapping_tv_request_paths(request)
+        # Force upload passes skip_pack_expansion: it starts at once with exactly
+        # the rows the user picked, without a pack walk.
+        if not request.skip_pack_expansion:
+            request = self._expand_explicit_pack_request_paths(request)
+            request = self._with_inferred_tv_pack_request_paths(request)
+            request = self._collapse_overlapping_tv_request_paths(request)
         return self.start_upload_job(
             category=request.category,
             limit=request.limit,
@@ -582,19 +625,218 @@ class _QueueServiceMixinPart1:
             return request
 
         logger.info(f"[QUEUE-CREATE] inferred {len(inserted)} TV season pack path(s) before job start")
-        return ProcessingJobRequest(
-            category=request.category,
-            limit=request.limit,
-            skip_packs=request.skip_packs,
-            skip_episodes=request.skip_episodes,
-            test_mode=request.test_mode,
-            target_indexer_id=request.target_indexer_id,
-            target_indexer_ids=request.target_indexer_ids,
-            paths=tuple(expanded_paths),
-            item_hints=tuple(expanded_hints),
-            enable_duplicate_check=request.enable_duplicate_check,
-            force=request.force,
+        return cls._clone_request_with_paths(request, expanded_paths, expanded_hints)
+
+    @classmethod
+    def _expand_explicit_pack_request_paths(cls, request: ProcessingJobRequest) -> ProcessingJobRequest:
+        """Expand selected TV/anime folders into pack rows plus nested item rows before job creation."""
+        paths = list(request.paths)
+        if not paths:
+            return request
+
+        try:
+            from logic.pending_scan import resolve_explicit_path
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.debug(f"Queue pack expansion unavailable: {exc}")
+            return request
+
+        hints_by_path: dict[str, dict[str, Any]] = {}
+        for hint in request.item_hints:
+            path_text = str(hint.get("path") or "").strip()
+            if path_text:
+                hints_by_path[path_text] = dict(hint)
+
+        def build_hint(
+            path: Path,
+            category: str,
+            *,
+            is_dir: bool,
+            source: str,
+            base_hint: Optional[dict[str, Any]] = None,
+        ) -> dict[str, Any]:
+            hint = dict(base_hint or {})
+            hint.update(
+                {
+                    "path": str(path),
+                    "name": path.name,
+                    "category": category,
+                    "detected_category": category,
+                    "itype": "Anime" if category == "anime" else ("TV Show" if is_dir else "TV Episode"),
+                    "queue_category_source": source,
+                }
+            )
+            if is_dir:
+                hint["is_dir"] = True
+            else:
+                hint.pop("is_dir", None)
+            return hint
+
+        expanded_paths: list[str] = []
+        expanded_hints: list[dict[str, Any]] = []
+        seen_identities: set[str] = set()
+        expanded_groups = 0
+
+        def push_path(path_text: str, hint: Optional[dict[str, Any]] = None) -> None:
+            identity = cls._normalize_job_path_identity(path_text)
+            if not identity or identity in seen_identities:
+                return
+            seen_identities.add(identity)
+            expanded_paths.append(path_text)
+            if hint is not None:
+                expanded_hints.append(dict(hint))
+
+        def expand_pack_dir(
+            source_dir: Path,
+            category: str,
+            episode_paths: list[Path],
+            *,
+            parent_hint: Optional[dict[str, Any]],
+            source: str,
+        ) -> int:
+            if not episode_paths:
+                return 0
+
+            child_groups: dict[Path, list[Path]] = {}
+            direct_files: list[Path] = []
+            for episode_path in episode_paths:
+                try:
+                    rel = episode_path.relative_to(source_dir)
+                except ValueError:
+                    direct_files.append(episode_path)
+                    continue
+                if len(rel.parts) > 1:
+                    pack_dir = source_dir / rel.parts[0]
+                    if pack_dir.is_dir():
+                        child_groups.setdefault(pack_dir, []).append(episode_path)
+                        continue
+                direct_files.append(episode_path)
+
+            inserted = 0
+            for pack_dir in sorted(child_groups, key=lambda path: path.name.lower()):
+                push_path(
+                    str(pack_dir),
+                    build_hint(pack_dir, category, is_dir=True, source=source, base_hint=parent_hint),
+                )
+                inserted += 1
+                for child_file in sorted(child_groups[pack_dir], key=lambda path: path.name.lower()):
+                    push_path(
+                        str(child_file),
+                        hints_by_path.get(str(child_file))
+                        or build_hint(child_file, category, is_dir=False, source=f"{source}-child"),
+                    )
+                    inserted += 1
+
+            if direct_files:
+                push_path(
+                    str(source_dir),
+                    build_hint(source_dir, category, is_dir=True, source=source, base_hint=parent_hint),
+                )
+                inserted += 1
+                for direct_file in sorted(direct_files, key=lambda path: path.name.lower()):
+                    push_path(
+                        str(direct_file),
+                        hints_by_path.get(str(direct_file))
+                        or build_hint(direct_file, category, is_dir=False, source=f"{source}-child"),
+                    )
+                    inserted += 1
+            return inserted
+
+        for path_text in paths:
+            original_hint = hints_by_path.get(path_text)
+            path = Path(str(path_text))
+            if not path.exists() or not path.is_dir():
+                push_path(path_text, original_hint)
+                continue
+
+            category_hint = cls._normalize_queue_category(
+                (original_hint or {}).get("category") or (original_hint or {}).get("detected_category") or request.category
+            )
+            itype_hint = str((original_hint or {}).get("itype") or "")
+            try:
+                resolution = resolve_explicit_path(path, category_hint=category_hint, itype_hint=itype_hint)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                logger.debug(f"Queue pack expansion failed for {path}: {exc}")
+                push_path(path_text, original_hint)
+                continue
+
+            resolved_category = cls._normalize_queue_category(getattr(resolution, "category", ""))
+            if resolved_category not in {"tv", "anime"}:
+                corrected_hint = dict(original_hint or {})
+                if resolved_category and resolved_category not in cls._QUEUE_INVALID_CATEGORY_VALUES:
+                    corrected_hint = build_hint(
+                        path,
+                        resolved_category,
+                        is_dir=True,
+                        source="resolved-directory",
+                        base_hint=corrected_hint,
+                    )
+                push_path(path_text, corrected_hint or None)
+                continue
+
+            queue_files = [
+                candidate
+                for candidate in getattr(resolution, "queue_paths", ())
+                if candidate.exists() and candidate.is_file()
+            ]
+            inserted = expand_pack_dir(
+                path,
+                resolved_category,
+                queue_files,
+                parent_hint=original_hint,
+                source="resolved-pack-selection",
+            )
+
+            if inserted == 0:
+                child_inserted = 0
+                try:
+                    child_dirs = sorted(
+                        (candidate for candidate in path.iterdir() if candidate.is_dir()),
+                        key=lambda item: item.name.lower(),
+                    )
+                except OSError:
+                    child_dirs = []
+                for child in child_dirs:
+                    try:
+                        child_resolution = resolve_explicit_path(
+                            child,
+                            category_hint=resolved_category,
+                            itype_hint="Anime" if resolved_category == "anime" else "TV Show",
+                        )
+                    except Exception:  # pylint: disable=broad-exception-caught
+                        continue
+                    child_category = cls._normalize_queue_category(getattr(child_resolution, "category", "")) or resolved_category
+                    child_files = [
+                        candidate
+                        for candidate in getattr(child_resolution, "queue_paths", ())
+                        if candidate.exists() and candidate.is_file()
+                    ]
+                    child_inserted += expand_pack_dir(
+                        child,
+                        child_category,
+                        child_files,
+                        parent_hint=build_hint(child, child_category, is_dir=True, source="resolved-child-pack"),
+                        source="resolved-child-pack",
+                    )
+                inserted = child_inserted
+
+            if inserted == 0:
+                push_path(
+                    path_text,
+                    build_hint(path, resolved_category, is_dir=True, source="resolved-directory", base_hint=original_hint),
+                )
+                continue
+
+            expanded_groups += 1
+
+        if not expanded_groups:
+            if tuple(expanded_paths) == request.paths:
+                return request
+            return cls._clone_request_with_paths(request, expanded_paths, expanded_hints)
+
+        logger.info(
+            f"[QUEUE-CREATE] expanded {expanded_groups} selected TV/anime folder(s) into pack + nested queue items"
         )
+        return cls._clone_request_with_paths(request, expanded_paths, expanded_hints)
 
     @staticmethod
     def _clone_request_with_paths(
@@ -614,6 +856,7 @@ class _QueueServiceMixinPart1:
             item_hints=tuple(hints),
             enable_duplicate_check=request.enable_duplicate_check,
             force=request.force,
+            skip_pack_expansion=request.skip_pack_expansion,
         )
 
     @classmethod

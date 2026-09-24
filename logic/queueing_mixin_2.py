@@ -173,21 +173,13 @@ class _QueueServiceMixinPart2:
 
     @classmethod
     def _default_job_name(cls, category: str, item_count: int, paths: Any = None) -> str:
-        normalized_paths = cls._normalize_paths(paths)
-        if normalized_paths:
-            path_objects = [Path(path) for path in normalized_paths]
-            if len(path_objects) == 1:
-                candidate = path_objects[0] if path_objects[0].suffix == "" else path_objects[0].parent
-            else:
-                try:
-                    candidate = Path(os.path.commonpath([str(path) for path in path_objects]))
-                except ValueError:
-                    candidate = path_objects[0].parent
-                if candidate in path_objects and candidate.suffix:
-                    candidate = candidate.parent
-            if candidate.name:
-                return cls._normalize_job_name(candidate.name) or cls._job_category_label(category)
-        return "Selected Upload" if str(category or "").strip().lower() in {"mixed", "both", "selected"} else cls._job_category_label(category)
+        """Name a job '<Category> - N items' as the queue page shows it (paths is unused)."""
+        del paths
+        count = max(int(item_count or 0), 0)
+        if count <= 0:
+            return cls._job_category_label(category)
+        noun = "item" if count == 1 else "items"
+        return f"{cls._job_category_label(category)} - {count} {noun}"
 
     @staticmethod
     def _parse_iso_datetime_utc(raw: Any) -> Optional[datetime]:
@@ -452,11 +444,15 @@ class _QueueServiceMixinPart2:
         to re-pause the queue).
         """
         restored_manual_stop = False
+        restored_paused = persisted_status == "paused"
         progress = str(row.get("progress") or "")
         if persisted_status == "stopped":
             progress = "Recovered after restart - waiting for queue resume."
             restored_manual_stop = True
-        elif persisted_status in {"running", "stopping", "paused"}:
+        elif restored_paused:
+            # A job the user paused stays paused; only Resume restarts it.
+            progress = "Recovered after restart - paused."
+        elif persisted_status in {"running", "stopping"}:
             progress = "Recovered after restart - re-queued."
         elif not progress:
             progress = "Recovered after restart - queued."
@@ -464,13 +460,13 @@ class _QueueServiceMixinPart2:
         job: dict[str, Any] = JobState(
             job_id=job_id,
             category=category,
-            status="queued",
+            status="paused" if restored_paused else "queued",
             started_at=started_at,
             created_at=created_at,
             progress=progress,
             speed=None,
             eta=None,
-            current_stage="QUEUED",
+            current_stage="PAUSED" if restored_paused else "QUEUED",
             test_mode=bool(row.get("test_mode", False)),
             display_name=display_name,
             run_after=run_after,
@@ -486,6 +482,10 @@ class _QueueServiceMixinPart2:
             job.pop("run_after", None)
         job["source"] = self._normalize_job_source(row.get("source"))
         job["_kwargs"] = kwargs
+        if restored_paused:
+            # No worker thread exists for it; resume re-queues it for a fresh start.
+            job["pause_requested"] = True
+            job["_restored_paused"] = True
         retry_request = row.get("retry_request")
         if isinstance(retry_request, dict) and retry_request:
             job["_retry_request"] = retry_request
@@ -572,11 +572,69 @@ class _QueueServiceMixinPart2:
         if restored_manual_stop:
             self._queue_processing_paused = True
 
+        recovered_finished += self._import_legacy_finished_jobs_locked()
+
         if recovered:
             log_info(f"Recovered {recovered} queued job(s) after restart.")
         if recovered_finished:
             log_info(f"Recovered {recovered_finished} recently finished job(s) after restart.")
         self._persist_jobs_locked()
+
+    def _import_legacy_finished_jobs_locked(self) -> int:
+        """One-time import of the server's separate finished-job file.
+
+        The client's server kept finished jobs in job_finished_state.json (+ .bak).
+        Rows not already restored are rebuilt as terminal jobs, the caller's
+        persist writes them into the main state file, and the legacy file is
+        renamed to *.migrated so the import runs once.
+        """
+        legacy_path = self._jobs_state_path.with_name("job_finished_state.json")
+        legacy_backup = legacy_path.with_name("job_finished_state.json.bak")
+        data: Optional[dict[str, Any]] = None
+        for candidate in (legacy_path, legacy_backup):
+            if not candidate.exists():
+                continue
+            try:
+                loaded = json.loads(candidate.read_text(encoding="utf-8").strip() or "null")
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning(f"Ignoring unreadable legacy finished jobs file {candidate}: {exc}")
+                continue
+            if isinstance(loaded, dict):
+                data = loaded
+                break
+        if data is None:
+            return 0
+
+        imported = 0
+        rows = data.get("jobs", [])
+        for row in rows if isinstance(rows, list) else []:
+            if not isinstance(row, dict):
+                continue
+            job_id = str(row.get("job_id") or "").strip()
+            status = str(row.get("status") or "")
+            if not job_id or job_id in self._jobs or status not in {"completed", "failed", "cancelled", "stopped"}:
+                continue
+            started_at = str(row.get("started_at") or datetime.now(timezone.utc).isoformat())
+            self._jobs[job_id] = self._build_restored_terminal_job(
+                row,
+                job_id=job_id,
+                category=str(row.get("category") or "misc"),
+                started_at=started_at,
+                created_at=str(row.get("created_at") or started_at),
+                display_name=self._normalize_job_name(row.get("display_name")),
+                persisted_status=status,
+                priority=int(row.get("priority") or 0),
+            )
+            imported += 1
+
+        for candidate in (legacy_path, legacy_backup):
+            if not candidate.exists():
+                continue
+            try:
+                candidate.replace(candidate.with_name(candidate.name + ".migrated"))
+            except OSError as exc:
+                logger.warning(f"Could not rename legacy finished jobs file {candidate}: {exc}")
+        return imported
 
     def _finalize_job_locked(
         self,

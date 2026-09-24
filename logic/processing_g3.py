@@ -53,5 +53,7 @@ def _handle_nonready_validation(
     run_state.completed_count += 1
     _complete_runtime_item_checkpoint(current_job, checkpoint_path)
     run_state.publish_counts()
+    if validation.outcome == "failed":
+        run_state.note_failure()
     return True
 

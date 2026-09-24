@@ -151,49 +151,33 @@ class _QueueServiceMixinPart3:
                     self._suspended_pids.pop(job_id, None)
 
     def pause_job(self, job_id: str) -> bool:
-        lane_released = False
+        """Mark a running job Paused at once without freezing its tools.
+
+        The item being uploaded finishes normally; the worker then holds in
+        wait_for_job_resume before the next item. A paused job keeps the queue
+        lane, so no other job starts until it is resumed or stopped.
+        """
         with self._lock:
             job = self._jobs.get(job_id)
             if not job:
                 return False
 
             status = str(job.get("status"))
-            if status == "paused" or (status == "running" and job.get("pause_requested")):
+            if status == "paused":
                 return True
             if status != "running":
                 return False
 
             job["pause_requested"] = True
-            suspended = self._suspend_job_processes_locked(job_id)
-            if suspended:
-                job["status"] = "paused"
-                job["progress"] = "Paused by user"
-                job["speed"] = "Paused"
-                job["current_stage"] = "PAUSED"
-                lane_released = True
-            else:
-                job["progress"] = "Pause requested - waiting for a safe checkpoint..."
-                job["_pause_ack_callback"] = lambda: self._acknowledge_python_pause(job_id, job)
-            self._record_job_event(
-                job,
-                "paused" if suspended else "pause-requested",
-                str(job.get("progress") or "Pause requested"),
-            )
-            logger.debug(f"Pause requested for job {job_id}; suspended {suspended} process(es)")
-            self._persist_jobs_locked()
-        if lane_released:
-            self._try_start_queued()
-        return True
-
-    def _acknowledge_python_pause(self, job_id: str, expected_job: dict[str, Any]) -> None:
-        """Release the scheduler lane after a Python worker reaches a pause checkpoint."""
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if job is not expected_job or not job.get("pause_requested") or job.get("status") != "paused":
-                return
             job.pop("_pause_ack_callback", None)
+            job["status"] = "paused"
+            job["progress"] = "Paused by user"
+            job["speed"] = "Paused"
+            job["current_stage"] = "PAUSED"
+            self._record_job_event(job, "paused", "Paused by user")
+            logger.debug(f"Pause requested for job {job_id}; current item finishes first")
             self._persist_jobs_locked()
-        self._try_start_queued()
+        return True
 
     def get_queue_control_state(self) -> dict[str, Any]:
         with self._lock:
@@ -440,8 +424,8 @@ class _QueueServiceMixinPart3:
                     job["resume_requested"] = True
                     job["progress"] = "Resume queued - waiting for scheduler lane..."
                     self._record_job_event(job, "resume-requested", str(job["progress"]))
-                else:
-                    self._resume_paused_job_locked(job_id, job)
+                elif self._resume_paused_job_locked(job_id, job):
+                    should_try_start = True
                 self._persist_jobs_locked()
             else:
                 return False
@@ -450,10 +434,23 @@ class _QueueServiceMixinPart3:
             self._try_start_queued()
         return True
 
-    def _resume_paused_job_locked(self, job_id: str, job: dict[str, Any]) -> None:
+    def _resume_paused_job_locked(self, job_id: str, job: dict[str, Any]) -> bool:
+        """Resume a paused job; True means it was re-queued and needs a launch.
+
+        A job restored as paused after a restart has no worker thread, so it is
+        re-queued for a fresh start. A live paused worker is blocked in
+        wait_for_job_resume and simply continues.
+        """
         job["resume_requested"] = False
         job["pause_requested"] = False
         job.pop("_pause_ack_callback", None)
+        if job.pop("_restored_paused", False):
+            job["status"] = "queued"
+            job["progress"] = "Re-queued after resume"
+            job["current_stage"] = "QUEUED"
+            job["speed"] = None
+            self._record_job_event(job, "resumed", "Re-queued after resume")
+            return True
         job["status"] = "running"
         job["progress"] = "Resumed"
         self._record_job_event(job, "resumed", "Job resumed")
@@ -464,6 +461,7 @@ class _QueueServiceMixinPart3:
 
         resumed = self._resume_job_processes_locked(job_id)
         logger.debug(f"Resumed job {job_id}; resumed {resumed} process(es)")
+        return False
 
     def stop_job(self, job_id: str, *, clear_after_stop: bool = False) -> bool:
         with self._lock:

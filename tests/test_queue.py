@@ -44,15 +44,17 @@ def test_nested_external_lookup_includes_lazy_loaded_and_ignored_groups() -> Non
     assert "extLoadedChildren" not in queue_js
 
 
-def test_job_names_use_release_folder_without_item_count(tmp_path) -> None:
+def test_job_names_use_category_and_item_count(tmp_path) -> None:
+    # The client's server names jobs '<Category> - N items' (handoff D01).
     service = _make_queue_service_stub(tmp_path)
     release_dir = tmp_path / "0-Pokemon Horizon - Singles"
     episode_one = release_dir / "Pokemon.S20E01.1080p.WEBRip.mkv"
     episode_two = release_dir / "Pokemon.S20E02.1080p.WEBRip.mkv"
 
-    assert service._default_job_name("mixed", 2, [episode_one, episode_two]) == release_dir.name
-    assert service._default_job_name("anime", 1, [release_dir]) == release_dir.name
-    assert service._default_job_name("mixed", 123) == "Selected Upload"
+    assert service._default_job_name("mixed", 2, [episode_one, episode_two]) == "Mixed - 2 items"
+    assert service._default_job_name("anime", 1, [release_dir]) == "Anime - 1 item"
+    assert service._default_job_name("mixed", 123) == "Mixed - 123 items"
+    assert service._default_job_name("tv", 0) == "TV"
 
 
 def test_queue_job_count_is_below_progress_and_describes_remaining_items() -> None:
@@ -490,7 +492,8 @@ def test_resume_queue_requeues_resumable_stopped_job(tmp_path) -> None:
     assert service._jobs["job-stop"]["status"] == "queued"
     assert service._jobs["job-stop"]["progress"] == "Queued - waiting for current job to finish..."
 
-def test_pausing_one_job_releases_scheduler_lane_for_next_job(tmp_path, monkeypatch) -> None:
+def test_pausing_one_job_keeps_scheduler_lane(tmp_path, monkeypatch) -> None:
+    # DECISIONS: pause never SIGSTOPs, and a paused job keeps the queue lane.
     service = _make_queue_service_stub(tmp_path)
     service._jobs = {
         "active": {
@@ -508,16 +511,22 @@ def test_pausing_one_job_releases_scheduler_lane_for_next_job(tmp_path, monkeypa
         },
     }
     launched: list[str] = []
-    monkeypatch.setattr(service, "_suspend_job_processes_locked", lambda _job_id: 1)
+
+    def refuse_suspend(_job_id):
+        raise AssertionError("pause must not suspend processes")
+
+    monkeypatch.setattr(service, "_suspend_job_processes_locked", refuse_suspend)
     monkeypatch.setattr(service, "_launch_job", lambda job: launched.append(str(job["job_id"])))
 
     assert service.pause_job("active") is True
+    service._try_start_queued()
 
     assert service._jobs["active"]["status"] == "paused"
+    assert service._jobs["active"]["progress"] == "Paused by user"
     assert service._queue_processing_paused is False
-    assert launched == ["next"]
+    assert launched == []
 
-def test_python_job_releases_lane_only_after_pause_checkpoint(tmp_path, monkeypatch) -> None:
+def test_paused_python_job_holds_at_item_boundary_until_resumed(tmp_path, monkeypatch) -> None:
     from core.utils import wait_for_job_resume
 
     service = _make_queue_service_stub(tmp_path)
@@ -541,13 +550,11 @@ def test_python_job_releases_lane_only_after_pause_checkpoint(tmp_path, monkeypa
         job["status"] = "running"
         launched.set()
 
-    monkeypatch.setattr(service, "_suspend_job_processes_locked", lambda _job_id: 0)
     monkeypatch.setattr(service, "_launch_job", fake_launch)
 
     assert service.pause_job("active") is True
-    assert service._jobs["active"]["status"] == "running"
+    assert service._jobs["active"]["status"] == "paused"
     assert service._jobs["active"]["pause_requested"] is True
-    assert launched.is_set() is False
 
     checkpoint_finished = threading.Event()
 
@@ -558,18 +565,14 @@ def test_python_job_releases_lane_only_after_pause_checkpoint(tmp_path, monkeypa
     checkpoint_thread = threading.Thread(target=reach_checkpoint, daemon=True)
     checkpoint_thread.start()
 
-    assert launched.wait(1.0)
-    assert service._jobs["active"]["status"] == "paused"
-    assert checkpoint_finished.is_set() is False
+    assert checkpoint_finished.wait(0.2) is False
+    assert launched.is_set() is False
 
     assert service.resume_job("active") is True
-    assert service._jobs["active"]["resume_requested"] is True
-    service._jobs["next"]["status"] = "completed"
-    service._try_start_queued()
-
     assert checkpoint_finished.wait(1.0)
     assert service._jobs["active"]["status"] == "running"
     assert service._jobs["active"]["pause_requested"] is False
+    assert launched.is_set() is False
 
 def test_resume_cancels_unacknowledged_python_pause(tmp_path, monkeypatch) -> None:
     service = _make_queue_service_stub(tmp_path)
@@ -1739,7 +1742,9 @@ def test_process_single_directory_reuses_scanned_nfo_for_submission(tmp_path, mo
     assert scans["count"] == 1
     assert seen["nfo"] == nfo_file
 
-def test_process_single_keeps_other_targets_running_when_one_upload_flow_raises(tmp_path, monkeypatch) -> None:
+def test_process_single_posts_once_per_shared_server_and_submits_each_priority_group(tmp_path, monkeypatch) -> None:
+    # processing-09 (DECISIONS: one post per shared server): priority and normal
+    # indexers on the same server share one NNTP post; each group is submitted.
     import logic.processing as processing
 
     movies_dir = tmp_path / "movies"
@@ -1764,18 +1769,20 @@ def test_process_single_keeps_other_targets_running_when_one_upload_flow_raises(
         priority_resolver=lambda idx, _conf: idx.id == "idx_fail",
     )
 
+    upload_keys: list[str] = []
+
     def fake_upload_item(_name, _server, **kwargs):
-        progress_key = str(kwargs.get("progress_key") or "")
-        if "idx_fail" in progress_key:
-            raise RuntimeError("boom")
+        upload_keys.append(str(kwargs.get("progress_key") or ""))
         return {"duration": 0.1, "speed_bps": 1, "server_name": "Primary"}
 
     monkeypatch.setattr(processing, "upload_item", fake_upload_item)
 
-    seen: list[str] = []
+    seen: list[tuple[str, str]] = []
 
-    def fake_submit_api(_name, dest, _conf, **_kwargs):
-        seen.append(dest)
+    def fake_submit_api(name, dest, _conf, **_kwargs):
+        seen.append((dest, name))
+        if dest == "idx_fail":
+            return SubmitResult(False, "rejected", "boom")
         return SubmitResult(True, "success", "ok")
 
     monkeypatch.setattr(processing, "submit_api", fake_submit_api)
@@ -1789,7 +1796,9 @@ def test_process_single_keeps_other_targets_running_when_one_upload_flow_raises(
     )
 
     assert result == 0
-    assert seen == ["idx_ok"]
+    # One post for both indexers; the set keeps " (P)" so the uploader labels it priority.
+    assert upload_keys == ["idx_fail/idx_ok (P)"]
+    assert seen == [("idx_fail", "Priority Movie.Name.2026.1080p.mkv"), ("idx_ok", "Movie.Name.2026.1080p.mkv")]
 
 def test_run_job_validates_duplicates_per_item_without_batch_prefetch(tmp_path, monkeypatch) -> None:
     import logic.processing as processing
@@ -1815,7 +1824,8 @@ def test_run_job_validates_duplicates_per_item_without_batch_prefetch(tmp_path, 
     def fail_batch_prefetch(*_args, **_kwargs):
         raise AssertionError("run_job should not batch-prefetch duplicate state before uploads")
 
-    def fake_check_duplicate_dynamic(item_key: str, _itype: str, indexer_ids: list[str]):
+    def fake_check_duplicate_dynamic(item_key: str, _itype: str, indexer_ids: list[str], filesize=None):
+        assert filesize == 1
         assert indexer_ids == ["geek"]
         assert item_key in {
             "Movie.One.2026.1080p.mkv",
@@ -2072,6 +2082,14 @@ def test_preview_processing_items_reports_ready_and_duplicate_destinations(tmp_p
         ),
     )
     monkeypatch.setattr(processing, "_resolve_submission_category", lambda *_args: "Movies")
+    # An all-done prefetch is re-verified with the live size-aware check (processing-05).
+    monkeypatch.setattr(
+        db,
+        "check_duplicate_dynamic",
+        lambda key, _itype, ids, filesize=None: {
+            idx: ("2026-01-01T00:00:00+00:00" if key == first.name and filesize == 1 else None) for idx in ids
+        },
+    )
 
     result = processing.preview_processing_items(
         [

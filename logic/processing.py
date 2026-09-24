@@ -17,14 +17,15 @@ from logic.processing_base import (
     has_clear_movie_year as has_clear_movie_year, has_multi_file_episode_pattern as has_multi_file_episode_pattern, humanfriendly as humanfriendly,
     log_completed as log_completed, log_info as log_info, log_success as log_success, log_verbose as log_verbose, logger as logger,
     looks_like_tv_name as looks_like_tv_name, mp as mp, normalize_submission_category as normalize_submission_category, os as os,
-    purge_item_data as purge_item_data, re as re, record_nntp_success as record_nntp_success, resolve_explicit_path as resolve_explicit_path,
+    pin_folder_ts_to_children as pin_folder_ts_to_children, purge_item_data as purge_item_data, re as re, record_nntp_success as record_nntp_success, resolve_explicit_path as resolve_explicit_path,
     run_command as run_command, scan_configured_items as scan_configured_items, set_thread_job as set_thread_job, should_skip_file as should_skip_file,
     shutil as shutil, stdlib_queue as stdlib_queue, submit_api as submit_api, subprocess as subprocess, update_db_destination as update_db_destination,
     update_job_progress as update_job_progress, upload_item as upload_item, uuid as uuid, wait_for_job_resume as wait_for_job_resume,
 )
 from logic.processing_g1 import (
     QueueItemValidation as QueueItemValidation, SupportAssetScan as SupportAssetScan, _SingleUploadContext as _SingleUploadContext,
-    _SingleUploadState as _SingleUploadState, _append_cleanup_path as _append_cleanup_path, _build_item_key as _build_item_key,
+    _SingleUploadState as _SingleUploadState, _already_exists_skip_message as _already_exists_skip_message,
+    _append_cleanup_path as _append_cleanup_path, _build_item_key as _build_item_key,
     _build_upload_sets as _build_upload_sets, _classify_preview_validation as _classify_preview_validation,
     _collect_release_keywords as _collect_release_keywords, _descendant_files as _descendant_files, _find_nfo_path as _find_nfo_path,
     _folder_log_itype as _folder_log_itype, _has_enough_temp_space as _has_enough_temp_space, _has_tv_season_pack_name as _has_tv_season_pack_name,
@@ -439,7 +440,9 @@ def _record_folder_hierarchy_rows(
         folder_size = _folder_size_cached(folder_path)
         if folder_size <= 0:
             continue
-        record_nntp_success(folder_key, folder_size, folder_itype)
+        # Folder rows never jump to "now" on each child upload; they are pinned
+        # just above their newest child instead.
+        record_nntp_success(folder_key, folder_size, folder_itype, bump_timestamp=False)
         if dest_id and upload_result is not None:
             update_db_destination(
                 dest_id,
@@ -447,8 +450,10 @@ def _record_folder_hierarchy_rows(
                 folder_size,
                 folder_key,
                 itype=folder_itype,
+                _bump_timestamp=False,
                 **upload_result,
             )
+        pin_folder_ts_to_children(folder_key)
 
 def _plan_explicit_items(
     raw_items: list[tuple[Path, str]],
@@ -682,17 +687,25 @@ def _validate_queue_item(
     indexer_ids = [idx.id for idx in all_indexers]
     if prefetched_dest_status is not None:
         dest_status = {indexer_id: prefetched_dest_status.get(indexer_id) for indexer_id in indexer_ids}
+        # Re-verify with the live size-aware check when the prefetch says all done, to avoid
+        # basename-only false positives (same episode filename from a different release).
+        if item_size_bytes and all(value is not None for value in dest_status.values()):
+            live_key = _build_item_key(path, source_root)
+            try:
+                dest_status = check_duplicate_dynamic(live_key, db_type, indexer_ids, filesize=item_size_bytes)
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass  # keep the prefetched result on error
     else:
         key = _build_item_key(path, source_root)
         try:
-            dest_status = check_duplicate_dynamic(key, db_type, indexer_ids)
+            dest_status = check_duplicate_dynamic(key, db_type, indexer_ids, filesize=item_size_bytes)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             reason = f"Validation failed for {name}: duplicate check error ({exc})"
             logger.exception(reason)
             return QueueItemValidation("failed", path, category, db_type, message=reason, base_folder=source_root)
 
     if _should_skip_completed_item(all_indexers, conf, dest_status, force=force, name=name):
-        reason = f"⏩ '{name}' already exists on all selected destinations - skipped"
+        reason = _already_exists_skip_message(path, source_root, item_size_bytes)
         return QueueItemValidation(
             "skipped",
             path,
@@ -1131,10 +1144,10 @@ def _submit_api_batch(
     submission_category: str,
     nfo_path: Optional[Path],
     mediainfo_path: Optional[Path],
-) -> list[tuple[str, bool, str]]:
+) -> list[tuple[str, bool, str, str]]:
     """Submit an uploaded NZB to one or more indexers."""
 
-    def submit_one(dest_id: str) -> tuple[str, bool, str]:
+    def submit_one(dest_id: str) -> tuple[str, bool, str, str]:
         result = submit_api(
             f"{priority_label}{name}",
             dest_id,
@@ -1144,7 +1157,7 @@ def _submit_api_batch(
             nfo_path=nfo_path,
             mediainfo_path=mediainfo_path,
         )
-        return dest_id, result.success, result.reason
+        return dest_id, result.success, result.reason, result.status
 
     dests = upload_set["dests"]
     if len(dests) == 1:
@@ -1153,9 +1166,9 @@ def _submit_api_batch(
         except Exception as exc:
             reason = f"Unhandled submission exception for indexer '{dests[0]}': {exc}"
             logger.exception(reason)
-            return [(dests[0], False, reason)]
+            return [(dests[0], False, reason, "error")]
 
-    results: dict[str, tuple[str, bool, str]] = {}
+    results: dict[str, tuple[str, bool, str, str]] = {}
     with ThreadPoolExecutor(max_workers=len(dests)) as api_pool:
         futures = {api_pool.submit(submit_one, dest_id): dest_id for dest_id in dests}
         for future in as_completed(futures):
@@ -1165,11 +1178,11 @@ def _submit_api_batch(
             except Exception as exc:
                 reason = f"Unhandled submission exception for indexer '{dest_id}': {exc}"
                 logger.exception(reason)
-                results[dest_id] = (dest_id, False, reason)
+                results[dest_id] = (dest_id, False, reason, "error")
     return [results[dest_id] for dest_id in dests]
 
 def _persist_submission_results(
-    api_results: list[tuple[str, bool, str]],
+    api_results: list[tuple[str, bool, str, str]],
     *,
     name: str,
     item_size: int,
@@ -1183,7 +1196,7 @@ def _persist_submission_results(
 ) -> bool:
     """Persist per-indexer submission results and return whether any succeeded."""
     any_success = False
-    for dest_id, ok, reason in api_results:
+    for dest_id, ok, reason, sub_status in api_results:
         if ok:
             logger.info(f"[INDEXER] {dest_id} accepted '{name}'")
             any_success = True
@@ -1199,6 +1212,12 @@ def _persist_submission_results(
             continue
 
         logger.error(f"[INDEXER] {dest_id} failed '{name}': {reason or 'unknown error'}")
+        if sub_status == "duplicate":
+            logger.info(f"[INDEXER] {dest_id} duplicate treated as already-posted for '{name}'")
+            any_success = True
+            if not test_mode and item_size > 0:
+                update_db_destination(dest_id, name, item_size, key, itype=itype, **upload_result)
+            continue
         if not test_mode and item_size > 0:
             update_db_destination(
                 dest_id,
@@ -1209,6 +1228,12 @@ def _persist_submission_results(
                 status="failed",
                 error=reason or "Indexer submission rejected or unreachable",
             )
+    if any_success and not test_mode:
+        # Pending folder expansion caches indexer ticks; drop them so the new
+        # upload shows at once instead of after the cache TTL.
+        from logic.pending_snapshot import invalidate_pending_indexer_context
+
+        invalidate_pending_indexer_context()
     return any_success
 
 def _run_single_upload_flow(
@@ -1222,12 +1247,19 @@ def _run_single_upload_flow(
     if context.job:
         set_thread_job(context.job)
 
-    priority_label = "Priority " if upload_set.get("priority") else ""
-    target_display = _upload_target_display(upload_set)
-    log_info(
-        f"--- [UPLOAD] Targeting: {target_display} "
-        f"({upload_server.name} @ {upload_server.max_connections} conn) ---"
-    )
+    # A single upload_set may cover several indexer priority groups that share
+    # this server (see _plan_upload_runs). Only ONE physical NNTP upload happens
+    # below; submission_groups gives each priority group its own API submission
+    # (and its own "Priority " name prefix) against that same posted NZB.
+    submission_groups = upload_set.get("submission_groups") or [
+        {"dests": upload_set["dests"], "priority": upload_set.get("priority", False)}
+    ]
+    for group in submission_groups:
+        group_display = _upload_target_display({"id": "/".join(group["dests"]), "priority": group["priority"]})
+        log_info(
+            f"--- [UPLOAD] Targeting: {group_display} "
+            f"({upload_server.name} @ {upload_server.max_connections} conn) ---"
+        )
 
     set_id_safe = upload_set["id"].replace("/", "_").replace(" ", "_")
     unique_nzb = context.conf.get_nzb_path(
@@ -1257,16 +1289,21 @@ def _run_single_upload_flow(
                 category=context.category,
             )
 
-        api_results = _submit_api_batch(
-            upload_set,
-            conf=context.conf,
-            name=context.name,
-            priority_label=priority_label,
-            unique_nzb=unique_nzb,
-            submission_category=context.submission_category,
-            nfo_path=context.nfo_path,
-            mediainfo_path=context.mediainfo_path,
-        )
+        api_results: list[tuple[str, bool, str, str]] = []
+        for group in submission_groups:
+            group_set = {"id": "/".join(group["dests"]), "dests": group["dests"], "priority": group["priority"]}
+            api_results.extend(
+                _submit_api_batch(
+                    group_set,
+                    conf=context.conf,
+                    name=context.name,
+                    priority_label="Priority " if group["priority"] else "",
+                    unique_nzb=unique_nzb,
+                    submission_category=context.submission_category,
+                    nfo_path=context.nfo_path,
+                    mediainfo_path=context.mediainfo_path,
+                )
+            )
         run_success = _persist_submission_results(
             api_results,
             name=context.name,
@@ -1410,7 +1447,7 @@ def process_single(
     key = _build_item_key(path, base_folder)
 
     if prefetched_dest_status is None:
-        dest_status = check_duplicate_dynamic(key, itype, indexer_ids)
+        dest_status = check_duplicate_dynamic(key, itype, indexer_ids, filesize=item_size_bytes)
     else:
         dest_status = {idx: prefetched_dest_status.get(idx) for idx in indexer_ids}
     is_new = all(v is None for v in dest_status.values())
@@ -1545,13 +1582,18 @@ def _collect_targeted_job_items(
     conf: Any,
     runtime_job: Optional[dict[str, Any]],
     process_tv_episodes: bool,
-) -> list[tuple[Path, str]]:
+) -> Optional[list[tuple[Path, str]]]:
+    """Resolve the selected paths; None means the user stopped the job meanwhile."""
     log_info(f"Targeted upload: {len(paths)} item(s)")
     raw_items: list[tuple[Path, str]] = []
     staged_pack_source_dirs: set[str] = set()
     item_hint_map = _build_item_hint_map(item_hints)
 
     for raw_target in paths:
+        if runtime_job and not wait_for_job_resume(runtime_job):
+            log_info("Job stopped by user during path resolution.")
+            update_job_progress(status="stopped")
+            return None
         selected_path = _resolve_targeted_path(raw_target)
         if not selected_path:
             log_info(f"⏩ Non-absolute targeted path rejected: {raw_target}", "WARN")
@@ -1621,6 +1663,8 @@ def _validate_execution_item(
             context.target_indexer_id,
             context.target_indexer_ids,
         )
+        # The prefetch is size-aware (it passes live filesizes), so a replaced
+        # file with the same name is not skipped here.
         if selected_indexers and _should_skip_completed_item(
             selected_indexers,
             conf,
@@ -1633,7 +1677,7 @@ def _validate_execution_item(
                 item,
                 category,
                 _processing_db_type(item, category),
-                message=f"⏩ '{item.name}' already exists on all selected destinations - skipped",
+                message=_already_exists_skip_message(item, prefetched_base_folder, 0),
                 base_folder=prefetched_base_folder,
                 prefetched_dest_status=prefetched_dest_status,
             )
@@ -1796,6 +1840,8 @@ def run_job(
             runtime_job=runtime_job,
             process_tv_episodes=process_tv_episodes,
         )
+        if raw_items is None:
+            return
     else:
         raw_items = _collect_scanned_job_items(
             conf,

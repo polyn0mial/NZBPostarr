@@ -315,7 +315,7 @@ def cmd_pending(args: argparse.Namespace) -> int:
     registry = get_registry()
     active_ids = [idx.id for idx in registry.enabled(conf)]
     try:
-        uploaded_names, _, _ = database.get_dashboard_data(active_ids)
+        uploaded_names, _, _, _ = database.get_dashboard_data(active_ids)
     except database.DatabaseOperationalError as exc:
         if not args.json:
             print(f"WARNING: proceeding with empty upload snapshot due to DB error: {exc}")

@@ -18,6 +18,7 @@ import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 from core.config import get_config
 from core.database import (
+    pin_folder_ts_to_children,
     record_nntp_success,
     update_db_destination,
 )
@@ -85,7 +86,7 @@ __all__ = [
     'extract_speed', 'field', 'find_configured_root', 'get_config', 'get_configured_folders', 'get_thread_job',
     'has_clear_movie_year', 'has_multi_file_episode_pattern', 'humanfriendly', 'log_completed', 'log_info',
     'log_success', 'log_verbose', 'logger', 'looks_like_tv_name', 'mp', 'normalize_submission_category', 'os',
-    'purge_item_data', 're', 'record_nntp_success', 'resolve_explicit_path', 'run_command',
+    'pin_folder_ts_to_children', 'purge_item_data', 're', 'record_nntp_success', 'resolve_explicit_path', 'run_command',
     'scan_configured_items', 'set_thread_job', 'should_skip_file', 'shutil', 'stdlib_queue', 'submit_api',
     'subprocess', 'update_db_destination', 'update_job_progress', 'upload_item', 'uuid', 'wait_for_job_resume',
 ]

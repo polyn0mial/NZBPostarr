@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 import time
 import zlib
 from pathlib import Path
@@ -62,6 +63,57 @@ def stamp_skip_flags(result: Dict[str, Any], skip_config: Optional[Dict[str, Any
                 item["skipped"] = should_skip_file(item["name"], category_key, skip_config)
 
 
+def _has_filepart_path(path_str: str) -> bool:
+    """Return True if path_str has .filepart counterpart (file) or contains any .filepart (dir)."""
+    try:
+        if os.path.isdir(path_str):
+            for _root, _dirs, files in os.walk(path_str):
+                if any(f.endswith(".filepart") for f in files):
+                    return True
+            return False
+        return os.path.exists(path_str + ".filepart")
+    except OSError:
+        return False
+
+
+def stamp_filepart_flags(result: Dict[str, Any]) -> None:
+    """Flag items still being transferred. A flagged folder flags all its children."""
+
+    def _flag_item(item: Dict[str, Any], inherited: bool = False) -> None:
+        path = item.get("path", "")
+        name = item.get("name", "")
+
+        if inherited:
+            own = False
+        elif name.endswith(".filepart"):
+            own = True
+        elif path:
+            # File: check the direct .filepart counterpart only.
+            # Dir (folder pack): os.walk finds any nested .filepart at any depth.
+            own = _has_filepart_path(path)
+        else:
+            own = False
+
+        item["has_filepart"] = own or inherited
+        propagate = item["has_filepart"]
+
+        for child in item.get("children", []):
+            _flag_item(child, inherited=propagate)
+        for child in item.get("files", []):
+            _flag_item(child, inherited=propagate)
+
+    for category_key, category_items in result.items():
+        if not isinstance(category_items, list):
+            continue
+        if category_key == "external":
+            for group in category_items:
+                for item in group.get("items", []):
+                    _flag_item(item)
+        else:
+            for item in category_items:
+                _flag_item(item)
+
+
 def _normalize_dashboard_lookup_values(values: Any) -> Set[str]:
     normalized: Set[str] = set()
     if values is None:
@@ -84,7 +136,32 @@ def _normalize_dashboard_lookup_values(values: Any) -> Set[str]:
     return normalized
 
 
-def _lookup_completed_dashboard_item(completed_lookup: Set[str], *candidate_values: Any) -> bool:
+def _coerce_int(value: Any) -> Optional[int]:
+    """Best-effort int conversion: some legacy filesize records were stored
+    as text, so a raw `==` against a real int would silently never match."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_filesize_lookup(filesize_by_indexer: Dict[str, Dict[str, int]]) -> Dict[str, Dict[str, int]]:
+    """Re-key a {item_name: {indexer_id: filesize}} map onto the same
+    casefolded/slash-normalized keys used by completed_lookup, so a
+    normalized name match can be cross-checked against a known filesize."""
+    lookup: Dict[str, Dict[str, int]] = {}
+    for name, sizes in filesize_by_indexer.items():
+        for normalized in _normalize_dashboard_lookup_values([name]):
+            lookup.setdefault(normalized, {}).update(sizes)
+    return lookup
+
+
+def _lookup_completed_dashboard_item(
+    completed_lookup: Set[str],
+    *candidate_values: Any,
+    filesize_lookup: Optional[Dict[str, Dict[str, int]]] = None,
+    current_size: Optional[int] = None,
+) -> bool:
     if not completed_lookup:
         return False
     normalized_candidates = _normalize_dashboard_lookup_values(candidate_values)
@@ -99,10 +176,30 @@ def _lookup_completed_dashboard_item(completed_lookup: Set[str], *candidate_valu
             or (len(candidate) > 2 and candidate[1] == ":" and candidate[2] in ("/", "\\"))
         )
     }
-    return bool(strong_candidates.intersection(completed_lookup))
+    matched = strong_candidates.intersection(completed_lookup)
+    if not matched:
+        return False
+    if current_size is None or not filesize_lookup:
+        return True
+    # A name match only counts as "completed" if the stored upload's filesize
+    # (when known) still matches what is on disk now; otherwise a locally
+    # replaced file/folder with the same name but a different size would keep
+    # showing as done.
+    for candidate in matched:
+        sizes = filesize_lookup.get(candidate)
+        if not sizes:
+            return True
+        if any(_coerce_int(stored) == current_size for stored in sizes.values()):
+            return True
+    return False
 
 
-def _lookup_upload_map_indexers(upload_map: Dict[str, Set[str]], *candidate_values: Any) -> Set[str]:
+def _lookup_upload_map_indexers(
+    upload_map: Dict[str, Set[str]],
+    *candidate_values: Any,
+    filesize_by_indexer: Optional[Dict[str, Dict[str, int]]] = None,
+    current_size: Optional[int] = None,
+) -> Set[str]:
     """Merge indexer matches across exact keys plus basename/path variants."""
     if not upload_map:
         return set()
@@ -129,7 +226,19 @@ def _lookup_upload_map_indexers(upload_map: Dict[str, Set[str]], *candidate_valu
                     candidates.append(basename)
 
     for candidate in candidates:
-        matches.update(upload_map.get(candidate, set()))
+        idx_ids = upload_map.get(candidate, set())
+        if current_size is not None and filesize_by_indexer:
+            sizes = filesize_by_indexer.get(candidate)
+            if sizes:
+                # Only count an indexer's success for this candidate if its
+                # stored filesize (when known) still matches what is on disk:
+                # a locally replaced file/folder with a new size must not
+                # inherit a stale indexer's completed status.
+                idx_ids = {
+                    idx_id for idx_id in idx_ids
+                    if idx_id not in sizes or _coerce_int(sizes.get(idx_id)) == current_size
+                }
+        matches.update(idx_ids)
 
     return matches
 
@@ -138,7 +247,7 @@ _EPISODE_TAG_RE = re.compile(r"S\d{1,2}[.\s_&-]*E\d{1,3}", re.IGNORECASE)
 _SOURCE_EXEMPT_NAME_RE = re.compile(
     r"(?i)(?:\.(?:mp3|flac|m4a|aac|ogg|opus|wav|wma|aif|aiff|alac|ape|mka|cue)(?:$|\b)|\b(?:music|audiobook|audiobooks|ebook|ebooks|disc|cd|vinyl|lossless|podcast)\b)"
 )
-_SEASON_MARKER_RE = re.compile(r"(?:\bS\d{1,2}\b|\bS\d{1,2}X?E\d{1,3}\b|\bSeason\b|\b\d{1,2}x\d{1,3}\b|\bEp(?:isode)?\.?\s?\d{1,3}\b)", re.IGNORECASE)
+_SEASON_MARKER_RE = re.compile(r"(?:\bS\d{1,2}\b|\bS\d{4}\b|\bS\d{1,2}X?E\d{1,3}\b|\bSeason\b|\b\d{1,2}x\d{1,3}\b|\bEp(?:isode)?\.?\s?\d{1,3}\b)", re.IGNORECASE)
 _SCENE_VIDEO_TAG_RE = re.compile(
     r"(?:\b(?:19|20)\d{2}\b|\b(?:480|576|720|1080|1440|2160|4320)[pi]\b|\b(?:bluray|bdrip|brrip|webrip|web[-_.\s]?dl|remux|hdtv|dvdrip|x26[45]|h\.?26[45])\b)",
     re.IGNORECASE,
@@ -465,6 +574,10 @@ def _decide_child_promoted_category(
         return ""
     if "disc" in child_set:
         return "disc"
+    # A folder whose children are all one book/music type is that type.
+    for target in ("audiobooks", "ebooks", "books", "music"):
+        if child_set == {target}:
+            return target
 
     # For regular media packs, let strong child consensus set the parent.
     tv_count = sum(1 for c in child_cats if c == "tv")
@@ -508,8 +621,8 @@ def _walk_category_inheritance(n: Dict[str, Any]) -> None:
     current = str(n.get("detected_category") or n.get("category") or "").strip().lower()
     child_cats = [str(c.get("detected_category") or c.get("category") or "").strip().lower() for c in children]
     promote = _decide_child_promoted_category(n, current, children, child_cats)
-    if promote == "disc":
-        _force_tree_category(n, "disc")
+    if promote in {"disc", "audiobooks", "ebooks", "books", "music"}:
+        _force_tree_category(n, promote)
         return
     if promote:
         n["detected_category"] = promote
@@ -855,9 +968,15 @@ def _stamp_tree_selection_state(item: Dict[str, Any], resolution: Any) -> bool:
 
     def visit(node: Dict[str, Any]) -> bool:
         child_selected = False
-        for child in node.get("children", []) or []:
+        built_children = node.get("children", []) or []
+        for child in built_children:
             child_selected = visit(child) or child_selected
         node_identity = _selection_path_identity(node.get("path", ""))
+        if node.get("is_dir") and not built_children:
+            # Lazy tree: children are not built yet, so look for selectable
+            # descendants among the resolved queue paths instead.
+            prefix = node_identity.rstrip("\\/") + os.sep
+            child_selected = any(path.startswith(prefix) for path in selectable)
         return _annotate_selection_node(node, node_identity, selectable, ignored, child_selected)
 
     has_selectable = visit(item)
@@ -883,15 +1002,11 @@ def _mark_ignored_tree_nodes_completed(node: Dict[str, Any], active_ids: List[st
 
 
 def _clear_non_target_ignored_flags(node: Dict[str, Any]) -> None:
-    """Keep DISC content selectable and clear source-only ignores for exempt classes."""
+    """Only TV/ANIME trees keep ignored state from episode/source rules."""
     if not isinstance(node, dict):
         return
     category = str(node.get("detected_category") or node.get("category") or "").strip().lower()
-    reason = str(node.get("auto_select_reason") or "")
-    if category == "disc" or (
-        category in {"books", "ebooks", "audiobooks", "music"}
-        and reason.lower().startswith("missing media source")
-    ):
+    if category not in {"tv", "anime"}:
         node["auto_select_ignored"] = False
         node["auto_select_reason"] = ""
         node["auto_selectable"] = True
@@ -916,18 +1031,15 @@ def _rollup_ignored_completion(node: Dict[str, Any], active_ids: List[str]) -> N
 def _rollup_leaf_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
     direct_indexers = _direct_indexers_of(node)
     indexers = direct_indexers or (node.get("indexers", {}) if isinstance(node.get("indexers"), dict) else {})
+    deferred_done = node.get("_deferred_children_done")
     if active_ids:
-        node["indexers"] = {idx_id: bool(indexers.get(idx_id, False)) for idx_id in active_ids}
-    node["completed"] = bool(active_ids) and bool(indexers) and all(indexers.values())
-
-
-def _rollup_pack_self_completion(node: Dict[str, Any], active_ids: List[str]) -> None:
-    direct_indexers = _direct_indexers_of(node)
-    if active_ids:
-        node["indexers"] = {idx_id: bool(direct_indexers.get(idx_id, False)) for idx_id in active_ids}
-        node["completed"] = bool(node["indexers"]) and all(node["indexers"].values())
-    else:
-        node["completed"] = False
+        if isinstance(deferred_done, dict):
+            # Deferred (lazily loaded) directory: complete only when ALL of its
+            # direct children are in the upload map for that indexer.
+            node["indexers"] = {idx_id: bool(deferred_done.get(idx_id, True)) for idx_id in active_ids}
+        else:
+            node["indexers"] = {idx_id: bool(indexers.get(idx_id, False)) for idx_id in active_ids}
+    node["completed"] = bool(active_ids) and bool(node.get("indexers")) and all(node["indexers"].values())
 
 
 def _rollup_children_completion(
@@ -964,10 +1076,8 @@ def _rollup_external_completion(node: Dict[str, Any], active_ids: List[str]) -> 
         _rollup_leaf_completion(node, active_ids)
         return
 
-    if node.get("is_dir") and node.get("auto_selectable") and not node.get("_pack_via_children"):
-        _rollup_pack_self_completion(node, active_ids)
-        return
-
+    # Packs roll up from their children (queue-backend-16); a pack's own record
+    # alone no longer marks it done.
     required_children = [child for child in children if not child.get("auto_select_ignored")]
     _rollup_children_completion(node, required_children, active_ids)
 
@@ -1029,6 +1139,38 @@ def _enforce_child_source_requirement(node: Dict[str, Any]) -> None:
         child["auto_select_ignored"] = True
         child["auto_select_reason"] = "Missing quality source in filename (WEB-DL/BluRay/HDTV/DVD/etc. required for individual upload)"
         child["auto_selectable"] = False
+        child["eligible"] = False
+
+
+def _exclude_ignored_deferred_children(item: Dict[str, Any], resolution: Any, active_ids: List[str]) -> None:
+    """Judge a lazily scanned folder only by the children that can be uploaded.
+
+    The deferred check looks at every direct child; extras, samples and
+    sidecars the resolver ignores are never uploaded on their own, so they must
+    not keep a finished pack from showing as done. A folder with no uploadable
+    child is never done (ignored rows never count as done).
+    """
+    per_child = item.get("_deferred_child_indexers")
+    if not isinstance(per_child, dict) or not isinstance(item.get("_deferred_children_done"), dict) or not active_ids:
+        return
+    ignored = {_selection_path_identity(entry.path) for entry in getattr(resolution, "ignored_paths", ()) or ()}
+    required = [indexers for identity, indexers in per_child.items() if identity not in ignored]
+    item["_deferred_children_done"] = {
+        idx_id: bool(required) and all(idx_id in indexers for indexers in required) for idx_id in active_ids
+    }
+
+
+def _stamp_lazy_children_selection(children: List[Dict[str, Any]], resolution: Any) -> None:
+    """Stamp auto-select state on one lazily loaded level from its parent's resolution."""
+    selectable = {_selection_path_identity(path) for path in getattr(resolution, "queue_paths", ()) or ()}
+    ignored = {
+        _selection_path_identity(entry.path): entry.reason for entry in getattr(resolution, "ignored_paths", ()) or ()
+    }
+    for child in children:
+        identity = _selection_path_identity(child.get("path", ""))
+        prefix = identity.rstrip("\\/") + os.sep
+        descendant_selected = bool(child.get("is_dir")) and any(path.startswith(prefix) for path in selectable)
+        _annotate_selection_node(child, identity, selectable, ignored, descendant_selected)
 
 
 def _inherit_parent_valid_state(node: Dict[str, Any]) -> bool:
@@ -1060,6 +1202,8 @@ def _inherit_parent_valid_state(node: Dict[str, Any]) -> bool:
 def _strip_external_helper_fields(node: Dict[str, Any]) -> None:
     node.pop("_direct_indexers", None)
     node.pop("_pack_via_children", None)
+    node.pop("_deferred_children_done", None)
+    node.pop("_deferred_child_indexers", None)
     for child in node.get("children", []) or []:
         if isinstance(child, dict):
             _strip_external_helper_fields(child)
@@ -1239,10 +1383,14 @@ def _scan_external_children(
     folder_category_hint: str,
     include_children: bool,
     seen_dirs: Set[str],
-) -> "tuple[bool, List[Dict[str, Any]], bool, int]":
-    """Determine directory-ness and recursively build child tree items.
-    Extracted from _build_external_tree_item to keep its own branching down.
-    Returns (is_dir, children, fully_scanned, size)."""
+    filesize_by_indexer: Optional[Dict[str, Dict[str, int]]] = None,
+) -> "tuple[bool, List[Dict[str, Any]], bool, int, int, Optional[Dict[str, bool]], Dict[str, Set[str]]]":
+    """Determine directory-ness and build child tree items.
+
+    With include_children=False (lazy tree), a directory's direct children are
+    only counted and checked against the upload map, so its completion is known
+    without building them. Returns (is_dir, children, fully_scanned, size,
+    deferred_child_count, deferred_children_done, deferred_child_indexers)."""
     is_dir = node.is_dir()
     fully_scanned = True
 
@@ -1274,6 +1422,7 @@ def _scan_external_children(
                     folder_category_hint=folder_category_hint,
                     top_level=False,
                     include_children=True,
+                    filesize_by_indexer=filesize_by_indexer,
                     _seen_dirs=seen_dirs,
                 )
                 children.append(child_item)
@@ -1282,7 +1431,54 @@ def _scan_external_children(
             children = []
             fully_scanned = False
 
-    return is_dir, children, fully_scanned, size
+    deferred_child_count = 0
+    deferred_children_done: Optional[Dict[str, bool]] = None
+    deferred_child_indexers: Dict[str, Set[str]] = {}
+    if is_dir and fully_scanned and not include_children:
+        try:
+            deferred_children_done = {idx_id: True for idx_id in active_ids} if active_ids else {}
+            for child in node.iterdir():
+                if child.name.startswith("."):
+                    continue
+                deferred_child_count += 1
+                if not active_ids:
+                    continue
+                child_rel = f"{rel_path}/{child.name}" if rel_path else child.name
+                # Cheap size check for file grandchildren only: sizing a directory
+                # grandchild here would defeat the point of lazy loading.
+                child_current_size: Optional[int] = None
+                if not child.is_dir():
+                    try:
+                        child_current_size = child.stat().st_size
+                    except OSError:
+                        child_current_size = None
+                child_indexers = _lookup_upload_map_indexers(
+                    upload_map,
+                    child.name,
+                    child_rel,
+                    child,
+                    filesize_by_indexer=filesize_by_indexer,
+                    current_size=child_current_size,
+                )
+                deferred_child_indexers[_selection_path_identity(child)] = set(child_indexers)
+                for idx_id in active_ids:
+                    if idx_id not in child_indexers:
+                        deferred_children_done[idx_id] = False
+        except OSError:
+            deferred_child_count = 0
+            deferred_children_done = None
+            deferred_child_indexers = {}
+            fully_scanned = False
+
+    return (
+        is_dir,
+        children,
+        fully_scanned,
+        size,
+        deferred_child_count,
+        deferred_children_done,
+        deferred_child_indexers,
+    )
 
 
 def _compute_external_item_indexer_status(
@@ -1292,6 +1488,9 @@ def _compute_external_item_indexer_status(
     active_ids: List[str],
     is_dir: bool,
     children: List[Dict[str, Any]],
+    *,
+    filesize_by_indexer: Optional[Dict[str, Dict[str, int]]] = None,
+    current_size: Optional[int] = None,
 ) -> tuple[Dict[str, bool], Dict[str, bool]]:
     """Return (indexer_status, direct_indexer_status) for one external tree item.
 
@@ -1304,6 +1503,8 @@ def _compute_external_item_indexer_status(
         node.name,
         rel_path,
         node,
+        filesize_by_indexer=filesize_by_indexer,
+        current_size=current_size,
     )
     direct_indexer_status: Dict[str, bool] = {idx_id: (idx_id in node_indexers) for idx_id in active_ids}
     indexer_status: Dict[str, bool] = dict(direct_indexer_status)
@@ -1322,11 +1523,16 @@ def _apply_nested_external_item_category(item: Dict[str, Any], node: Path, folde
     Extracted from _build_external_tree_item to keep its own branching down;
     mutates item in place.
     """
+    hint_category = str(folder_category_hint or "").strip().lower()
     if node.is_file():
         item["itype"] = detect_content_itype(node.name, node, folder_category_hint)
-        nested_category = category_from_itype(item["itype"])
+        # Nested rows keep their parent's category (as on the server) so a
+        # child pill never falls back to another type.
+        nested_category = hint_category or category_from_itype(item["itype"])
     else:
-        nested_category = str(folder_category_hint or "misc").strip().lower()
+        nested_category = hint_category or "misc"
+    if nested_category in {"disc", "books", "ebooks", "audiobooks", "music"}:
+        _force_tree_category(item, nested_category)
     item["detected_category"] = nested_category
     item["category"] = nested_category
     item["detection_method"] = "Configured folder" if folder_category_hint else "Shared classifier"
@@ -1344,11 +1550,20 @@ def _build_external_tree_item(
     folder_category_hint: str = "",
     top_level: bool = False,
     include_children: bool = True,
+    filesize_by_indexer: Optional[Dict[str, Dict[str, int]]] = None,
     _seen_dirs: Optional[Set[str]] = None,
 ) -> tuple[Dict[str, Any], int]:
     resolution = None
     seen_dirs = _seen_dirs if _seen_dirs is not None else set()
-    is_dir, children, fully_scanned, size = _scan_external_children(
+    (
+        is_dir,
+        children,
+        fully_scanned,
+        size,
+        deferred_child_count,
+        deferred_children_done,
+        deferred_child_indexers,
+    ) = _scan_external_children(
         node,
         rel_path,
         external_folder_name,
@@ -1358,6 +1573,7 @@ def _build_external_tree_item(
         folder_category_hint,
         include_children,
         seen_dirs,
+        filesize_by_indexer,
     )
 
     if not is_dir:
@@ -1379,7 +1595,14 @@ def _build_external_tree_item(
         )
 
     indexer_status, direct_indexer_status = _compute_external_item_indexer_status(
-        upload_map, node, rel_path, active_ids, is_dir, children
+        upload_map,
+        node,
+        rel_path,
+        active_ids,
+        is_dir,
+        children,
+        filesize_by_indexer=filesize_by_indexer,
+        current_size=size,
     )
 
     item = {
@@ -1393,13 +1616,16 @@ def _build_external_tree_item(
         "indexers": indexer_status,
         "_direct_indexers": direct_indexer_status,
         "completed": bool(active_ids) and bool(indexer_status) and all(indexer_status.values()),
+        "_deferred_children_done": deferred_children_done,
+        "_deferred_child_indexers": deferred_child_indexers,
         "children": children,
         # Keep a second alias for clients that bind nested expansion off `files`.
         "files": children,
+        "child_count": len(children) if include_children else deferred_child_count,
     }
     if top_level:
         item["_anime_lookup_candidates"] = list(anime_lookup_candidates(node))
-    if is_dir:
+    if is_dir and include_children and not fully_scanned:
         try:
             item["child_count"] = sum(1 for child in node.iterdir() if not child.name.startswith("."))
         except OSError:
@@ -1455,7 +1681,9 @@ def _finalize_top_level_external_item(
     _apply_source_matrix_guard(item)
     _stamp_tree_selection_state(item, resolution)
     _clear_non_target_ignored_flags(item)
+    _enforce_child_source_requirement(item)
     _inherit_parent_valid_state(item)
+    _exclude_ignored_deferred_children(item, resolution, active_ids)
     _mark_ignored_tree_nodes_completed(item, active_ids)
     _rollup_external_completion(item, active_ids)
     _strip_external_helper_fields(item)
@@ -1558,9 +1786,13 @@ def _scan_external_category_folder(
     active_ids: List[str],
     indexer_status_available: bool,
     bulk_selection_by_folder: Dict[str, bool],
+    filesize_by_indexer: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Build one tv/external-folder group of top-level tree items.
-    Extracted from _scan_pending_snapshot_inner to keep its own branching down."""
+
+    Top-level rows are built without their children (lazy tree): each folder
+    carries child_count and a deferred completion check, and its children load
+    one level at a time through build_external_children_snapshot."""
     # Do not hard-bind by watch-folder path; classify from item naming/signatures.
     folder_category_hint = ""
     folder_items: List[Dict[str, Any]] = []
@@ -1589,6 +1821,8 @@ def _scan_external_category_folder(
             active_ids if indexer_status_available else [],
             folder_category_hint=folder_category_hint,
             top_level=True,
+            include_children=False,
+            filesize_by_indexer=filesize_by_indexer,
         )
         folder_items.append(item)
 
@@ -1603,6 +1837,8 @@ def _scan_external_category_folder(
             active_ids if indexer_status_available else [],
             folder_category_hint=folder_category_hint,
             top_level=True,
+            include_children=False,
+            filesize_by_indexer=filesize_by_indexer,
         )
         folder_items.append(file_item)
 
@@ -1618,12 +1854,23 @@ def _scan_external_category_folder(
     }
 
 
+def _count_visible_children(entry: Path) -> int:
+    """Direct non-hidden children of a directory (0 for files)."""
+    if not entry.is_dir():
+        return 0
+    try:
+        return sum(1 for child in entry.iterdir() if not child.name.startswith("."))
+    except OSError:
+        return 0
+
+
 def _scan_regular_category_folder(
     category: str,
     folder: Path,
     upload_map: Dict[str, Set[str]],
     active_ids: List[str],
     indexer_status_available: bool,
+    filesize_by_indexer: Optional[Dict[str, Dict[str, int]]] = None,
 ) -> List[Dict[str, Any]]:
     """Build the flat item rows for one non-tv/external category folder.
     Extracted from _scan_pending_snapshot_inner to keep its own branching down."""
@@ -1637,15 +1884,7 @@ def _scan_regular_category_folder(
         if entry.name.startswith("."):
             continue
         item_key = relative_key(entry, folder)
-        item_indexers = _lookup_upload_map_indexers(
-            upload_map,
-            item_key,
-            entry.name,
-            entry,
-        )
-        item_status: Dict[str, bool] = (
-            {idx_id: (idx_id in item_indexers) for idx_id in active_ids} if indexer_status_available else {}
-        )
+        # Size first: a name match only counts when the stored size still matches.
         if entry.is_dir():
             size = compute_size_uncached(entry)
         else:
@@ -1653,6 +1892,17 @@ def _scan_regular_category_folder(
                 size = entry.stat().st_size
             except OSError:
                 size = 0
+        item_indexers = _lookup_upload_map_indexers(
+            upload_map,
+            item_key,
+            entry.name,
+            entry,
+            filesize_by_indexer=filesize_by_indexer,
+            current_size=size,
+        )
+        item_status: Dict[str, bool] = (
+            {idx_id: (idx_id in item_indexers) for idx_id in active_ids} if indexer_status_available else {}
+        )
         detected_meta = _build_detected_item_metadata(entry, category_hint=category)
         detected_category = str(detected_meta.get("detected_category") or category or "misc")
         items.append(
@@ -1673,6 +1923,8 @@ def _scan_regular_category_folder(
                 "auto_select_reason": detected_meta.get("auto_select_reason", ""),
                 "indexers": item_status,
                 "completed": bool(active_ids) and bool(item_status) and all(item_status.values()),
+                "is_dir": entry.is_dir(),
+                "child_count": _count_visible_children(entry),
                 "_anime_lookup_candidates": list(anime_lookup_candidates(entry)),
             }
         )
@@ -1706,8 +1958,9 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
 
     db_error: Optional[str] = None
     failed_map: Dict[str, Dict[str, str]] = {}
+    filesize_by_indexer: Dict[str, Dict[str, int]] = {}
     try:
-        _fully_done, upload_map, failed_map = database.get_dashboard_data(active_ids)
+        _fully_done, upload_map, failed_map, filesize_by_indexer = database.get_dashboard_data(active_ids)
         completed_lookup = _normalize_dashboard_lookup_values(_fully_done)
     except database.DatabaseOperationalError as exc:
         db_error = str(exc)
@@ -1715,6 +1968,21 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
         logger.warning(f"Pending scan continuing without indexer completion state due to DB error: {exc}")
         upload_map = {}
         completed_lookup = set()
+
+    if not db_error:
+        # Feed the scan's indexer context to folder expansion so it needs no separate DB query.
+        _store_indexer_context(
+            (
+                active_indexers,
+                active_ids,
+                indexer_status_available,
+                upload_map,
+                completed_lookup,
+                db_error,
+                failed_map,
+                filesize_by_indexer,
+            )
+        )
 
     result: Dict[str, Any] = {"tv": [], "movies": [], "misc": [], "external": []}
     categories_cfg = get_configured_category_folders(conf, include_external=True, must_exist=True)
@@ -1746,19 +2014,28 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
                 active_ids,
                 indexer_status_available,
                 bulk_selection_by_folder,
+                filesize_by_indexer,
             )
             if group is not None:
                 external_groups.append(group)
             continue
 
         result[category].extend(
-            _scan_regular_category_folder(category, folder, upload_map, active_ids, indexer_status_available)
+            _scan_regular_category_folder(
+                category,
+                folder,
+                upload_map,
+                active_ids,
+                indexer_status_available,
+                filesize_by_indexer,
+            )
         )
 
     result["external"] = _sort_external_groups(external_groups)
     skip_config = getattr(conf, "skip_files", None)
     if isinstance(skip_config, dict) and skip_config.get("enabled"):
         stamp_skip_flags(result, skip_config)
+    stamp_filepart_flags(result)
     stamp_exclusion_flags(result)
     if indexer_status_available and failed_map:
         _stamp_failed_indexer_flags(result, failed_map, active_ids)
@@ -1997,7 +2274,84 @@ def filter_pending_snapshot(
     }
 
 
-def _get_pending_indexer_context() -> tuple[List[Dict[str, Any]], List[str], bool, Dict[str, Set[str]], Set[str], Optional[str], Dict[str, Dict[str, str]]]:
+_IndexerContext = tuple[
+    List[Dict[str, Any]],
+    List[str],
+    bool,
+    Dict[str, Set[str]],
+    Set[str],
+    Optional[str],
+    Dict[str, Dict[str, str]],
+    Dict[str, Dict[str, int]],
+]
+
+# Stale-while-revalidate cache for _get_pending_indexer_context: serve cached data
+# at once and refresh in the background after the TTL, so folder expansion never
+# blocks on the database while a scan holds the pool. Guarded by a lock.
+_INDEXER_CTX_LOCK = threading.Lock()
+_INDEXER_CTX_CACHE: Optional[_IndexerContext] = None
+_INDEXER_CTX_CACHE_TS: float = 0.0
+_INDEXER_CTX_CACHE_TTL: float = 60.0
+_INDEXER_CTX_REFRESH_RUNNING: bool = False
+
+
+def _store_indexer_context(context: _IndexerContext) -> None:
+    global _INDEXER_CTX_CACHE, _INDEXER_CTX_CACHE_TS, _INDEXER_CTX_REFRESH_RUNNING
+    with _INDEXER_CTX_LOCK:
+        _INDEXER_CTX_CACHE = context
+        _INDEXER_CTX_CACHE_TS = time.monotonic()
+        _INDEXER_CTX_REFRESH_RUNNING = False
+
+
+def invalidate_pending_indexer_context() -> None:
+    """Drop the cached indexer context (after an upload or an indexer toggle)."""
+    global _INDEXER_CTX_CACHE, _INDEXER_CTX_CACHE_TS
+    with _INDEXER_CTX_LOCK:
+        _INDEXER_CTX_CACHE = None
+        _INDEXER_CTX_CACHE_TS = 0.0
+
+
+def _get_pending_indexer_context() -> _IndexerContext:
+    global _INDEXER_CTX_REFRESH_RUNNING
+    with _INDEXER_CTX_LOCK:
+        cache = _INDEXER_CTX_CACHE
+        age = time.monotonic() - _INDEXER_CTX_CACHE_TS
+        if cache is not None and age < _INDEXER_CTX_CACHE_TTL:
+            return cache
+        if cache is not None:
+            # Stale but present: return it now and refresh in the background.
+            if not _INDEXER_CTX_REFRESH_RUNNING:
+                _INDEXER_CTX_REFRESH_RUNNING = True
+                threading.Thread(target=_refresh_indexer_ctx_bg, daemon=True).start()
+            return cache
+
+    # No cache at all (first call after startup): block once.
+    result = _get_pending_indexer_context_fresh()
+    if not result[5]:
+        _store_indexer_context(result)
+    return result
+
+
+def _refresh_indexer_ctx_bg() -> None:
+    """Background thread: refresh the indexer context cache without blocking callers."""
+    global _INDEXER_CTX_REFRESH_RUNNING
+    try:
+        result = _get_pending_indexer_context_fresh()
+        if not result[5]:
+            _store_indexer_context(result)
+    except Exception:  # pylint: disable=broad-exception-caught
+        logger.exception("[pending] Background indexer ctx refresh failed")
+    finally:
+        with _INDEXER_CTX_LOCK:
+            _INDEXER_CTX_REFRESH_RUNNING = False
+
+
+def prewarm_pending_indexer_context() -> None:
+    """Warm the indexer context cache in a daemon thread (call once at app startup)."""
+    threading.Thread(target=_get_pending_indexer_context, daemon=True).start()
+
+
+def _get_pending_indexer_context_fresh() -> _IndexerContext:
     from core.registry import get_registry, resolve_indexer_backfill
 
     conf = get_config()
@@ -2017,8 +2371,9 @@ def _get_pending_indexer_context() -> tuple[List[Dict[str, Any]], List[str], boo
     indexer_status_available = True
     db_error: Optional[str] = None
     failed_map: Dict[str, Dict[str, str]] = {}
+    filesize_by_indexer: Dict[str, Dict[str, int]] = {}
     try:
-        _fully_done, upload_map, failed_map = database.get_dashboard_data(active_ids)
+        _fully_done, upload_map, failed_map, filesize_by_indexer = database.get_dashboard_data(active_ids)
         completed_lookup = _normalize_dashboard_lookup_values(_fully_done)
     except database.DatabaseOperationalError as exc:
         db_error = str(exc)
@@ -2026,7 +2381,16 @@ def _get_pending_indexer_context() -> tuple[List[Dict[str, Any]], List[str], boo
         logger.warning(f"Pending scan continuing without indexer completion state due to DB error: {exc}")
         upload_map = {}
         completed_lookup = set()
-    return active_indexers, active_ids, indexer_status_available, upload_map, completed_lookup, db_error, failed_map
+    return (
+        active_indexers,
+        active_ids,
+        indexer_status_available,
+        upload_map,
+        completed_lookup,
+        db_error,
+        failed_map,
+        filesize_by_indexer,
+    )
 
 
 def build_external_children_snapshot(
@@ -2045,6 +2409,7 @@ def build_external_children_snapshot(
         completed_lookup,
         _db_error,
         _failed_map,
+        filesize_by_indexer,
     ) = _get_pending_indexer_context()
 
     children: List[Dict[str, Any]] = []
@@ -2065,11 +2430,35 @@ def build_external_children_snapshot(
             completed_lookup,
             active_ids if indexer_status_available else [],
             folder_category_hint=folder_category_hint,
-            top_level=True,
-            include_children=True,
+            top_level=False,
+            include_children=False,
+            filesize_by_indexer=filesize_by_indexer,
         )
-        _compact_external_tree_item(child_item)
+        child_item["has_filepart"] = child.name.endswith(".filepart") or _has_filepart_path(str(child))
         children.append(child_item)
+
+    if children:
+        # One resolution of the expanded folder gives this level its ignore
+        # state (extras, samples, sidecars) without building deeper levels.
+        try:
+            resolution = resolve_explicit_path(
+                parent_path,
+                category_hint=folder_category_hint,
+                anime_lookup=_anime_cache_lookup,
+            )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            logger.debug(f"Lazy child resolution failed for {parent_path}: {exc}")
+            resolution = None
+        if resolution is not None:
+            _stamp_lazy_children_selection(children, resolution)
+        for child_item in children:
+            _clear_non_target_ignored_flags(child_item)
+    # Episode files inside a pack named "Show.S01.WEB-DL" must carry their own
+    # source token; the parent folder name does not count for individual upload.
+    _enforce_child_source_requirement({"children": children})
+    for child_item in children:
+        _mark_ignored_tree_nodes_completed(child_item, active_ids if indexer_status_available else [])
+        _strip_external_helper_fields(child_item)
 
     log_backend_timing(
         "scan_pending_children",
