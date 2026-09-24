@@ -1,4 +1,5 @@
 // Auto-split from queue.js - verbatim methods bodies.
+import { categoryMeta, categoryLabel } from "page-base";
 export default {
 async correctAnimeCache(item, isAnime) {
       if (!item || !item.name) return;
@@ -44,6 +45,10 @@ isItemSkipped(item) {
       return this.skipFiles.enabled && this.skipFiles.display_mode === "disabled" && item && item.skipped;
     },
 
+isItemFilepart(item) {
+      return !!(item && item.has_filepart);
+    },
+
 isItemExcluded(item) {
       return item && item.excluded === true;
     },
@@ -53,15 +58,21 @@ isItemExcluded(item) {
     // ============================================================
     async toggleExtItem(key) {
       if (!key) return;
-      const node = this.findExternalNodeByKey(key);
       const next = !this.expandedExtItems[key];
-      if (next && node) {
-        await this.ensureExtChildrenLoaded(node);
-      }
       if (typeof this.$set === "function") {
         this.$set(this.expandedExtItems, key, next);
       } else {
         this.expandedExtItems[key] = next;
+      }
+      if (next) {
+        const item = this._findCurrentPendingNode(key);
+        if (item && item.is_dir && this._getLoadedRowChildren(item).length === 0 && Number(item.child_count || 0) > 0) {
+          try {
+            await this.ensureExtChildrenLoaded(item);
+          } catch (e2) {
+            console.error("Failed to hydrate child items for expanded row", e2);
+          }
+        }
       }
     },
 
@@ -172,12 +183,16 @@ async removeGroup(group) {
 // ============================================================
     //  External Folder ↔ Children Selection
     // ============================================================
-    toggleExtFolderSelection(item, checked) {
+    async toggleExtFolderSelection(item, checked) {
+      if (checked) {
+        await this._ensureExtSubtreeLoaded(item);
+        item = this._findCurrentPendingNode(item.key, item.path) || item;
+      }
       const nextSet = new Set(this.selectedItems);
       const visitItem = (node) => {
         if (!node || !node.key || !this.extItemPassesFilters(node)) return;
         if (checked) {
-          if (this.isAutoSelectable(node)) nextSet.add(node.key);
+          nextSet.add(node.key);
         } else {
           nextSet.delete(node.key);
         }
@@ -185,7 +200,7 @@ async removeGroup(group) {
       };
       (item.children || []).forEach(visitItem);
       if (checked) {
-        if (this.isAutoSelectable(item)) nextSet.add(item.key);
+        nextSet.add(item.key);
       } else {
         nextSet.delete(item.key);
       }
@@ -198,12 +213,16 @@ isExtFolderAllSelected(item) {
       return selectable.every((node) => this.selectedItems.has(node.key));
     },
 
-toggleExtChildSelection(child, _parentItem, checked) {
+async toggleExtChildSelection(child, _parentItem, checked) {
+      if (checked) {
+        await this._ensureExtSubtreeLoaded(child);
+        child = this._findCurrentPendingNode(child.key, child.path) || child;
+      }
       const nextSet = new Set(this.selectedItems);
       const visitItem = (node) => {
         if (!node || !node.key || !this.extItemPassesFilters(node)) return;
         if (checked) {
-          if (this.isAutoSelectable(node)) nextSet.add(node.key);
+          nextSet.add(node.key);
         } else {
           nextSet.delete(node.key);
         }
@@ -223,7 +242,7 @@ forceUploadExtChild(child, event) {
     //  Selection
     // ============================================================
     toggleItemSelection(item, checked) {
-      if (checked && this.isAutoSelectable(item)) {
+      if (checked) {
         this.selectedItems.add(item.key);
       } else {
         this.selectedItems.delete(item.key);
@@ -263,6 +282,67 @@ getCategoryColor(catId) {
       return raw.replace(/-\d+$/, "");
     },
 
+getCategoryStyleMeta(catId) {
+      const palette = {
+        cyan: { border: "#0e7490", background: "rgba(8, 145, 178, 0.16)", text: "#22d3ee" },
+        purple: { border: "#7e22ce", background: "rgba(147, 51, 234, 0.16)", text: "#c084fc" },
+        orange: { border: "#9a3412", background: "rgba(249, 115, 22, 0.16)", text: "#fb923c" },
+        amber: { border: "#a16207", background: "rgba(245, 158, 11, 0.16)", text: "#fbbf24" },
+        pink: { border: "#9d174d", background: "rgba(236, 72, 153, 0.16)", text: "#f472b6" },
+        slate: { border: "#64748b", background: "rgba(148, 163, 184, 0.16)", text: "#e2e8f0" },
+        zinc: { border: "#71717a", background: "rgba(161, 161, 170, 0.16)", text: "#e4e4e7" },
+        green: { border: "#15803d", background: "rgba(34, 197, 94, 0.16)", text: "#4ade80" },
+        emerald: { border: "#047857", background: "rgba(16, 185, 129, 0.16)", text: "#34d399" },
+        blue: { border: "#2563eb", background: "rgba(59, 130, 246, 0.16)", text: "#60a5fa" },
+        red: { border: "#991b1b", background: "rgba(239, 68, 68, 0.16)", text: "#f87171" },
+        gray: { border: "#4b5563", background: "rgba(107, 114, 128, 0.16)", text: "#d1d5db" }
+      };
+      const raw = this.getCategoryColor(catId);
+      const normalized = String(raw || "").trim().toLowerCase();
+      if (normalized.startsWith("#")) {
+        const hex = normalized;
+        return {
+          border: hex,
+          background: `${hex}26`,
+          text: hex
+        };
+      }
+      return palette[normalized] || palette.gray;
+    },
+
+getCategorySwatchStyle(catId) {
+      const style = this.getCategoryStyleMeta(catId);
+      return {
+        backgroundColor: style.background,
+        border: `1px solid ${style.border}`,
+        color: style.text,
+        boxShadow: `inset 0 0 0 1px ${style.border}33`
+      };
+    },
+
+getCategoryIconStyle(catId) {
+      const style = this.getCategoryStyleMeta(catId);
+      return {
+        color: style.text
+      };
+    },
+
+getCategoryBadgeStyle(catId) {
+      const style = this.getCategoryStyleMeta(catId);
+      return {
+        backgroundColor: style.background,
+        borderColor: style.border,
+        color: style.text
+      };
+    },
+
+getCategoryBadgeLabel(catId) {
+      const normalized = String(catId || "").trim().toLowerCase();
+      if (!normalized) return "Type";
+      const hit = Object.values(categoryMeta).find((cat) => cat.id === normalized);
+      return hit?.label || categoryLabel(normalized) || "Type";
+    },
+
 /**
      * Returns label + Tailwind classes for a content-type badge,
      * or null if the itype has no dedicated badge style.
@@ -287,7 +367,7 @@ toggleExternalSelection(checked) {
           const visit = (node) => {
             if (!node || !node.key || !this.extItemPassesFilters(node)) return;
             if (checked) {
-              if (this.isAutoSelectable(node)) nextSet.add(node.key);
+              nextSet.add(node.key);
             } else {
               nextSet.delete(node.key);
             }
@@ -311,22 +391,42 @@ areAllExternalSelected() {
       return selectable.every((item) => this.selectedItems.has(item.key));
     },
 
-toggleExtGroupSelection(groupOrIdx, checked) {
-      const group = typeof groupOrIdx === "number" ? (this.items.external || [])[groupOrIdx] : groupOrIdx;
-      if (!group) return;
-      const selectable = this._groupSelectableItems.get(this.externalGroupKey(group)) || [];
-      const nextSet = new Set(this.selectedItems);
-      for (const node of selectable) {
-        if (checked) nextSet.add(node.key);
-        else nextSet.delete(node.key);
+async toggleExtGroupSelection(groupOrIdx, checked) {
+      const initialGroup = typeof groupOrIdx === "number" ? (this.items.external || [])[groupOrIdx] : groupOrIdx;
+      if (!initialGroup || !initialGroup.items) return;
+      const groupKey = this.externalGroupKey(initialGroup);
+      if (checked) {
+        for (const item of initialGroup.items) {
+          await this._ensureExtSubtreeLoaded(item);
+        }
       }
+      const group = (this.items.external || []).find((g2) => this.externalGroupKey(g2) === groupKey) || initialGroup;
+      if (!group || !group.items) return;
+      const nextSet = new Set(this.selectedItems);
+      group.items.forEach((item) => {
+        const visit = (node) => {
+          if (!node || !node.key || !this.extItemPassesFilters(node)) return;
+          if (checked) {
+            nextSet.add(node.key);
+          } else {
+            nextSet.delete(node.key);
+          }
+          (node.children || []).forEach(visit);
+        };
+        visit(item);
+      });
       this.selectedItems = nextSet;
     },
 
 areAllExtGroupSelected(groupOrIdx) {
       const group = typeof groupOrIdx === "number" ? (this.items.external || [])[groupOrIdx] : groupOrIdx;
-      if (!group) return false;
-      return this._extGroupAllSelectedMap.get(this.externalGroupKey(group)) || false;
+      if (!group || !group.items || group.items.length === 0) return false;
+      const selectable = [];
+      group.items.forEach((item) => {
+        selectable.push(...this.collectVisibleSelectableExternalNodes(item));
+      });
+      if (selectable.length === 0) return false;
+      return selectable.every((item) => this.selectedItems.has(item.key));
     },
 
 getAutoCategoryLabel(item) {
@@ -340,6 +440,7 @@ getExternalItemCategory(item) {
 
 getUploadCategoryForItem(item) {
       if (this.isSelectionIgnored(item)) return "";
+      if (this.isPackOnlyExternalChild(item)) return "";
       const cat = this.getCategoryForItem(item);
       return cat && cat !== "external" ? cat : "";
     },
@@ -354,6 +455,9 @@ getExternalItemIcon(item) {
 
 getFolderStateTooltip(item) {
       if (!item || !item.is_dir) return "";
+      if (this.isPackOnlyExternalChild(item)) {
+        return "This nested folder inherits the parent pack category and is only uploadable through the parent pack.";
+      }
       if (this.isPartiallyIgnored(item)) {
         return "This folder is not uploadable on its own, but some child files still qualify.";
       }
@@ -401,14 +505,19 @@ getCategoryForItem(item) {
         };
         return map[raw] || raw;
       };
+      const inheritedExternalCategory = this.isExternalDescendantNode(item) ? normalizeCategory(this.findExternalAncestorCategory(item)) : "";
+      if (inheritedExternalCategory && inheritedExternalCategory !== "external") return inheritedExternalCategory;
       const directManualCategory = item.key ? normalizeCategory(this.manualExternalCategories[item.key]) : "";
       if (directManualCategory && directManualCategory !== "external") return directManualCategory;
+      if ((item.itype || "").toLowerCase() === "anime") return "anime";
       const detectedCategory = normalizeCategory(item.detected_category);
       if (detectedCategory && detectedCategory !== "external") return detectedCategory;
       const explicitCategory = normalizeCategory(item.category);
       if (explicitCategory && explicitCategory !== "external") return explicitCategory;
       const safeAssigned = normalizeCategory(item.assigned_category_safe);
       if (safeAssigned && safeAssigned !== "external") return safeAssigned;
+      const resolvedExternal = item.key ? normalizeCategory(this._resolveExtCategory(item.key)) : "";
+      if (resolvedExternal && resolvedExternal !== "external") return resolvedExternal;
       const itype = (item.itype || "").toLowerCase();
       if (itype === "external") {
         return detectedCategory || "";
@@ -418,8 +527,6 @@ getCategoryForItem(item) {
       if (itype.includes("movie")) return "movies";
       const itypeCategory = this.itypeToCategory(item.itype);
       if (itypeCategory) return itypeCategory;
-      const resolvedExternal = item.key ? this._resolveExtCategory(item.key) : "";
-      if (resolvedExternal) return resolvedExternal;
       return detectedCategory || "";
     },
 

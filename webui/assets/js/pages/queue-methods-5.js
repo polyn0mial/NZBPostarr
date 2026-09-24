@@ -345,14 +345,30 @@ async forceStartItem(item) {
         movies: "bg-purple-500/15 text-purple-400",
         anime: "bg-pink-500/15 text-pink-400",
         disc: "bg-[#E0E0E0] text-[#2A2A2A] border-[#B9B9B9]",
-        books: "bg-amber-500/15 text-amber-400",
-        ebooks: "bg-amber-500/15 text-amber-400",
+        books: "bg-emerald-500/15 text-emerald-400",
+        ebooks: "bg-emerald-500/15 text-emerald-400",
         audiobooks: "bg-orange-500/15 text-orange-400",
-        music: "bg-emerald-500/15 text-emerald-400",
-        apps: "bg-blue-500/15 text-blue-400",
+        music: "bg-blue-500/15 text-blue-400",
+        apps: "bg-red-500/15 text-red-400",
         misc: "bg-orange-500/15 text-orange-400"
       };
       return map[cat] || "bg-notion-bg-hover text-notion-text-tertiary";
+    },
+
+categorySelectWidthClass(cat) {
+      const map = {
+        tv: "w-[3.4rem]",
+        disc: "w-[4.2rem]",
+        apps: "w-[4.2rem]",
+        misc: "w-[4.3rem]",
+        music: "w-[4.6rem]",
+        anime: "w-[4.7rem]",
+        books: "w-[4.7rem]",
+        movies: "w-[4.9rem]",
+        ebooks: "w-[4.9rem]",
+        audiobooks: "w-[6.2rem]"
+      };
+      return map[cat] || "w-[4.9rem]";
     },
 
 jobScheduleLabel(job) {

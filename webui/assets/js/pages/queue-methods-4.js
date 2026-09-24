@@ -1,4 +1,5 @@
 // Auto-split from queue.js - verbatim methods bodies.
+import { resolvePreferredJobId, maybeRevalidateQueuedJobs, syncActiveJobModal, syncQueuedJobModal } from "./queue.js";
 export default {
 closeForceUploadMenu() {
       this.flyoutOpen = false;
@@ -359,8 +360,17 @@ async loadJobs() {
           const data = await this.apiFetch("/api/uploads/queue");
           this.running = data.running || [];
           this.queued = data.queued || [];
-          this.finished = data.finished || [];
-          this.counts = data.counts || { running: 0, queued: 0, finished: 0 };
+          const freshFinished = data.finished || [];
+          if (freshFinished.length > 0) {
+            this.finished = freshFinished;
+            try { localStorage.setItem("nzb_finished_jobs", JSON.stringify({ ts: Date.now(), jobs: freshFinished })); } catch (_) {}
+          } else {
+            try {
+              const cached = JSON.parse(localStorage.getItem("nzb_finished_jobs") || "null");
+              this.finished = (cached && Date.now() - cached.ts < 864e5 && Array.isArray(cached.jobs)) ? cached.jobs : [];
+            } catch (_) { this.finished = []; }
+          }
+          this.counts = data.counts || { running: 0, queued: 0, finished: this.finished.length };
           this.queueControl = data.control || { paused: false, active: null };
           this.jobQueueControlJobId = resolvePreferredJobId(this.jobQueueControlJobId, this.running, this.queued);
           maybeRevalidateQueuedJobs(this);
