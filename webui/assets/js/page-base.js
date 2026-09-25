@@ -6,6 +6,7 @@ import humanizeDuration from 'humanize-duration';
 import copy from 'copy-to-clipboard';
 import escapeStringRegexp from 'escape-string-regexp';
 import { computePosition, flip, shift, offset } from '@floating-ui/dom';
+import { createElement as createLucideElement, icons as lucideIcons } from 'lucide';
 
 dayjs.extend(relativeTime);
 
@@ -762,12 +763,12 @@ const Sparkline = {
 /**
  * Lucide Icon component.
  *
- * IMPORTANT: Do not call `lucide.createIcons()` per icon instance.
- * The Lucide UMD build scans the whole document for `[data-lucide]` each call
- * (it does not support a `root` option). Doing that inside large v-for lists
- * becomes O(n^2) and makes expands/collapses laggy.
+ * IMPORTANT: Do not call lucide's `createIcons()` per icon instance.
+ * It scans the whole document for `[data-lucide]` each call (it does not
+ * support a `root` option). Doing that inside large v-for lists becomes
+ * O(n^2) and makes expands/collapses laggy.
  *
- * Instead, render SVGs directly via `lucide.createElement(iconDef)`.
+ * Instead, render SVGs directly via lucide's `createElement(iconDef)`.
  */
 const LucideIcon = {
     props: {
@@ -815,9 +816,8 @@ const LucideIcon = {
     },
     methods: {
         renderIcon() {
-            const lucide = window.lucide;
             const container = this.$refs.container;
-            if (!lucide || !container) return;
+            if (!container) return;
 
             const key = `${this.name}|${this.combinedClass}`;
             if (container.dataset.lucideKey === key) return;
@@ -833,11 +833,12 @@ const LucideIcon = {
                 .map(part => part.charAt(0).toUpperCase() + part.slice(1))
                 .join('');
 
-            const def = (lucide.icons && (lucide.icons[pascal] || lucide.icons[this.name])) || lucide[pascal];
-            if (!def || typeof lucide.createElement !== 'function') return;
+            // `icons` carries every icon and alias export, so it covers the old top-level lookup too.
+            const def = lucideIcons[pascal] || lucideIcons[this.name];
+            if (!def) return;
 
             // Render SVG directly (no global DOM scan)
-            const svg = lucide.createElement(def);
+            const svg = createLucideElement(def);
             svg.setAttribute('class', `lucide lucide-${this.name} ${this.combinedClass}`.trim());
             container.appendChild(svg);
         }

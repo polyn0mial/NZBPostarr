@@ -20,11 +20,10 @@ export default [
         languageOptions: {
             ecmaVersion: 2022,
             sourceType: 'module',
+            // Vue and lucide are not globals here: every page imports them through the
+            // bundle, so neither is declared.
             globals: {
                 ...globals.browser,
-                // Loaded as a classic script by base.html, never imported. Vue is not a
-                // global here: every page imports it through the bundle, so it is not declared.
-                lucide: 'readonly',
             },
         },
         rules,
