@@ -1,0 +1,83 @@
+# Category parity fixture: tests/characterization/classify_tree.tree plus the queue-ui-12 client cases.
+# Dumped by tools/classify_dump.py (plus upload_itype) into category_parity.jsonl.
+
+# Movies: release folder and a loose file
+The.Matrix.1999.1080p.BluRay.x264-GRP/The.Matrix.1999.1080p.BluRay.x264-GRP.mkv
+The.Matrix.1999.1080p.BluRay.x264-GRP/The.Matrix.1999.1080p.BluRay.x264-GRP.nfo
+Oppenheimer.2023.2160p.WEB-DL.DDP5.1.H265-NTb.mkv
+1917.2019.1080p.BluRay.x264-GRP/1917.2019.1080p.BluRay.x264-GRP.mkv
+
+# TV episodes: loose file, release folder, air date
+Severance.S02E01.1080p.ATVP.WEB-DL.DDP5.1-NTb.mkv
+Breaking.Bad.S05E14.720p.HDTV.x264-GRP/Breaking.Bad.S05E14.720p.HDTV.x264-GRP.mkv
+The.Daily.Show.2024.03.11.Guest.Name.1080p.WEB.h264-GRP.mkv
+
+# Season pack with source tokens
+The.Bear.S03.1080p.HULU.WEB-DL.DDP5.1-GRP/The.Bear.S03E01.1080p.HULU.WEB-DL.DDP5.1-GRP.mkv
+The.Bear.S03.1080p.HULU.WEB-DL.DDP5.1-GRP/The.Bear.S03E02.1080p.HULU.WEB-DL.DDP5.1-GRP.mkv
+
+# Season pack without source tokens
+Show Name S01/Show Name S01E01.mkv
+Show Name S01/Show Name S01E02.mkv
+
+# Generic Season NN folders under a show folder
+Some Show (2019)/Season 01/Some Show - S01E01.mkv
+Some Show (2019)/Season 01/Some Show - S01E02.mkv
+Some Show (2019)/Season 02/Some Show - S02E01.mkv
+Other Show/Season 01/Other Show - 101 - Pilot.avi
+Other Show/Season 01/Other Show - 102 - Second.avi
+
+# Anime: loose episode, batch folder with NCOP/NCED/creditless extras
+[SubGroup] Frieren - 01 [1080p].mkv
+[SubGroup] Frieren (Season 1) [1080p]/[SubGroup] Frieren - 01 [1080p].mkv
+[SubGroup] Frieren (Season 1) [1080p]/[SubGroup] Frieren - 02 [1080p].mkv
+[SubGroup] Frieren (Season 1) [1080p]/Extras/[SubGroup] Frieren - NCOP [1080p].mkv
+[SubGroup] Frieren (Season 1) [1080p]/Extras/[SubGroup] Frieren - NCED [1080p].mkv
+[SubGroup] Frieren (Season 1) [1080p]/Extras/[SubGroup] Frieren - Creditless Opening [1080p].mkv
+
+# Discs: BDMV and VIDEO_TS
+Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV/index.bdmv
+Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV/MovieObject.bdmv
+Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV/STREAM/00000.m2ts
+Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/CERTIFICATE/id.bdmv
+Old.Movie.1985.DVD9-GRP/VIDEO_TS/VIDEO_TS.IFO
+Old.Movie.1985.DVD9-GRP/VIDEO_TS/VTS_01_0.IFO
+Old.Movie.1985.DVD9-GRP/VIDEO_TS/VTS_01_1.VOB
+
+# Audiobook
+Author Name - Book Title (2020)/Book Title.m4b
+
+# Books
+Author Name - Novel Title (2019).epub
+Reference Manual 3rd Edition.pdf
+
+# Music
+Artist Name - Album Title (2021) [FLAC]/01 - First Track.flac
+Artist Name - Album Title (2021) [FLAC]/02 - Second Track.flac
+Artist Name - Album Title (2021) [FLAC]/cover.jpg
+
+# Apps
+SomeApp.v2.1.x64-GRP/setup.exe
+SomeApp.v2.1.x64-GRP/SomeApp.v2.1.x64-GRP.nfo
+
+# Misc: unclassified video and loose files
+random_clip.mkv
+notes.txt
+Empty Folder/
+
+# Partial download
+Downloading.Movie.2024.1080p.WEB-DL.x264-GRP.mkv.filepart
+
+# queue-ui-12 client cases: accented title, .m4b, epub, book(s) folders, flac folders, mixed leaves
+Pokémon.Détective.Pikachu.2019.1080p.BluRay.x264-GRP/Pokémon.Détective.Pikachu.2019.1080p.BluRay.x264-GRP.mkv
+Pokémon - Rouge Feu (FR)/Pokémon Épisode 01.mkv
+Narrator Read - Long Story.m4b
+Some Books/First Book.epub
+Some Books/Second Book.epub
+book/Single Book.epub
+Lossless Album [FLAC]/01 - Track.flac
+Lossless Album [FLAC]/CD2/01 - Track.flac
+Mixed Leaves/clip.mkv
+Mixed Leaves/song.flac
+Mixed Leaves/book.epub
+Mixed Leaves/readme.txt
