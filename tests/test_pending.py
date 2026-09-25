@@ -194,13 +194,13 @@ def test_pending_bulk_selection_applies_exclusions_and_path_consolidation(tmp_pa
         {"path": str(allowed_child), "category": "movies"},
     ]
 
-    selected_items, excluded_count = app_mod._filter_bulk_selectable_items(items, conf)
-    collapsed_items = app_mod._collapse_force_upload_items(selected_items)
+    selected_items, excluded_count = deps_api._filter_bulk_selectable_items(items, conf)
+    collapsed_items = pending_api._collapse_force_upload_items(selected_items)
 
     assert collapsed_items == [{"path": str(allowed_child), "category": "movies"}]
     assert excluded_count == 1
     assert len(selected_items) - len(collapsed_items) == 1
-    assert [str(root) for root in app_mod._bulk_selection_excluded_roots(conf)] == [str(blocked_root.resolve())]
+    assert [str(root) for root in deps_api._bulk_selection_excluded_roots(conf)] == [str(blocked_root.resolve())]
 
 def test_build_pending_summary_supports_dynamic_categories() -> None:
     summary = pending_snapshot_mod.build_pending_summary(
@@ -269,14 +269,14 @@ def test_pending_cache_requests_refresh_without_blocking(monkeypatch) -> None:
     ]
 
     monkeypatch.setattr(
-        app_mod, "_scan_pending_all", lambda: (_ for _ in ()).throw(RuntimeError("request path should not scan"))
+        pending_api, "_scan_pending_all", lambda: (_ for _ in ()).throw(RuntimeError("request path should not scan"))
     )
 
     for case_name, fn_name, kwargs, state, expected_reason, expect_stale, expect_refreshing in cases:
         fake = _make_pending_index_manager([state])
-        monkeypatch.setattr(app_mod, "_pending_index", fake)
+        monkeypatch.setattr(pending_api, "_pending_index", fake)
 
-        result = getattr(app_mod, fn_name)(**kwargs)
+        result = getattr(pending_api, fn_name)(**kwargs)
 
         assert result["ready"] is state["ready"], case_name
         assert fake.reasons == [expected_reason], case_name
@@ -328,12 +328,12 @@ def test_pending_cache_waits_for_snapshot(monkeypatch) -> None:
         ),
     ]
 
-    monkeypatch.setattr(app_mod.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
 
     for case_name, fn_name, states, cached_at in cases:
-        monkeypatch.setattr(app_mod, "_pending_index", _make_pending_index_manager(states))
+        monkeypatch.setattr(pending_api, "_pending_index", _make_pending_index_manager(states))
 
-        result = getattr(app_mod, fn_name)()
+        result = getattr(pending_api, fn_name)()
 
         assert result["ready"] is True, case_name
         assert result["summary"]["movies"] == 1, case_name
@@ -350,21 +350,20 @@ def test_pending_items_returns_small_not_modified_response(monkeypatch) -> None:
         cached_at=456.0,
     )
     monkeypatch.setattr(
-        app_mod,
-        "_pending_index",
+        pending_api, "_pending_index",
         _make_pending_index_manager(
             [{"snapshot": snapshot, "snapshot_ts": 456.0, "ready": True, "refreshing": False, "last_error": None}]
         ),
     )
 
-    result = app_mod.get_pending_items(known_cached_at=456.0)
+    result = pending_api.get_pending_items(known_cached_at=456.0)
 
     assert result == {
         "not_modified": True,
         "cached_at": 456.0,
         "ready": True,
         "refreshing": False,
-        "anime_detecting": app_mod._anime_check_inflight,
+        "anime_detecting": pending_api._anime_check_inflight,
     }
 
 def test_pending_items_slims_children_without_mutating_cached_snapshot(monkeypatch) -> None:
@@ -385,15 +384,14 @@ def test_pending_items_slims_children_without_mutating_cached_snapshot(monkeypat
         }
     )
     monkeypatch.setattr(
-        app_mod,
-        "_pending_index",
+        pending_api, "_pending_index",
         _make_pending_index_manager(
             [{"snapshot": snapshot, "snapshot_ts": 123.0, "ready": True, "refreshing": False, "last_error": None}]
         ),
     )
-    monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(enable_anime_checking=False))
+    patch_hit(monkeypatch, pending_api, "get_config", lambda: SimpleNamespace(enable_anime_checking=False))
 
-    result = app_mod.get_pending_items()
+    result = pending_api.get_pending_items()
     returned = result["items"]["external"][0]["items"][0]
 
     assert returned["children"] == []
@@ -503,15 +501,14 @@ def test_pending_items_never_serializes_private_indexes(monkeypatch) -> None:
         _external_metadata_zlib=b"private",
     )
     monkeypatch.setattr(
-        app_mod,
-        "_pending_index",
+        pending_api, "_pending_index",
         _make_pending_index_manager(
             [{"snapshot": snapshot, "snapshot_ts": 123.0, "ready": True, "refreshing": False, "last_error": None}]
         ),
     )
-    monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(enable_anime_checking=False))
+    patch_hit(monkeypatch, pending_api, "get_config", lambda: SimpleNamespace(enable_anime_checking=False))
 
-    result = app_mod.get_pending_items()
+    result = pending_api.get_pending_items()
 
     assert "_external_search_index" not in result
     assert "_external_metadata_zlib" not in result
@@ -1549,7 +1546,7 @@ def test_pending_items_anime_check_start_behavior(monkeypatch) -> None:
 
         if should_start:
             assert len(started) == 1, case_name
-            assert started[0][0] == app_mod._background_anime_check, case_name
+            assert started[0][0] == pending_api._background_anime_check, case_name
             assert started[0][1] == (snapshot,), case_name
         else:
             assert started == [], case_name

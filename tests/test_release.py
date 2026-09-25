@@ -8,9 +8,9 @@ release = load_repo_script("release")
 
 
 def test_revision_probe_is_public_without_broadening_other_system_routes() -> None:
-    assert "/api/system/revision" in app_mod._AUTH_PUBLIC_PATHS
-    assert "/api/system/update/status" not in app_mod._AUTH_PUBLIC_PATHS
-    assert not any("/api/system/update/status".startswith(prefix) for prefix in app_mod._AUTH_PUBLIC_PREFIXES)
+    assert "/api/system/revision" in auth_api._AUTH_PUBLIC_PATHS
+    assert "/api/system/update/status" not in auth_api._AUTH_PUBLIC_PATHS
+    assert not any("/api/system/update/status".startswith(prefix) for prefix in auth_api._AUTH_PUBLIC_PREFIXES)
 
 
 def test_public_release_tree_has_no_private_runtime_files() -> None:
@@ -19,7 +19,7 @@ def test_public_release_tree_has_no_private_runtime_files() -> None:
 
 def test_source_layout_stays_flat() -> None:
     assert not (REPO_ROOT / "nzbpostarr").exists()
-    for expected in ("app.py", "main.py", "core", "logic", "indexers", "webui"):
+    for expected in ("app.py", "main.py", "api", "core", "logic", "indexers", "webui"):
         assert (REPO_ROOT / expected).exists()
 
 

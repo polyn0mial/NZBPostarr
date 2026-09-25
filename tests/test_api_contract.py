@@ -128,18 +128,18 @@ def test_mark_uploaded_rejects_empty_input(monkeypatch) -> None:
     monkeypatch.setattr(db, "mark_as_uploaded", _fake)
 
     for bad in (
-        app_mod.MarkUploadedRequest(item_keys=[], indexer_ids=["geek"]),
-        app_mod.MarkUploadedRequest(item_keys=["a"], indexer_ids=[]),
+        pending_api.MarkUploadedRequest(item_keys=[], indexer_ids=["geek"]),
+        pending_api.MarkUploadedRequest(item_keys=["a"], indexer_ids=[]),
     ):
         with pytest.raises(HTTPException) as exc:
-            _run_async(app_mod.mark_items_uploaded(bad))
+            _run_async(pending_api.mark_items_uploaded(bad))
         assert exc.value.status_code == 400
 
     # Nothing should have been written for the rejected requests.
     assert calls == []
 
-    ok = app_mod.MarkUploadedRequest(item_keys=["a", "b"], indexer_ids=["geek"])
-    result = _run_async(app_mod.mark_items_uploaded(ok))
+    ok = pending_api.MarkUploadedRequest(item_keys=["a", "b"], indexer_ids=["geek"])
+    result = _run_async(pending_api.mark_items_uploaded(ok))
     assert result["records_created"] == 2
     assert result["items"] == 2
     assert result["indexers"] == 1
@@ -156,13 +156,13 @@ def test_anime_cache_correction_persists_and_refreshes(monkeypatch) -> None:
         raising=False,
     )
     monkeypatch.setattr(
-        app_mod._pending_index,
+        pending_api._pending_index,
         "request_refresh",
         lambda *, reason: refresh_reasons.append(reason),
     )
 
-    result = app_mod.correct_pending_anime_cache(
-        app_mod.AnimeCacheCorrectionRequest(name="Ghost in the Shell", is_anime=False)
+    result = pending_api.correct_pending_anime_cache(
+        pending_api.AnimeCacheCorrectionRequest(name="Ghost in the Shell", is_anime=False)
     )
 
     assert result == {
@@ -177,7 +177,7 @@ def test_anime_cache_correction_persists_and_refreshes(monkeypatch) -> None:
 
 def test_anime_cache_correction_rejects_blank_title() -> None:
     with pytest.raises(HTTPException) as exc:
-        app_mod.correct_pending_anime_cache(app_mod.AnimeCacheCorrectionRequest(name="  ", is_anime=False))
+        pending_api.correct_pending_anime_cache(pending_api.AnimeCacheCorrectionRequest(name="  ", is_anime=False))
     assert exc.value.status_code == 400
 
 def test_grouped_items_passes_destination_through(monkeypatch) -> None:
@@ -190,7 +190,7 @@ def test_grouped_items_passes_destination_through(monkeypatch) -> None:
 
     monkeypatch.setattr(db, "get_group_upload_items", _fake)
 
-    app_mod.get_grouped_items("some show", destination="geek")
+    history_api.get_grouped_items("some show", destination="geek")
 
     assert seen == {"title_key": "some show", "destination": "geek"}
 
@@ -206,7 +206,7 @@ def test_grouped_errors_passes_params_through(monkeypatch) -> None:
 
     monkeypatch.setattr(db, "get_grouped_upload_errors", _fake)
 
-    result = app_mod.get_grouped_errors(destination="geek", limit=5, since_days=3, include_muted=False)
+    result = history_api.get_grouped_errors(destination="geek", limit=5, since_days=3, include_muted=False)
 
     assert seen == {"indexer_id": "geek", "limit": 5, "since_days": 3, "include_muted": False}
     assert result == {"issues": [], "total_issues": 0}
@@ -226,8 +226,8 @@ def test_mute_and_unmute_grouped_error_pass_params_through(monkeypatch) -> None:
     monkeypatch.setattr(db, "mute_upload_issue", lambda indexer_id, signature: seen.append(("mute", indexer_id, signature)) or True)
     monkeypatch.setattr(db, "unmute_upload_issue", lambda indexer_id, signature: seen.append(("unmute", indexer_id, signature)) or True)
 
-    mute_result = app_mod.mute_grouped_error(app_mod.MuteIssueRequest(indexer_id="geek", signature="auth failed"))
-    unmute_result = app_mod.unmute_grouped_error(app_mod.MuteIssueRequest(indexer_id="geek", signature="auth failed"))
+    mute_result = history_api.mute_grouped_error(history_api.MuteIssueRequest(indexer_id="geek", signature="auth failed"))
+    unmute_result = history_api.unmute_grouped_error(history_api.MuteIssueRequest(indexer_id="geek", signature="auth failed"))
 
     assert seen == [("mute", "geek", "auth failed"), ("unmute", "geek", "auth failed")]
     assert mute_result == {"status": "success", "muted": True}

@@ -8,7 +8,7 @@ import pytest
 
 import app as app_mod
 from logic import headless as headless_mod
-from logic.mcp_server import MCP_PATH
+from api.mcp import MCP_PATH
 from tests.characterization._snapshot import HERE, assert_json_snapshot, assert_text_snapshot, updating
 
 CLI_HELP_DIR = HERE / "cli_help"
@@ -88,7 +88,9 @@ def test_literal_routes_precede_the_parameter_routes_that_would_shadow_them() ->
     assert order.index((("DELETE",), "/api/uploads/jobs/completed")) < order.index(
         (("DELETE",), "/api/uploads/jobs/{job_id}")
     )
-    assert table[-1] == [["GET"], "/{page_name}"]
+    # Pages are explicit routes registered last; no top-level catch-all serves arbitrary webui/ files.
+    assert not any(_is_param(_segments(path)[0]) for _, path in table)
+    assert table[-1] == [["GET"], "/queue-error-beacon"]
 
 
 def test_middleware_order_matches_snapshot() -> None:
