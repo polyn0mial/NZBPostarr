@@ -18,7 +18,7 @@ from logic.pending.completion import (
     _mark_ignored_tree_nodes_completed,
 )
 from logic.pending.rules import _enforce_child_source_requirement
-from logic.pending.selection import _stamp_lazy_children_selection, stamp_upload_itype
+from logic.pending.selection import _stamp_lazy_children_selection, stamp_server_verdict
 from logic.pending.tree import _build_external_tree_item, _has_filepart_path, _load_external_metadata
 from logic.pending.view import _strip_external_helper_fields
 
@@ -89,7 +89,7 @@ def build_external_children_snapshot(
     for child_item in children:
         _mark_ignored_tree_nodes_completed(child_item, active_ids if indexer_status_available else [])
         _strip_external_helper_fields(child_item)
-        stamp_upload_itype(child_item)
+        stamp_server_verdict(child_item)
 
     log_backend_timing(
         "scan_pending_children",

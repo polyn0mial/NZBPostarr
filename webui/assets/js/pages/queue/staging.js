@@ -81,7 +81,7 @@ export default {
       const payload = [{
         path: item.path,
         category: cat,
-        itype: this.resolveUploadItype(item.itype, cat),
+        itype: this.resolveUploadItype(item, cat),
         name: item.name || (item.path || item.key).replace(/\\/g, "/").split("/").pop() || item.key,
         detected_category: item.detected_category || cat,
         detection_method: item.detection_method || "",

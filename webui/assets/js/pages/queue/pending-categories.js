@@ -303,9 +303,15 @@ export default {
       return sharedItypeToCategory(itype, this.flatCategories);
     },
 
-    resolveUploadItype(itype, category) {
-      if ((category || "").toString().toLowerCase() === "anime") return "Anime";
-      return !itype || itype === "External" ? categoryToItype(category, "Misc") : itype;
+    // The row's upload_itype is the server's verdict (logic/pending/selection.upload_itype) and
+    // goes out as is while the row keeps the server's category. A category the user chose by
+    // hand, or a payload from a server that predates upload_itype, maps the category instead.
+    resolveUploadItype(item, category) {
+      const node = item || {};
+      const cat = (category || "").toString().toLowerCase();
+      if (node.upload_itype && cat === this.serverCategoryForItem(node)) return node.upload_itype;
+      if (cat === "anime") return "Anime";
+      return !node.itype || node.itype === "External" ? categoryToItype(category, "Misc") : node.itype;
     },
 
     serverCategoryForItem(item) {
@@ -487,25 +493,18 @@ export default {
       if (inheritedExternalCategory && inheritedExternalCategory !== "external") return inheritedExternalCategory;
       const directManualCategory = item.key ? normalizeCategory(this.manualExternalCategories[item.key]) : "";
       if (directManualCategory && directManualCategory !== "external") return directManualCategory;
-      if ((item.itype || "").toLowerCase() === "anime") return "anime";
+      // The server's verdict: /api/pending stamps detected_category on every row.
       const detectedCategory = normalizeCategory(item.detected_category);
       if (detectedCategory && detectedCategory !== "external") return detectedCategory;
       const explicitCategory = normalizeCategory(item.category);
       if (explicitCategory && explicitCategory !== "external") return explicitCategory;
+      // Below: only payloads without a server category (a server that predates the stamp).
+      if ((item.itype || "").toLowerCase() === "anime") return "anime";
       const safeAssigned = normalizeCategory(item.assigned_category_safe);
       if (safeAssigned && safeAssigned !== "external") return safeAssigned;
       const resolvedExternal = item.key ? normalizeCategory(this._resolveExtCategory(item.key)) : "";
       if (resolvedExternal && resolvedExternal !== "external") return resolvedExternal;
-      const itype = (item.itype || "").toLowerCase();
-      if (itype === "external") {
-        return detectedCategory || "";
-      }
-      if (itype.includes("season pack") || itype.includes("tv show")) return "tv";
-      if (itype.includes("tv") || itype.includes("episode")) return "tv";
-      if (itype.includes("movie")) return "movies";
-      const itypeCategory = this.itypeToCategory(item.itype);
-      if (itypeCategory) return itypeCategory;
-      return detectedCategory || "";
+      return this.itypeToCategory(item.itype);
     },
 
     _resolveExtCategory(key) {

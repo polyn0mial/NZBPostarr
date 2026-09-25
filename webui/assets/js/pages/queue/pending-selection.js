@@ -345,7 +345,7 @@ export default {
           path: meta.path,
           category: cat,
           manual_category: meta.manual_category || "",
-          itype: this.resolveUploadItype(meta.itype, cat),
+          itype: this.resolveUploadItype(item, cat),
           detected_category: meta.detected_category || cat,
           detection_method: meta.detection_method || "",
           selection_reason: meta.selection_reason || "",

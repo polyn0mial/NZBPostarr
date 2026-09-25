@@ -19,10 +19,31 @@ def upload_itype(node: Dict[str, Any]) -> str:
     return default_itype(category, is_dir=bool(node.get("is_dir")))
 
 
-def stamp_upload_itype(node: Any) -> None:
-    """Stamp the additive ``upload_itype`` field on one pending row."""
-    if isinstance(node, dict):
-        node["upload_itype"] = upload_itype(node)
+def server_category(node: Dict[str, Any], section: str = "") -> str:
+    """Return the server's category verdict for one pending row (the browser displays it as is).
+
+    ``section`` is the pending section the row was listed under; it only speaks for rows whose
+    classification left no category, and "external" is a folder role, never a category.
+    """
+    for value in (node.get("detected_category"), node.get("category"), section):
+        category = str(value or "").strip().lower()
+        if category and category != "external":
+            return category
+    return ""
+
+
+def stamp_server_verdict(node: Any, section: str = "") -> None:
+    """Stamp the server's ``detected_category`` and ``upload_itype`` on one pending row.
+
+    Both fields are additive: an older page that ignores them keeps working, and the Queue
+    page falls back to its own mapping only for payloads that lack them.
+    """
+    if not isinstance(node, dict):
+        return
+    category = server_category(node, section)
+    if category:
+        node["detected_category"] = category
+    node["upload_itype"] = upload_itype(node)
 
 
 def _row_source_exempt(node: Dict[str, Any]) -> bool:

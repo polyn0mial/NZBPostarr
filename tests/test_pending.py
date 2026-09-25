@@ -2300,7 +2300,7 @@ def test_bulk_selection_parity_between_ui_stamps_and_server_filter(tmp_path, mon
     assert stamped and excluded == 2
 
 
-def test_pending_rows_and_children_carry_the_server_upload_itype(tmp_path, monkeypatch) -> None:
+def test_pending_rows_and_children_carry_the_server_category_and_upload_itype(tmp_path, monkeypatch) -> None:
     from logic.pending import tree as pending_tree
 
     external_dir = tmp_path / "external"
@@ -2320,10 +2320,27 @@ def test_pending_rows_and_children_carry_the_server_upload_itype(tmp_path, monke
     slim = pending_api._slim_pending_items(payload["items"])
     top = slim["external"][0]["items"][0]
     assert top["upload_itype"] == top["itype"]
+    assert top["detected_category"] == "tv"
 
     children = pending_children.build_external_children_for_request(payload, top["key"], top["path"])["children"]
     assert children
     assert {child["upload_itype"] for child in children} == {"TV Episode"}
+    assert {child["detected_category"] for child in children} == {"tv"}
+
+
+def test_slim_rows_carry_the_server_category_even_without_a_classifier_verdict() -> None:
+    slim = pending_api._slim_pending_items(
+        {
+            "movies": [{"name": "a", "path": "a", "itype": "Movie", "detected_category": ""}],
+            "tv": [{"name": "b", "path": "b", "itype": "External", "is_dir": True}],
+            "external": [{"items": [{"name": "c", "path": "c", "itype": "Disc", "detected_category": "disc"}]}],
+        }
+    )
+    assert (slim["movies"][0]["detected_category"], slim["movies"][0]["upload_itype"]) == ("movies", "Movie")
+    assert (slim["tv"][0]["detected_category"], slim["tv"][0]["upload_itype"]) == ("tv", "TV Show")
+    external = slim["external"][0]["items"][0]
+    assert (external["detected_category"], external["upload_itype"]) == ("disc", "Disc")
+    assert pending_selection.server_category({"category": "external"}, "external") == ""
 
 
 def test_upload_itype_falls_back_to_the_category_upload_mapping() -> None:

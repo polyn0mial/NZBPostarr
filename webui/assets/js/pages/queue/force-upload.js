@@ -42,7 +42,7 @@ export default {
   methods: {
     forceUploadExtChild(child, event) {
       const cat = this.getCategoryForItem(child);
-      const overridden = { ...child, itype: this.resolveUploadItype(child.itype, cat) };
+      const overridden = { ...child, itype: this.resolveUploadItype(child, cat) };
       this.openForceUploadMenu(overridden, event);
     },
 
@@ -54,7 +54,7 @@ export default {
       }
       if (selection.items.length <= 1 && !this.isSeasonalPackItem(item)) {
         const cat = this.getCategoryForItem(item);
-        const overridden = { ...item, itype: this.resolveUploadItype(item.itype, cat) };
+        const overridden = { ...item, itype: this.resolveUploadItype(item, cat) };
         this.openForceUploadMenu(overridden, event);
         return;
       }
@@ -141,7 +141,7 @@ export default {
           items: [{
             path: item.path,
             category: cat,
-            itype: this.resolveUploadItype(item.itype, cat),
+            itype: this.resolveUploadItype(item, cat),
             name: item.name || (item.path || item.key).replace(/\\/g, "/").split("/").pop() || item.key,
             detected_category: item.detected_category || cat,
             detection_method: item.detection_method || "",
@@ -257,7 +257,7 @@ export default {
         path: item.path,
         category: this.getCategoryForItem(item) || item.category,
         manual_category: item.key ? this.manualExternalCategories[item.key] || "" : "",
-        itype: this.resolveUploadItype(item.itype, this.getCategoryForItem(item) || item.category),
+        itype: this.resolveUploadItype(item, this.getCategoryForItem(item) || item.category),
         name: item.name || (item.path || "").replace(/\\/g, "/").split("/").pop() || "",
         detected_category: item.detected_category || this.getCategoryForItem(item) || item.category,
         detection_method: item.detection_method || "",

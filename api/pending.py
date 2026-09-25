@@ -22,7 +22,7 @@ from logic.pending import children as pending_children
 from logic.pending import index as pending_index
 from logic.pending import tree as pending_tree
 from logic.pending import view as pending_view
-from logic.pending.selection import stamp_upload_itype
+from logic.pending.selection import stamp_server_verdict
 from logic.pending.index import get_pending_index_manager
 from logic.pending.roots import get_configured_folders
 from logic.jobs.models import ProcessingJobRequest
@@ -397,7 +397,7 @@ def _pending_watch_folders(conf: Any) -> list[Path]:
     """Return existing configured folders that should invalidate pending index on change."""
     return get_configured_folders(conf, must_exist=True)
 
-def _slim_pending_node(node: Any) -> Any:
+def _slim_pending_node(node: Any, section: str = "") -> Any:
     """Strip a pending-tree node down to its top-level fields.
 
     Descendants are fetched through the lazy /children route, so copying
@@ -407,7 +407,7 @@ def _slim_pending_node(node: Any) -> Any:
     if not isinstance(node, dict):
         return node
     slim = {key: value for key, value in node.items() if not str(key).startswith("_")}
-    stamp_upload_itype(slim)
+    stamp_server_verdict(slim, section)
     raw_children = node.get("children")
     raw_files = node.get("files")
     child_source = raw_children if isinstance(raw_children, list) else raw_files
@@ -521,7 +521,7 @@ def _slim_pending_items(items: Any) -> Any:
             slim_items[section_name] = section
             continue
         if section_name != "external":
-            slim_items[section_name] = [_slim_pending_node(item) for item in section]
+            slim_items[section_name] = [_slim_pending_node(item, section_name) for item in section]
             continue
         groups = []
         for group in section:
