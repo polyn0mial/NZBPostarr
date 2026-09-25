@@ -665,7 +665,9 @@ def _lookup_anime_status(
     for candidate in _anime_lookup_candidates(entry, video_files):
         try:
             status = lookup(candidate)
-        except Exception:
+        except Exception as exc:
+            # The lookup is caller-supplied; one failing candidate must not hide the others.
+            logger.debug(f"Anime lookup failed for candidate {candidate!r}: {exc}")
             continue
         if status is True:
             return True
