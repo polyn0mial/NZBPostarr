@@ -9,6 +9,7 @@ from typing import Iterator, Tuple
 
 ROOT = Path(__file__).resolve().parents[2]
 
+
 def _imports(path: Path, top_level_only: bool = False) -> Iterator[Tuple[int, str]]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     nodes = tree.body if top_level_only else ast.walk(tree)
