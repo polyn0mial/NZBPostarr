@@ -1,0 +1,9 @@
+usage: nzbpostarr --headless config set [-h] [--json] key value
+
+positional arguments:
+  key         Configuration key, for example debug or api_keys.geek
+  value       YAML scalar, list, or mapping value
+
+options:
+  -h, --help  show this help message and exit
+  --json      Output the result as JSON

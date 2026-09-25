@@ -1,0 +1,62 @@
+{"category": "apps", "confidence": "strong", "itype": "App", "method": "Configured folder", "relpath": "SomeApp.v2.1.x64-GRP/SomeApp.v2.1.x64-GRP.nfo"}
+{"category": "apps", "confidence": "strong", "itype": "App", "method": "Configured folder", "relpath": "SomeApp.v2.1.x64-GRP/setup.exe"}
+{"category": "apps", "confidence": "strong", "itype": "App", "method": "File scan", "relpath": "SomeApp.v2.1.x64-GRP"}
+{"category": "audiobooks", "confidence": "strong", "itype": "Audiobook", "method": "Configured folder", "relpath": "Author Name - Book Title (2020)/Book Title.m4b"}
+{"category": "audiobooks", "confidence": "strong", "itype": "Audiobook", "method": "File scan", "relpath": "Author Name - Book Title (2020)"}
+{"category": "books", "confidence": "strong", "itype": "Ebook", "method": "File extension", "relpath": "Author Name - Novel Title (2019).epub"}
+{"category": "books", "confidence": "strong", "itype": "Ebook", "method": "File extension", "relpath": "Reference Manual 3rd Edition.pdf"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Old.Movie.1985.DVD9-GRP/VIDEO_TS"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Old.Movie.1985.DVD9-GRP/VIDEO_TS/VIDEO_TS.IFO"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Old.Movie.1985.DVD9-GRP/VIDEO_TS/VTS_01_0.IFO"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Old.Movie.1985.DVD9-GRP/VIDEO_TS/VTS_01_1.VOB"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV/MovieObject.bdmv"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV/STREAM"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV/STREAM/00000.m2ts"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/BDMV/index.bdmv"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/CERTIFICATE"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Configured folder", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP/CERTIFICATE/id.bdmv"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Disc scan", "relpath": "Old.Movie.1985.DVD9-GRP"}
+{"category": "disc", "confidence": "strong", "itype": "Disc", "method": "Disc scan", "relpath": "Some.Movie.2010.1080p.BluRay.COMPLETE.BDMV-GRP"}
+{"category": "misc", "confidence": "unknown", "itype": "Misc", "method": "Folder fallback", "relpath": "Empty Folder"}
+{"category": "misc", "confidence": "unknown", "itype": "Misc", "method": "Folder fallback", "relpath": "notes.txt"}
+{"category": "misc", "confidence": "unknown", "itype": "Misc", "method": "Folder fallback", "relpath": "random_clip.mkv"}
+{"category": "movies", "confidence": "strong", "itype": "Movie", "method": "Configured folder", "relpath": "1917.2019.1080p.BluRay.x264-GRP/1917.2019.1080p.BluRay.x264-GRP.mkv"}
+{"category": "movies", "confidence": "strong", "itype": "Movie", "method": "Configured folder", "relpath": "The.Matrix.1999.1080p.BluRay.x264-GRP/The.Matrix.1999.1080p.BluRay.x264-GRP.mkv"}
+{"category": "movies", "confidence": "strong", "itype": "Movie", "method": "Configured folder", "relpath": "The.Matrix.1999.1080p.BluRay.x264-GRP/The.Matrix.1999.1080p.BluRay.x264-GRP.nfo"}
+{"category": "movies", "confidence": "strong", "itype": "Movie", "method": "Movie pattern", "relpath": "Downloading.Movie.2024.1080p.WEB-DL.x264-GRP.mkv.filepart"}
+{"category": "movies", "confidence": "strong", "itype": "Movie", "method": "Movie pattern", "relpath": "Oppenheimer.2023.2160p.WEB-DL.DDP5.1.H265-NTb.mkv"}
+{"category": "movies", "confidence": "strong", "itype": "Movie", "method": "Movie pattern", "relpath": "The.Matrix.1999.1080p.BluRay.x264-GRP"}
+{"category": "movies", "confidence": "strong", "itype": "Movie", "method": "guessit", "relpath": "1917.2019.1080p.BluRay.x264-GRP"}
+{"category": "music", "confidence": "strong", "itype": "Music", "method": "Configured folder", "relpath": "Artist Name - Album Title (2021) [FLAC]/01 - First Track.flac"}
+{"category": "music", "confidence": "strong", "itype": "Music", "method": "Configured folder", "relpath": "Artist Name - Album Title (2021) [FLAC]/02 - Second Track.flac"}
+{"category": "music", "confidence": "strong", "itype": "Music", "method": "Configured folder", "relpath": "Artist Name - Album Title (2021) [FLAC]/cover.jpg"}
+{"category": "music", "confidence": "strong", "itype": "Music", "method": "File scan", "relpath": "Artist Name - Album Title (2021) [FLAC]"}
+{"category": "tv", "confidence": "strong", "itype": "Anime", "method": "Configured folder", "relpath": "[SubGroup] Frieren (Season 1) [1080p]/Extras/[SubGroup] Frieren - NCED [1080p].mkv"}
+{"category": "tv", "confidence": "strong", "itype": "Anime", "method": "Configured folder", "relpath": "[SubGroup] Frieren (Season 1) [1080p]/Extras/[SubGroup] Frieren - NCOP [1080p].mkv"}
+{"category": "tv", "confidence": "strong", "itype": "External", "method": "Configured folder", "relpath": "Other Show/Season 01"}
+{"category": "tv", "confidence": "strong", "itype": "External", "method": "Configured folder", "relpath": "Some Show (2019)/Season 01"}
+{"category": "tv", "confidence": "strong", "itype": "External", "method": "Configured folder", "relpath": "Some Show (2019)/Season 02"}
+{"category": "tv", "confidence": "strong", "itype": "External", "method": "Configured folder", "relpath": "[SubGroup] Frieren (Season 1) [1080p]/Extras"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Configured folder", "relpath": "Other Show/Season 01/Other Show - 101 - Pilot.avi"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Configured folder", "relpath": "Other Show/Season 01/Other Show - 102 - Second.avi"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Configured folder", "relpath": "Show Name S01/Show Name S01E01.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Configured folder", "relpath": "Show Name S01/Show Name S01E02.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Configured folder", "relpath": "[SubGroup] Frieren (Season 1) [1080p]/Extras/[SubGroup] Frieren - Creditless Opening [1080p].mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "Breaking.Bad.S05E14.720p.HDTV.x264-GRP/Breaking.Bad.S05E14.720p.HDTV.x264-GRP.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "Severance.S02E01.1080p.ATVP.WEB-DL.DDP5.1-NTb.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "Some Show (2019)/Season 01/Some Show - S01E01.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "Some Show (2019)/Season 01/Some Show - S01E02.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "Some Show (2019)/Season 02/Some Show - S02E01.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "The.Bear.S03.1080p.HULU.WEB-DL.DDP5.1-GRP/The.Bear.S03E01.1080p.HULU.WEB-DL.DDP5.1-GRP.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "The.Bear.S03.1080p.HULU.WEB-DL.DDP5.1-GRP/The.Bear.S03E02.1080p.HULU.WEB-DL.DDP5.1-GRP.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "The.Daily.Show.2024.03.11.Guest.Name.1080p.WEB.h264-GRP.mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "[SubGroup] Frieren (Season 1) [1080p]/[SubGroup] Frieren - 01 [1080p].mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "[SubGroup] Frieren (Season 1) [1080p]/[SubGroup] Frieren - 02 [1080p].mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Episode", "method": "Episode pattern", "relpath": "[SubGroup] Frieren - 01 [1080p].mkv"}
+{"category": "tv", "confidence": "strong", "itype": "TV Show", "method": "Episode pattern", "relpath": "Breaking.Bad.S05E14.720p.HDTV.x264-GRP"}
+{"category": "tv", "confidence": "strong", "itype": "TV Show", "method": "Episode pattern", "relpath": "Other Show"}
+{"category": "tv", "confidence": "strong", "itype": "TV Show", "method": "Episode pattern", "relpath": "Show Name S01"}
+{"category": "tv", "confidence": "strong", "itype": "TV Show", "method": "Episode pattern", "relpath": "Some Show (2019)"}
+{"category": "tv", "confidence": "strong", "itype": "TV Show", "method": "Episode pattern", "relpath": "The.Bear.S03.1080p.HULU.WEB-DL.DDP5.1-GRP"}
+{"category": "tv", "confidence": "strong", "itype": "TV Show", "method": "Episode pattern", "relpath": "[SubGroup] Frieren (Season 1) [1080p]"}

@@ -1,0 +1,11 @@
+usage: nzbpostarr --headless system [-h] {update,restart,stop-all} ...
+
+positional arguments:
+  {update,restart,stop-all}
+                        System commands
+    update              Check, install, or roll back application updates
+    restart             Stop work safely and schedule a restart
+    stop-all            Stop active jobs, clear waiting work, and wait until quiet
+
+options:
+  -h, --help            show this help message and exit

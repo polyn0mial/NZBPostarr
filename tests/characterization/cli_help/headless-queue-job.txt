@@ -1,0 +1,13 @@
+usage: nzbpostarr --headless queue job [-h] {pause,resume,stop,retry,promote} ...
+
+positional arguments:
+  {pause,resume,stop,retry,promote}
+                        Per-job commands
+    pause               Pause a running job
+    resume              Resume a paused job
+    stop                Stop a job
+    retry               Queue a new attempt from a failed job's saved request
+    promote             Move a queued job to the front of the queue
+
+options:
+  -h, --help            show this help message and exit

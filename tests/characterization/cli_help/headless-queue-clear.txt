@@ -1,0 +1,5 @@
+usage: nzbpostarr --headless queue clear [-h] [--json]
+
+options:
+  -h, --help  show this help message and exit
+  --json      Output the result as JSON

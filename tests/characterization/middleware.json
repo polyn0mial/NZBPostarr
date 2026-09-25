@@ -1,0 +1,5 @@
+[
+  "BaseHTTPMiddleware:session_auth_middleware",
+  "BaseHTTPMiddleware:add_cache_control_header",
+  "GZipMiddleware"
+]

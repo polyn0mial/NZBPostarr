@@ -1,0 +1,7 @@
+usage: nzbpostarr --headless stream-monitors remove [-h] monitor_id
+
+positional arguments:
+  monitor_id  Stream monitor ID to remove
+
+options:
+  -h, --help  show this help message and exit

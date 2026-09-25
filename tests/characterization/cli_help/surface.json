@@ -1,0 +1,1919 @@
+{
+  "(root)": {
+    "prog": "nzbpostarr --headless",
+    "description": "NZBPostarr Headless CLI - Upload automation without the WebUI.",
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "command",
+        "nargs": "A...",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": [
+          "upload",
+          "stream",
+          "status",
+          "pending",
+          "history",
+          "issues",
+          "indexers",
+          "stream-monitors",
+          "stats",
+          "queue",
+          "config",
+          "system",
+          "logs"
+        ],
+        "required": false,
+        "help": "Available commands"
+      },
+      {
+        "option_strings": [
+          "--version"
+        ],
+        "dest": "version",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Show the NZBPostarr version and exit"
+      }
+    ]
+  },
+  "upload": {
+    "prog": "nzbpostarr --headless upload",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "category",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Category to upload (tv, movies, misc, all, both)"
+      },
+      {
+        "option_strings": [
+          "--limit",
+          "-l"
+        ],
+        "dest": "limit",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": "int",
+        "choices": null,
+        "required": false,
+        "help": "Max items to process"
+      },
+      {
+        "option_strings": [
+          "--test",
+          "-t"
+        ],
+        "dest": "test",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Test mode - prepare and submit but skip actual NNTP upload"
+      },
+      {
+        "option_strings": [
+          "--force",
+          "-f"
+        ],
+        "dest": "force",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Force re-upload (skip duplicate checking)"
+      },
+      {
+        "option_strings": [
+          "--indexer",
+          "-i"
+        ],
+        "dest": "indexer",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Target a specific indexer by ID (e.g., geek, planet)"
+      },
+      {
+        "option_strings": [
+          "--skip-packs"
+        ],
+        "dest": "skip_packs",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Skip season packs (TV only)"
+      },
+      {
+        "option_strings": [
+          "--skip-episodes"
+        ],
+        "dest": "skip_episodes",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Skip individual episodes (TV only)"
+      },
+      {
+        "option_strings": [
+          "--path",
+          "-p"
+        ],
+        "dest": "path",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Upload a specific file or folder path"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the job result as JSON"
+      }
+    ]
+  },
+  "stream": {
+    "prog": "nzbpostarr --headless stream",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "source",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Server-side NZB file or folder path"
+      },
+      {
+        "option_strings": [
+          "--category",
+          "-c"
+        ],
+        "dest": "category",
+        "nargs": null,
+        "metavar": null,
+        "default": "'misc'",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Target category label for the queued stream job (default: misc)"
+      },
+      {
+        "option_strings": [
+          "--release-name"
+        ],
+        "dest": "release_name",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Override the release/job name for a single NZB source"
+      },
+      {
+        "option_strings": [
+          "--submit-mode"
+        ],
+        "dest": "submit_mode",
+        "nargs": null,
+        "metavar": null,
+        "default": "'post_and_submit'",
+        "type": null,
+        "choices": [
+          "post_and_submit",
+          "post_only"
+        ],
+        "required": false,
+        "help": "Post only, or post and submit to indexers (default: post_and_submit)"
+      },
+      {
+        "option_strings": [
+          "--posting-server"
+        ],
+        "dest": "posting_server",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Specific enabled NNTP posting server name to use"
+      },
+      {
+        "option_strings": [
+          "--indexer",
+          "-i"
+        ],
+        "dest": "indexer",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Submit to a specific indexer ID instead of all enabled indexers"
+      },
+      {
+        "option_strings": [
+          "--test",
+          "-t"
+        ],
+        "dest": "test",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Prepare the stream job but skip the actual NNTP upload"
+      },
+      {
+        "option_strings": [
+          "--skip-duplicate-check"
+        ],
+        "dest": "skip_duplicate_check",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Skip duplicate checking before the repost job runs"
+      },
+      {
+        "option_strings": [
+          "--monitor"
+        ],
+        "dest": "monitor",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Save a watched-folder stream monitor instead of queuing immediate jobs"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the queued job or monitor result as JSON"
+      }
+    ]
+  },
+  "status": {
+    "prog": "nzbpostarr --headless status",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the status snapshot as JSON"
+      }
+    ]
+  },
+  "pending": {
+    "prog": "nzbpostarr --headless pending",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "category",
+        "nargs": "?",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Filter by category (optional)"
+      },
+      {
+        "option_strings": [
+          "--verbose",
+          "-v"
+        ],
+        "dest": "verbose",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "List individual pending items"
+      },
+      {
+        "option_strings": [
+          "--folder"
+        ],
+        "dest": "folder",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Restrict results to a configured folder path or folder name"
+      },
+      {
+        "option_strings": [
+          "--limit"
+        ],
+        "dest": "limit",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": "_non_negative_int",
+        "choices": null,
+        "required": false,
+        "help": "Maximum pending items listed per category when using --verbose"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the pending summary as JSON"
+      }
+    ]
+  },
+  "history": {
+    "prog": "nzbpostarr --headless history",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--limit",
+          "-l"
+        ],
+        "dest": "limit",
+        "nargs": null,
+        "metavar": null,
+        "default": "20",
+        "type": "int",
+        "choices": null,
+        "required": false,
+        "help": "Number of jobs to show (default: 20)"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output job history as JSON"
+      }
+    ]
+  },
+  "issues": {
+    "prog": "nzbpostarr --headless issues",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--destination"
+        ],
+        "dest": "destination",
+        "nargs": null,
+        "metavar": null,
+        "default": "'all'",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Limit to one indexer ID, or 'all' (default)"
+      },
+      {
+        "option_strings": [
+          "--limit",
+          "-l"
+        ],
+        "dest": "limit",
+        "nargs": null,
+        "metavar": null,
+        "default": "50",
+        "type": "int",
+        "choices": null,
+        "required": false,
+        "help": "Maximum number of issue groups to show (default: 50)"
+      },
+      {
+        "option_strings": [
+          "--since-days"
+        ],
+        "dest": "since_days",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": "int",
+        "choices": null,
+        "required": false,
+        "help": "Only count failures from the last N days (default: all history)"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output grouped issues as JSON"
+      }
+    ]
+  },
+  "indexers": {
+    "prog": "nzbpostarr --headless indexers",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output indexer details as JSON"
+      }
+    ]
+  },
+  "stream-monitors": {
+    "prog": "nzbpostarr --headless stream-monitors",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "monitor_command",
+        "nargs": "A...",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": [
+          "list",
+          "remove"
+        ],
+        "required": false,
+        "help": "Monitor commands"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output monitor listings as JSON"
+      }
+    ]
+  },
+  "stream-monitors list": {
+    "prog": "nzbpostarr --headless stream-monitors list",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      }
+    ]
+  },
+  "stream-monitors remove": {
+    "prog": "nzbpostarr --headless stream-monitors remove",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "monitor_id",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Stream monitor ID to remove"
+      }
+    ]
+  },
+  "stats": {
+    "prog": "nzbpostarr --headless stats",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the snapshot as JSON"
+      },
+      {
+        "option_strings": [
+          "--watch"
+        ],
+        "dest": "watch",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Continuously print refreshed snapshots until Ctrl+C"
+      },
+      {
+        "option_strings": [
+          "--interval"
+        ],
+        "dest": "interval",
+        "nargs": null,
+        "metavar": null,
+        "default": "2.0",
+        "type": "float",
+        "choices": null,
+        "required": false,
+        "help": "Seconds to wait between refreshes when using --watch (default: 2.0)"
+      },
+      {
+        "option_strings": [
+          "--sample-seconds"
+        ],
+        "dest": "sample_seconds",
+        "nargs": null,
+        "metavar": null,
+        "default": "0.25",
+        "type": "float",
+        "choices": null,
+        "required": false,
+        "help": "Sampling window used to estimate CPU/network/disk rates (default: 0.25)"
+      }
+    ]
+  },
+  "queue": {
+    "prog": "nzbpostarr --headless queue",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "queue_command",
+        "nargs": "A...",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": [
+          "status",
+          "pause",
+          "resume",
+          "stop",
+          "clear",
+          "revalidate",
+          "job"
+        ],
+        "required": false,
+        "help": "Queue commands"
+      }
+    ]
+  },
+  "queue status": {
+    "prog": "nzbpostarr --headless queue status",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the queue snapshot as JSON"
+      }
+    ]
+  },
+  "queue pause": {
+    "prog": "nzbpostarr --headless queue pause",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue resume": {
+    "prog": "nzbpostarr --headless queue resume",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue stop": {
+    "prog": "nzbpostarr --headless queue stop",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--clear"
+        ],
+        "dest": "clear",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Also clear queued jobs and hide the active row while it stops"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue clear": {
+    "prog": "nzbpostarr --headless queue clear",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue revalidate": {
+    "prog": "nzbpostarr --headless queue revalidate",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--skip-paused"
+        ],
+        "dest": "skip_paused",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Only revalidate queued jobs; leave paused jobs untouched"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue job": {
+    "prog": "nzbpostarr --headless queue job",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "job_command",
+        "nargs": "A...",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": [
+          "pause",
+          "resume",
+          "stop",
+          "retry",
+          "promote"
+        ],
+        "required": false,
+        "help": "Per-job commands"
+      }
+    ]
+  },
+  "queue job pause": {
+    "prog": "nzbpostarr --headless queue job pause",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "job_id",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Job ID"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue job resume": {
+    "prog": "nzbpostarr --headless queue job resume",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "job_id",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Job ID"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue job stop": {
+    "prog": "nzbpostarr --headless queue job stop",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "job_id",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Job ID"
+      },
+      {
+        "option_strings": [
+          "--clear"
+        ],
+        "dest": "clear",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Also remove the job from the queue once stopped"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue job retry": {
+    "prog": "nzbpostarr --headless queue job retry",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "job_id",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Job ID"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "queue job promote": {
+    "prog": "nzbpostarr --headless queue job promote",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "job_id",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Job ID"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "config": {
+    "prog": "nzbpostarr --headless config",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "config_command",
+        "nargs": "A...",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": [
+          "get",
+          "set"
+        ],
+        "required": false,
+        "help": "Configuration commands"
+      }
+    ]
+  },
+  "config get": {
+    "prog": "nzbpostarr --headless config get",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "key",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Configuration key, for example host or api_keys.geek"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "config set": {
+    "prog": "nzbpostarr --headless config set",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "key",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Configuration key, for example debug or api_keys.geek"
+      },
+      {
+        "option_strings": [],
+        "dest": "value",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "YAML scalar, list, or mapping value"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "system": {
+    "prog": "nzbpostarr --headless system",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "system_command",
+        "nargs": "A...",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": [
+          "update",
+          "restart",
+          "stop-all"
+        ],
+        "required": false,
+        "help": "System commands"
+      }
+    ]
+  },
+  "system update": {
+    "prog": "nzbpostarr --headless system update",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "update_command",
+        "nargs": "A...",
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": [
+          "check",
+          "install",
+          "rollback"
+        ],
+        "required": false,
+        "help": "Update commands"
+      }
+    ]
+  },
+  "system update check": {
+    "prog": "nzbpostarr --headless system update check",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "system update install": {
+    "prog": "nzbpostarr --headless system update install",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--version"
+        ],
+        "dest": "version",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Release version or tag to install"
+      },
+      {
+        "option_strings": [
+          "--no-restart"
+        ],
+        "dest": "no_restart",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Do not restart after installation"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "system update rollback": {
+    "prog": "nzbpostarr --headless system update rollback",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [],
+        "dest": "backup_id",
+        "nargs": null,
+        "metavar": null,
+        "default": "None",
+        "type": null,
+        "choices": null,
+        "required": true,
+        "help": "Backup ID returned by the updater"
+      },
+      {
+        "option_strings": [
+          "--no-restart"
+        ],
+        "dest": "no_restart",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Do not restart after rollback"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "system restart": {
+    "prog": "nzbpostarr --headless system restart",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--delay"
+        ],
+        "dest": "delay",
+        "nargs": null,
+        "metavar": null,
+        "default": "2.0",
+        "type": "_restart_delay",
+        "choices": null,
+        "required": false,
+        "help": "Seconds to wait between stopping and starting a managed daemon (default: 2)"
+      },
+      {
+        "option_strings": [
+          "--no-stop"
+        ],
+        "dest": "no_stop",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Do not stop active or queued jobs first"
+      },
+      {
+        "option_strings": [
+          "--force"
+        ],
+        "dest": "force",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Restart a managed daemon even when graceful job shutdown times out"
+      },
+      {
+        "option_strings": [
+          "--keep-staged-items"
+        ],
+        "dest": "keep_staged_items",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Keep staged temporary items"
+      },
+      {
+        "option_strings": [
+          "--wait-timeout"
+        ],
+        "dest": "wait_timeout",
+        "nargs": null,
+        "metavar": null,
+        "default": "30.0",
+        "type": "float",
+        "choices": null,
+        "required": false,
+        "help": "Seconds to wait for jobs to stop"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "system stop-all": {
+    "prog": "nzbpostarr --headless system stop-all",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--keep-staged-items"
+        ],
+        "dest": "keep_staged_items",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Keep staged temporary items"
+      },
+      {
+        "option_strings": [
+          "--wait-timeout"
+        ],
+        "dest": "wait_timeout",
+        "nargs": null,
+        "metavar": null,
+        "default": "30.0",
+        "type": "float",
+        "choices": null,
+        "required": false,
+        "help": "Seconds to wait for jobs to stop"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output the result as JSON"
+      }
+    ]
+  },
+  "logs": {
+    "prog": "nzbpostarr --headless logs",
+    "description": null,
+    "epilog": null,
+    "actions": [
+      {
+        "option_strings": [
+          "-h",
+          "--help"
+        ],
+        "dest": "help",
+        "nargs": 0,
+        "metavar": null,
+        "default": "'==SUPPRESS=='",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "show this help message and exit"
+      },
+      {
+        "option_strings": [
+          "--lines",
+          "-n"
+        ],
+        "dest": "lines",
+        "nargs": null,
+        "metavar": null,
+        "default": "100",
+        "type": "int",
+        "choices": null,
+        "required": false,
+        "help": "Number of recent lines to show (default: 100)"
+      },
+      {
+        "option_strings": [
+          "--json"
+        ],
+        "dest": "json",
+        "nargs": 0,
+        "metavar": null,
+        "default": "False",
+        "type": null,
+        "choices": null,
+        "required": false,
+        "help": "Output log entries as JSON"
+      }
+    ]
+  }
+}

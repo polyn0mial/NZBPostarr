@@ -1,0 +1,6 @@
+usage: nzbpostarr --headless queue revalidate [-h] [--skip-paused] [--json]
+
+options:
+  -h, --help     show this help message and exit
+  --skip-paused  Only revalidate queued jobs; leave paused jobs untouched
+  --json         Output the result as JSON

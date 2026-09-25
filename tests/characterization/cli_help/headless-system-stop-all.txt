@@ -1,0 +1,9 @@
+usage: nzbpostarr --headless system stop-all [-h] [--keep-staged-items]
+                                             [--wait-timeout WAIT_TIMEOUT] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --keep-staged-items   Keep staged temporary items
+  --wait-timeout WAIT_TIMEOUT
+                        Seconds to wait for jobs to stop
+  --json                Output the result as JSON

@@ -1,0 +1,10 @@
+usage: nzbpostarr --headless stats [-h] [--json] [--watch] [--interval INTERVAL]
+                                   [--sample-seconds SAMPLE_SECONDS]
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output the snapshot as JSON
+  --watch               Continuously print refreshed snapshots until Ctrl+C
+  --interval INTERVAL   Seconds to wait between refreshes when using --watch (default: 2.0)
+  --sample-seconds SAMPLE_SECONDS
+                        Sampling window used to estimate CPU/network/disk rates (default: 0.25)

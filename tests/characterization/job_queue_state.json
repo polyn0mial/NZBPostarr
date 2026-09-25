@@ -1,0 +1,130 @@
+{
+  "queue_processing_paused": false,
+  "jobs": [
+    {
+      "job_id": "queued01",
+      "category": "movies",
+      "source": "manual",
+      "status": "queued",
+      "started_at": "2026-01-01T00:00:01+00:00",
+      "created_at": "2026-01-01T00:00:01+00:00",
+      "progress": "",
+      "display_name": "Movies - 1 item",
+      "priority": 0,
+      "job_type": "processing",
+      "kwargs": {"test_mode": false},
+      "paths": ["{ROOT}/queued/Movie.2020.1080p.WEB-DL.mkv"]
+    },
+    {
+      "job_id": "running01",
+      "category": "tv",
+      "source": "manual",
+      "status": "running",
+      "started_at": "2026-01-01T00:00:02+00:00",
+      "created_at": "2026-01-01T00:00:02+00:00",
+      "progress": "Uploading 2/3",
+      "progress_percent": 40,
+      "items_processed": 1,
+      "items_total": 3,
+      "items_skipped": 0,
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": [
+        "{ROOT}/running/Show.S01E02.1080p.WEB-DL.mkv",
+        "{ROOT}/running/Show.S01E03.1080p.WEB-DL.mkv"
+      ]
+    },
+    {
+      "job_id": "paused01",
+      "category": "tv",
+      "status": "paused",
+      "started_at": "2026-01-01T00:00:03+00:00",
+      "created_at": "2026-01-01T00:00:03+00:00",
+      "progress": "Paused by user",
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": ["{ROOT}/paused/Show.S02E01.1080p.WEB-DL.mkv"]
+    },
+    {
+      "job_id": "stopping01",
+      "category": "movies",
+      "status": "stopping",
+      "started_at": "2026-01-01T00:00:04+00:00",
+      "created_at": "2026-01-01T00:00:04+00:00",
+      "progress": "Stopping...",
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": ["{ROOT}/stopping/Other.Movie.2021.1080p.WEB-DL.mkv"]
+    },
+    {
+      "job_id": "stopresume01",
+      "category": "anime",
+      "status": "stopped",
+      "started_at": "2026-01-01T00:00:05+00:00",
+      "created_at": "2026-01-01T00:00:05+00:00",
+      "progress": "Stopped by user",
+      "items_processed": 2,
+      "items_total": 5,
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": ["{ROOT}/stopped/Anime.Show.S01E03.1080p.WEB-DL.mkv"]
+    },
+    {
+      "job_id": "stopdone01",
+      "category": "misc",
+      "status": "stopped",
+      "started_at": "2026-01-01T00:00:06+00:00",
+      "created_at": "2026-01-01T00:00:06+00:00",
+      "finished_at": "{RECENT}",
+      "progress": "Stopped by user",
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": []
+    },
+    {
+      "job_id": "completed01",
+      "category": "movies",
+      "status": "completed",
+      "started_at": "2026-01-01T00:00:07+00:00",
+      "created_at": "2026-01-01T00:00:07+00:00",
+      "finished_at": "{RECENT}",
+      "progress": "Finished in 1m 2s",
+      "progress_percent": 100,
+      "items_processed": 1,
+      "items_total": 1,
+      "total_bytes": 1024,
+      "summary": {"duration": "1m 2s", "processed": "1/1", "skipped": 0, "total_bytes": 1024},
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": []
+    },
+    {
+      "job_id": "failed01",
+      "category": "tv",
+      "status": "failed",
+      "started_at": "2026-01-01T00:00:08+00:00",
+      "created_at": "2026-01-01T00:00:08+00:00",
+      "finished_at": "{RECENT}",
+      "progress": "nyuu exited with code 1",
+      "attempt_count": 1,
+      "retry_eligible": true,
+      "last_error": "nyuu exited with code 1",
+      "retry_request": {"category": "tv", "paths": ["{ROOT}/failed/Show.S03E01.1080p.WEB-DL.mkv"]},
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": []
+    },
+    {
+      "job_id": "cancelled01",
+      "category": "books",
+      "status": "cancelled",
+      "started_at": "2026-01-01T00:00:09+00:00",
+      "created_at": "2026-01-01T00:00:09+00:00",
+      "finished_at": "{RECENT}",
+      "progress": "Cancelled (queue cleared)",
+      "job_type": "processing",
+      "kwargs": {},
+      "paths": []
+    }
+  ]
+}

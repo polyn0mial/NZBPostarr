@@ -1,0 +1,5 @@
+usage: nzbpostarr --headless indexers [-h] [--json]
+
+options:
+  -h, --help  show this help message and exit
+  --json      Output indexer details as JSON

@@ -1,0 +1,26 @@
+usage: nzbpostarr --headless stream [-h] [--category CATEGORY] [--release-name RELEASE_NAME]
+                                    [--submit-mode {post_and_submit,post_only}]
+                                    [--posting-server POSTING_SERVER] [--indexer INDEXER] [--test]
+                                    [--skip-duplicate-check] [--monitor] [--json]
+                                    source
+
+positional arguments:
+  source                Server-side NZB file or folder path
+
+options:
+  -h, --help            show this help message and exit
+  --category, -c CATEGORY
+                        Target category label for the queued stream job (default: misc)
+  --release-name RELEASE_NAME
+                        Override the release/job name for a single NZB source
+  --submit-mode {post_and_submit,post_only}
+                        Post only, or post and submit to indexers (default: post_and_submit)
+  --posting-server POSTING_SERVER
+                        Specific enabled NNTP posting server name to use
+  --indexer, -i INDEXER
+                        Submit to a specific indexer ID instead of all enabled indexers
+  --test, -t            Prepare the stream job but skip the actual NNTP upload
+  --skip-duplicate-check
+                        Skip duplicate checking before the repost job runs
+  --monitor             Save a watched-folder stream monitor instead of queuing immediate jobs
+  --json                Output the queued job or monitor result as JSON

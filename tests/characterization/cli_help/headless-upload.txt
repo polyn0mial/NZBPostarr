@@ -1,0 +1,18 @@
+usage: nzbpostarr --headless upload [-h] [--limit LIMIT] [--test] [--force] [--indexer INDEXER]
+                                    [--skip-packs] [--skip-episodes] [--path PATH] [--json]
+                                    category
+
+positional arguments:
+  category              Category to upload (tv, movies, misc, all, both)
+
+options:
+  -h, --help            show this help message and exit
+  --limit, -l LIMIT     Max items to process
+  --test, -t            Test mode - prepare and submit but skip actual NNTP upload
+  --force, -f           Force re-upload (skip duplicate checking)
+  --indexer, -i INDEXER
+                        Target a specific indexer by ID (e.g., geek, planet)
+  --skip-packs          Skip season packs (TV only)
+  --skip-episodes       Skip individual episodes (TV only)
+  --path, -p PATH       Upload a specific file or folder path
+  --json                Output the job result as JSON

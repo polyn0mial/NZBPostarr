@@ -1,0 +1,10 @@
+usage: nzbpostarr --headless stream-monitors [-h] [--json] {list,remove} ...
+
+positional arguments:
+  {list,remove}  Monitor commands
+    list         List saved stream monitor definitions
+    remove       Remove a saved stream monitor definition
+
+options:
+  -h, --help     show this help message and exit
+  --json         Output monitor listings as JSON

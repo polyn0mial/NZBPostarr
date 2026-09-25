@@ -1,0 +1,15 @@
+usage: nzbpostarr --headless queue [-h] {status,pause,resume,stop,clear,revalidate,job} ...
+
+positional arguments:
+  {status,pause,resume,stop,clear,revalidate,job}
+                        Queue commands
+    status              Show running, queued, and finished jobs (default)
+    pause               Pause queue processing and the active job
+    resume              Resume queue processing
+    stop                Stop the active job and pause the queue
+    clear               Cancel all queued (not yet running) jobs
+    revalidate          Re-scan queued/paused jobs against the current classification rules
+    job                 Control a single job by ID (same actions as the per-job WebUI buttons)
+
+options:
+  -h, --help            show this help message and exit

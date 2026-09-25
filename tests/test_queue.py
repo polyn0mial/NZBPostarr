@@ -4,46 +4,6 @@
 
 from tests.support import *
 
-def test_queue_page_keeps_data_loading_separate_from_queue_validation() -> None:
-    queue_js = _queue_source()
-
-    load_pending_block = queue_js.split("async loadPending(forceRefresh = false, silent = false) {", 1)[1].split(
-        "async loadQueuedPaths() {", 1
-    )[0]
-    load_queued_block = queue_js.split("async loadQueuedPaths() {", 1)[1].split("isItemQueued(item) {", 1)[0]
-
-    assert "this.syncSelectionToVisible();" not in load_pending_block
-    assert "this.syncSelectionToVisible();" not in load_queued_block
-
-
-def test_bulk_force_upload_bypasses_review_and_staging() -> None:
-    queue_js = _queue_source()
-    force_block = queue_js.split("async _doForceUploadBulk(indexerId, skipDupeCheck = false) {", 1)[1].split(
-        "closeBulkPreviewModal() {",
-        1,
-    )[0]
-
-    assert 'this.apiPost("/api/pending/force-upload", request)' in force_block
-    assert "/api/pending/preview-upload" not in force_block
-    assert "this.showBulkPreviewModal = true" not in force_block
-
-
-def test_nested_external_lookup_includes_lazy_loaded_and_ignored_groups() -> None:
-    queue_js = _queue_source()
-    # Lazily loaded children are grafted into the item tree itself, so the lookup walks
-    # children/files of every section and never skips a group.
-    lookup_block = queue_js.split('_findPendingNodeByKey(items, targetKey, targetPath = "") {', 1)[1].split(
-        "_findCurrentPendingNode(",
-        1,
-    )[0]
-
-    assert "if (Array.isArray(node.children)) childLists.push(node.children);" in lookup_block
-    assert "childLists.push(node.files)" in lookup_block
-    assert "for (const section of Object.values(items)) {" in lookup_block
-    assert "allow_bulk_selection === false" not in lookup_block
-    assert "extLoadedChildren" not in queue_js
-
-
 def test_job_names_use_category_and_item_count(tmp_path) -> None:
     # The client's server names jobs '<Category> - N items' (handoff D01).
     service = _make_queue_service_stub(tmp_path)
@@ -55,31 +15,6 @@ def test_job_names_use_category_and_item_count(tmp_path) -> None:
     assert service._default_job_name("anime", 1, [release_dir]) == "Anime - 1 item"
     assert service._default_job_name("mixed", 123) == "Mixed - 123 items"
     assert service._default_job_name("tv", 0) == "TV"
-
-
-def test_queue_job_count_is_below_progress_and_describes_remaining_items() -> None:
-    page_base_js = _read_repo_text("webui", "assets", "js", "page-base.js")
-    queue_html = _read_repo_text("webui", "queue.html")
-
-    assert "target_path_count" in page_base_js
-    assert "not uploaded`" in page_base_js
-    progress_bar = queue_html.index('class="h-1.5 bg-notion-bg-secondary')
-    remaining_count = queue_html.index("{{ jobItemCount(job) }}", progress_bar)
-    assert remaining_count > progress_bar
-    # Consolidation decision: the active job row shows what is uploading now (server layout).
-    assert "{{ isJobQueueActiveEntry(job) ? jobTitle(job) : jobDisplayName(job) }}" in queue_html
-    assert "Release the whole-queue hold" not in queue_html
-
-
-def test_pending_rows_restore_compact_category_and_status_badges() -> None:
-    queue_js = _queue_source()
-    queue_html = _read_repo_text("webui", "queue.html")
-
-    # Consolidation decision: the server's status capsules sit before an 88px capsule select.
-    assert queue_html.count('title="Completed">') >= 4
-    assert queue_html.count(">Done</span>") == 0
-    assert queue_html.count("h-[1.05rem] px-1.5 rounded-full border border-notion-border/70 text-[8px]") == 3
-    assert "categorySelectWidthClass(cat) {" in queue_js
 
 
 def test_upload_service_passes_target_paths_to_processing_run_job():

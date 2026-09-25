@@ -1,0 +1,14 @@
+usage: nzbpostarr --headless system restart [-h] [--delay DELAY] [--no-stop] [--force]
+                                            [--keep-staged-items] [--wait-timeout WAIT_TIMEOUT]
+                                            [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --delay DELAY         Seconds to wait between stopping and starting a managed daemon (default:
+                        2)
+  --no-stop             Do not stop active or queued jobs first
+  --force               Restart a managed daemon even when graceful job shutdown times out
+  --keep-staged-items   Keep staged temporary items
+  --wait-timeout WAIT_TIMEOUT
+                        Seconds to wait for jobs to stop
+  --json                Output the result as JSON

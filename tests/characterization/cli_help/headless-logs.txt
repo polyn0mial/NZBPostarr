@@ -1,0 +1,6 @@
+usage: nzbpostarr --headless logs [-h] [--lines LINES] [--json]
+
+options:
+  -h, --help         show this help message and exit
+  --lines, -n LINES  Number of recent lines to show (default: 100)
+  --json             Output log entries as JSON
