@@ -104,6 +104,16 @@ class _PipelineFacade:
         for module in holders:
             setattr(module, name, value)
 
+    def __delattr__(self, name: str) -> None:
+        # unittest.mock.patch.object undoes a non-instance attribute with delattr: restore
+        # each module's original binding, as monkeypatch's undo does through __setattr__.
+        saved = self._saved
+        if name not in saved:
+            raise AttributeError(name)
+        _canonical, originals = saved.pop(name)
+        for module, original in originals.items():
+            setattr(module, name, original)
+
 
 pipeline_facade = _PipelineFacade()
 

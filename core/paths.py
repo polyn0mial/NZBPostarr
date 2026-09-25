@@ -10,10 +10,14 @@ import os
 from pathlib import Path
 from typing import Any
 
+# The host's concrete class, fixed at import: ``Path()`` picks its flavour from ``os.name`` at
+# every call, so anything that swaps ``os.name`` later would otherwise break every resolve.
+_HostPath = type(Path())
+
 
 def resolve_path(path: Any) -> Path:
     """Absolute, symlink-resolved form of ``path`` (``~`` expanded; missing parts allowed)."""
-    candidate = Path(str(path or "").strip()).expanduser()
+    candidate = _HostPath(str(path or "").strip()).expanduser()
     try:
         return candidate.resolve(strict=False)
     except OSError:

@@ -49,6 +49,19 @@ from logic.stream import monitors as stream_monitors
 _SCHEDULER_INTERVAL_S = 15
 
 
+class _SchedulerStarted:
+    """Read-only ``engine.started``: whether the scheduler thread is alive.
+
+    A non-data descriptor rather than a property, so a subclass may still bind its own
+    ``started`` attribute on the instance (as JobEngine subclasses did before this existed).
+    """
+
+    def __get__(self, engine: Optional[JobEngine], owner: Optional[type] = None) -> Any:
+        if engine is None:
+            return self
+        return engine._scheduler_alive()
+
+
 class JobEngine:
     """Owns every upload job: one scheduler lane, persisted state, and the staged items."""
 
@@ -67,15 +80,16 @@ class JobEngine:
         with self._lock:
             self._restore_jobs_from_disk_locked()
 
-    @property
-    def started(self) -> bool:
+    def _scheduler_alive(self) -> bool:
         thread = self._queue_scheduler_thread
         return thread is not None and thread.is_alive()
+
+    started = _SchedulerStarted()
 
     def start(self) -> None:
         """Start the scheduler loop and the first queued job; a second call does nothing."""
         with self._lock:
-            if self.started:
+            if self._scheduler_alive():
                 return
             self._queue_scheduler_stop.clear()
             self._queue_scheduler_thread = threading.Thread(target=self._queue_scheduler_loop, daemon=True)

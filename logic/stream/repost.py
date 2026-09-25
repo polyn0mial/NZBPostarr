@@ -12,7 +12,7 @@ from typing import Any, Optional, Sequence
 
 from core.config import NNTPServer, get_config
 from core.db.ledger import destinations_for
-from core.db.uploads import record_nntp_success
+from core.db.uploads import record_nntp_success, update_db_destination
 from core.indexers.registry import get_enabled_indexers
 from core.logging import log_info
 from core.media import stream_itype
@@ -20,7 +20,7 @@ from core.paths import resolve_path
 from core.proc import run_command
 from logic.jobs.context import get_thread_job, update_job_progress
 from logic.pipeline.posting import _build_nyuu_command, _parse_nyuu_completion_stats, build_nyuu_progress_parser
-from logic.pipeline.submit import submit_and_record
+from logic.pipeline.submit import submit_api
 from logic.stream.manifest import (
     _safe_output_name,
     build_procjson_inputs,
@@ -299,24 +299,25 @@ def stream_nzb_upload(
 
     record_nntp_success(chosen_release, total_size, itype)
 
-    # Same submit semantics as queue posting: per-indexer isolation, and a
-    # "duplicate" answer counts as already posted.
-    api_results, _any_success = submit_and_record(
-        [{"dests": list(target_ids), "priority": False}] if target_ids else [],
-        conf=conf,
-        name=chosen_release,
-        nzb_path=generated_nzb,
-        submission_category=category,
-        item_size=total_size,
-        key=chosen_release,
-        itype=itype,
-        item_path=Path(chosen_release),
-        base_folder=None,
-        category=category,
-        test_mode=False,
-        upload_result=upload_result,
-    )
-    submission_results = [(dest, ok or status == "duplicate", reason) for dest, ok, reason, status in api_results]
+    # Same submit semantics as queue posting: one indexer failing never stops the
+    # others, and a "duplicate" answer counts as already posted.
+    submission_results: list[tuple[str, bool, str]] = []
+    for dest in target_ids:
+        result = submit_api(chosen_release, dest, conf, nzb_path=generated_nzb, cat=category)
+        accepted = result.success or result.status == "duplicate"
+        submission_results.append((dest, accepted, result.reason))
+        if accepted:
+            update_db_destination(dest, chosen_release, total_size, chosen_release, itype=itype, **upload_result)
+        else:
+            update_db_destination(
+                dest,
+                chosen_release,
+                total_size,
+                chosen_release,
+                itype=itype,
+                status="failed",
+                error=result.reason or "Indexer submission rejected or unreachable",
+            )
 
     success_count = sum(1 for _dest, ok, _reason in submission_results if ok)
     log_info(

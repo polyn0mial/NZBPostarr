@@ -28,10 +28,11 @@ def _strip_exports(source: str) -> str:
 
 
 def test_audiobook_and_ebook_items_only_match_their_own_category(tmp_path) -> None:
-    page_base_js = _page_base_js()
-    start = page_base_js.index("function findCategoryMatch(")
-    end = page_base_js.index("\n/**\n * Map an upload category id back", start)
-    helpers = _strip_exports(page_base_js[start:end])
+    # page-base.js re-exports these from shared/category.js, where they now live.
+    category_js = _read_repo_text("webui", "assets", "js", "shared", "category.js").replace("\r\n", "\n")
+    start = category_js.index("function findCategoryMatch(")
+    end = category_js.index("\n/**\n * Map an upload category id back", start)
+    helpers = _strip_exports(category_js[start:end])
 
     result = _run_node(
         tmp_path,
