@@ -251,7 +251,7 @@ def test_submit_to_indexer_streams_nzb_payload(tmp_path, monkeypatch) -> None:
             {"status_code": 200, "text": "OK", "raise_for_status": lambda self: None, "json": lambda self: {}},
         )()
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
 
     nzb_file = _make_sample_nzb(tmp_path)
 
@@ -260,15 +260,16 @@ def test_submit_to_indexer_streams_nzb_payload(tmp_path, monkeypatch) -> None:
         name="NZBGeek",
         submit_url="https://example.invalid/api",
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
-        success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+        success=models_mod.SuccessPatterns(text_patterns=["OK"]),
     )
 
-    ok, status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=indexer,
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=nzb_file,
         config=_DummySubmitConfig(),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert ok is True
     assert status == "success"
@@ -304,15 +305,15 @@ def test_submit_to_indexer_rebuilds_streams_for_cloudflare_retry(tmp_path, monke
         handles.append(handle)
         return responses.pop(0)
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
-    monkeypatch.setattr(registry_mod.time, "sleep", waits.append)
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
+    monkeypatch.setattr(http_submit_mod.time, "sleep", waits.append)
 
     indexer = IndexerDefinition(
         id="cloudflare-retry",
         name="Cloudflare Retry",
         submit_url="https://example.invalid/api",
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
-        success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+        success=models_mod.SuccessPatterns(text_patterns=["OK"]),
     )
     result = submit_to_indexer(
         indexer=indexer,
@@ -321,7 +322,7 @@ def test_submit_to_indexer_rebuilds_streams_for_cloudflare_retry(tmp_path, monke
         config=_DummySubmitConfig(),
     )
 
-    assert result[:2] == (True, "success")
+    assert (result.success, result.status) == (True, "success")
     assert waits == [15]
     assert len(handles) == 2
     assert all(handle.closed for handle in handles)

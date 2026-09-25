@@ -332,7 +332,7 @@ def get_uploads_for_job(job_id: str) -> List[Dict[str, Any]]:
 
 def _serialize_upload(upload: Upload) -> Dict[str, Any]:
     """Convert an Upload ORM model into a flat dictionary for the API."""
-    from core.registry import get_registry
+    from core.indexers.registry import get_registry
 
     registry = get_registry()
     _ua = upload.updated_at or upload.created_at

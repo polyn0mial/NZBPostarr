@@ -101,7 +101,7 @@ def _emit_pending_category(
 
 
 def _render_stats_summary(info: dict[str, Any]) -> str:
-    from logic.stats_engine import format_seconds
+    from logic.stats.collector import format_seconds
 
     cpu = info.get("cpu", {})
     memory = info.get("memory", {})

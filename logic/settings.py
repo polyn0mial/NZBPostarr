@@ -86,13 +86,9 @@ def merge_masked_secret_updates(updates: Dict[str, Any], conf: Any) -> Dict[str,
 
 def settings_view(conf: Any) -> Dict[str, Any]:
     """The active configuration grouped for the Settings page, secrets masked."""
-    from core.registry import (
-        get_all_indexers,
-        get_available_categories,
-        resolve_indexer_backfill,
-        resolve_indexer_enabled,
-        resolve_indexer_priority,
-    )
+    from core.indexers.categories import get_available_categories
+    from core.indexers.models import resolve_indexer_backfill, resolve_indexer_enabled, resolve_indexer_priority
+    from core.indexers.registry import get_all_indexers
 
     destinations = {
         "enable_backfill": conf.enable_backfill,

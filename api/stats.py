@@ -20,7 +20,8 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 def get_system_stats() -> Dict[str, Any]:
     """Retrieve live system resource usage."""
     check_feature("dashboard")
-    from logic.stats_engine import get_full_system_info, mark_ui_active
+    from logic.stats.collector import mark_ui_active
+    from logic.stats.system_info import get_full_system_info
 
     mark_ui_active(mode="mini")
     info = get_full_system_info()
@@ -62,7 +63,8 @@ async def get_stats_summary(
 async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
     """Retrieve comprehensive system statistics from the engine."""
     check_feature("stats_page")
-    from logic.stats_engine import get_full_system_info, mark_ui_active
+    from logic.stats.collector import mark_ui_active
+    from logic.stats.system_info import get_full_system_info
 
     # Convert comma-separated string to list
     collapsed_list = [c.strip() for c in collapsed.split(",") if c.strip()]
@@ -74,7 +76,8 @@ async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
 async def get_mini_stats() -> Dict[str, Any]:
     """Lightweight stats endpoint for dashboard polling."""
     check_feature("history")
-    from logic.stats_engine import get_full_system_info, mark_ui_active
+    from logic.stats.collector import mark_ui_active
+    from logic.stats.system_info import get_full_system_info
 
     mark_ui_active(mode="mini")
     info = await asyncio.to_thread(get_full_system_info)
@@ -112,10 +115,10 @@ def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
     Reads from the in-memory ring buffer - zero DB hits.
     """
     check_feature("history")
-    from logic.stats_engine import (
+    from logic.stats.collector import (
         get_iface_history,
     )
-    from logic.stats_engine import (
+    from logic.stats.collector import (
         get_stats_history as _mem_hist,
     )
 

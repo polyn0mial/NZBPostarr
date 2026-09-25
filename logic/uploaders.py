@@ -19,7 +19,9 @@ import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 
 from core.config import Config, NNTPServer, get_config
-from core.registry import get_indexer, submit_to_indexer
+from core.indexers.http_submit import submit_to_indexer
+from core.indexers.models import SubmitResult
+from core.indexers.registry import get_indexer
 from core.utils import (
     extract_percentage,
     extract_speed,
@@ -30,15 +32,6 @@ from core.utils import (
     run_command,
     update_job_progress,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class SubmitResult:
-    """Canonical outcome returned by every indexer submission path."""
-
-    success: bool
-    status: str
-    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,7 +180,7 @@ def build_nyuu_progress_parser(
     verbose: bool = False,
 ) -> Callable[[str], Optional[str]]:
     """Create the shared Nyuu log parser used by staged and streaming uploads."""
-    from logic.stats_engine import ProgressTracker
+    from logic.pipeline.posting import ProgressTracker
 
     tracker = ProgressTracker(total_size)
     article_bytes = _parse_nyuu_article_bytes(article_size or "700K")
@@ -317,7 +310,7 @@ def _parse_nyuu_completion_stats(
 
     speed_match = re.search(r"\((\d+\.?\d*)\s*([KMG]?[iI]?[bB]/s)\)", output_text, re.I)
     if speed_match:
-        from logic.stats_engine import parse_speed_to_bps
+        from logic.stats.collector import parse_speed_to_bps
 
         parsed_speed_bps = parse_speed_to_bps(f"{speed_match.group(1)} {speed_match.group(2)}")
 
@@ -537,7 +530,7 @@ def submit_api(
                 logger.info(f"{indexer.log_name} Retry {attempt}/{max_retries} in {wait}s...")
                 time.sleep(wait)
 
-            success, status, reason = submit_to_indexer(
+            result = submit_to_indexer(
                 indexer=indexer,
                 rls_name=rls_name,
                 nzb_path=nzb,
@@ -546,10 +539,11 @@ def submit_api(
                 nfo_path=nfo_path,
                 mediainfo_path=mediainfo_path,
             )
+            success, status, reason = result.success, result.status, result.reason
             last_reason = reason
 
             if success:
-                return SubmitResult(True, "success", reason)
+                return result
 
             # Permanent failure - no point retrying
             if status in _PERMANENT_FAILURE_STATUSES:

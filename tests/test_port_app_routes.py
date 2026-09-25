@@ -126,7 +126,7 @@ def test_create_full_backup_can_include_tmp_contents(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(config_mod, "APP_ROOT", root)
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
 
-    result = system_api._create_full_backup_archive(skip_tmp_contents=False)
+    result = system_backup.create_full_backup_archive(skip_tmp_contents=False)
 
     with tarfile.open(result["archive_path"], "r:gz") as tar:
         assert "nzbpostarr/data/tmp/work.part01.rar" in tar.getnames()
@@ -136,7 +136,7 @@ def test_create_full_backup_failure_is_a_readable_500(monkeypatch) -> None:
     def _boom(**_kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(system_api, "_create_full_backup_archive", _boom)
+    monkeypatch.setattr(system_backup, "create_full_backup_archive", _boom)
 
     with pytest.raises(HTTPException) as exc:
         _run_async(system_api.create_full_backup(system_api.CreateBackupRequest(skip_tmp_contents=False)))

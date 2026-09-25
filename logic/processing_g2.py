@@ -244,7 +244,7 @@ def _build_duplicate_prefetch_state(
 ) -> tuple[Dict[str, str], Dict[str, Dict[str, Optional[str]]], Callable[[Path], Optional[Path]]]:
     """Resolve item DB keys and batch-prefetch duplicate state for the job queue."""
     from core.db.ledger import destinations_for_batch
-    from core.registry import get_enabled_indexers
+    from core.indexers.registry import get_enabled_indexers
 
     source_root_cache: Dict[str, Optional[Path]] = {}
 
@@ -531,7 +531,7 @@ def _resolve_target_indexers_for_single(
     return all_indexers
 
 def _resolve_job_categories(category: str) -> list[str]:
-    from core.registry import get_available_categories
+    from core.indexers.categories import get_available_categories
 
     category_lower = category.lower()
     active_categories = [item["id"] for item in get_available_categories()]

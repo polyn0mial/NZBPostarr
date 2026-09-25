@@ -125,7 +125,7 @@ def test_mark_uploaded_rejects_empty_input(monkeypatch) -> None:
         calls.append((item_keys, indexer_ids, itype))
         return len(item_keys) * len(indexer_ids)
 
-    monkeypatch.setattr(db, "mark_as_uploaded", _fake)
+    monkeypatch.setattr(db_uploads, "mark_as_uploaded", _fake)
 
     for bad in (
         pending_api.MarkUploadedRequest(item_keys=[], indexer_ids=["geek"]),
@@ -188,7 +188,7 @@ def test_grouped_items_passes_destination_through(monkeypatch) -> None:
         seen["destination"] = destination
         return {"title_key": title_key_value, "items": []}
 
-    monkeypatch.setattr(db, "get_group_upload_items", _fake)
+    monkeypatch.setattr(db_history, "get_group_upload_items", _fake)
 
     history_api.get_grouped_items("some show", destination="geek")
 
@@ -204,7 +204,7 @@ def test_grouped_errors_passes_params_through(monkeypatch) -> None:
         seen["include_muted"] = include_muted
         return {"issues": [], "total_issues": 0}
 
-    monkeypatch.setattr(db, "get_grouped_upload_errors", _fake)
+    monkeypatch.setattr(db_issues, "get_grouped_upload_errors", _fake)
 
     result = history_api.get_grouped_errors(destination="geek", limit=5, since_days=3, include_muted=False)
 
@@ -223,8 +223,8 @@ def test_mute_and_unmute_routes_are_wired() -> None:
 def test_mute_and_unmute_grouped_error_pass_params_through(monkeypatch) -> None:
     seen: list[tuple] = []
 
-    monkeypatch.setattr(db, "mute_upload_issue", lambda indexer_id, signature: seen.append(("mute", indexer_id, signature)) or True)
-    monkeypatch.setattr(db, "unmute_upload_issue", lambda indexer_id, signature: seen.append(("unmute", indexer_id, signature)) or True)
+    monkeypatch.setattr(db_issues, "mute_upload_issue", lambda indexer_id, signature: seen.append(("mute", indexer_id, signature)) or True)
+    monkeypatch.setattr(db_issues, "unmute_upload_issue", lambda indexer_id, signature: seen.append(("unmute", indexer_id, signature)) or True)
 
     mute_result = history_api.mute_grouped_error(history_api.MuteIssueRequest(indexer_id="geek", signature="auth failed"))
     unmute_result = history_api.unmute_grouped_error(history_api.MuteIssueRequest(indexer_id="geek", signature="auth failed"))

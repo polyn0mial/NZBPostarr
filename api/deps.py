@@ -45,7 +45,7 @@ def _stats_collector_required(conf: Optional[Any] = None) -> bool:
 
 async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
     current = conf or get_config()
-    from logic.stats_engine import (
+    from logic.stats.collector import (
         start_collector,
         stop_collector,
         sync_collector_schedule,

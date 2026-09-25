@@ -74,7 +74,7 @@ def _service() -> Any:
 def _safe_indexer_list() -> list[dict[str, Any]]:
     """Indexer metadata with credentials stripped."""
     from core.config import get_config
-    from core.registry import get_all_indexers
+    from core.indexers.registry import get_all_indexers
 
     conf = get_config()
     # to_ui_dict is the same credential-free projection the WebUI receives.

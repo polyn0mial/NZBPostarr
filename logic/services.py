@@ -147,9 +147,9 @@ def init_app() -> None:
     runs a background cleanup of stale tmp data.
     """
     from core.db.schema import init_database
-    from core.registry import get_registry
+    from core.indexers.registry import get_registry
     from core.utils import run_global_purge
-    from logic.process_reaper import get_scheduler
+    from logic.system.reaper import get_scheduler
 
     logger.info("Initializing database...")
     init_database()

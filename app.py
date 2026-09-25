@@ -32,7 +32,7 @@ def _arm_process_reaper() -> None:
     """Start periodic cleanup immediately and offload the boot scan to the background."""
     global _boot_reaper_task
 
-    from logic.process_reaper import schedule_reaper, schedule_wal_checkpoint
+    from logic.system.reaper import schedule_reaper, schedule_wal_checkpoint
 
     schedule_reaper()
     schedule_wal_checkpoint()
@@ -105,6 +105,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _arm_process_reaper()
     logger.debug(f"  [4/4] Process Reaper armed ({time.time() - start:.3f}s)")
 
+    # Delete files dropped by earlier releases (an older updater never deletes).
+    from logic.system.updater import cleanup_removed_paths
+
+    await asyncio.to_thread(cleanup_removed_paths)
+
     logger.info(f"✨ Startup complete in {time.time() - start:.3f}s")
 
     # A mounted sub-app does not get its lifespan run by the parent, and the MCP
@@ -117,8 +122,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     from core.db.engine import checkpoint_wal
     from logic.autoupload import stop_folder_monitor
-    from logic.process_reaper import shutdown_scheduler
-    from logic.stats_engine import stop_collector
+    from logic.system.reaper import shutdown_scheduler
+    from logic.stats.collector import stop_collector
 
     await _stop_startup_reaper()
     _asset_cache_bust.stop()
@@ -131,7 +136,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 async def _run_startup_reaper() -> None:
     """Run the initial orphan-process scan without blocking app startup."""
-    from logic.process_reaper import reap_orphans
+    from logic.system.reaper import reap_orphans
 
     try:
         result = await asyncio.to_thread(reap_orphans, force=True)

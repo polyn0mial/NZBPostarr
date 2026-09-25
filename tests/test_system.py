@@ -30,7 +30,7 @@ def test_stats_engine_parsing_and_formatting() -> None:
 
 
 def test_process_stats_collector_ranks_rows_and_honors_collapsed_sections(monkeypatch) -> None:
-    from logic import process_stats
+    from logic.stats import process_stats
 
     class FakeProcess:
         def __init__(self, info):
@@ -78,7 +78,7 @@ def test_process_stats_collector_ranks_rows_and_honors_collapsed_sections(monkey
 
 
 def test_process_stats_collector_skips_idle_quiet_ui(monkeypatch) -> None:
-    from logic import process_stats
+    from logic.stats import process_stats
 
     monkeypatch.setattr(
         process_stats.psutil,
@@ -99,7 +99,8 @@ def test_process_stats_collector_skips_idle_quiet_ui(monkeypatch) -> None:
 
 
 def test_headless_stats_command_outputs_json_without_starting_collector(monkeypatch, capsys) -> None:
-    from logic import services, stats_engine
+    from logic import services
+    from logic.stats import collector as stats_engine, system_info
 
     sample = {
         "hostname": "test-host",
@@ -120,7 +121,7 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
     }
 
     monkeypatch.setattr(services, "init_app", lambda: None)
-    monkeypatch.setattr(stats_engine, "collect_instant_system_info", lambda interval_seconds=0.25: sample)
+    monkeypatch.setattr(system_info, "collect_instant_system_info", lambda interval_seconds=0.25: sample)
 
     def fail_start_collector(*_args, **_kwargs):
         raise AssertionError("headless stats should not start the background collector")
@@ -135,10 +136,10 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
     assert payload["network"]["connections"] == 7
 
 def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
-    from logic import stats_engine
+    from logic.stats import system_info
 
     monkeypatch.setattr(
-        stats_engine,
+        system_info,
         "collect_instant_system_info",
         lambda interval_seconds=0.25: {"hostname": "test-host", "platform": "TestOS", "uptime_seconds": 0},
     )
@@ -164,7 +165,7 @@ def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
     assert "Stopped." in output
 
 def test_arm_process_reaper_schedules_boot_scan_in_background(monkeypatch) -> None:
-    from logic import process_reaper
+    from logic.system import reaper as process_reaper
 
     calls: list[str] = []
 
@@ -824,8 +825,8 @@ def test_get_current_settings_preserves_folder_path_categories(monkeypatch) -> N
     )
 
     patch_hit(monkeypatch, settings_api, "get_config", lambda: conf)
-    monkeypatch.setattr("core.registry.get_all_indexers", lambda: [])
-    monkeypatch.setattr("core.registry.get_available_categories", lambda: [])
+    monkeypatch.setattr("core.indexers.registry.get_all_indexers", lambda: [])
+    monkeypatch.setattr("core.indexers.categories.get_available_categories", lambda: [])
 
     result = _run_async(settings_api.get_current_settings())
 
@@ -1069,7 +1070,7 @@ def test_resolve_force_flag(monkeypatch) -> None:
         assert UploadService._resolve_force_flag(**kwargs) is expected, case_name
 
 def test_check_success_word_boundary() -> None:
-    from core.registry import _check_success
+    from core.indexers.http_submit import _check_success
 
     cases = [
         ("short-pattern-standalone-match", ["OK"], "OK", True),
@@ -1088,7 +1089,7 @@ def test_should_skip_completed_item_respects_force(monkeypatch) -> None:
     from logic.processing import _should_skip_completed_item
 
     monkeypatch.setattr(
-        "core.registry.resolve_indexer_enabled",
+        "core.indexers.models.resolve_indexer_enabled",
         lambda _idx, _conf: True,
     )
 

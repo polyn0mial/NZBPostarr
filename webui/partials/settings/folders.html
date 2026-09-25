@@ -1,0 +1,192 @@
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6 relative z-10" data-section="folders" v-show="sectionVisible('folders')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('folders')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.folders ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="folder" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Folder Paths</h2>
+            <span class="text-xs text-notion-text-tertiary">(from config file)</span>
+        </div>
+        <!-- Add Folder button in header - only visible when expanded -->
+        <button v-if="expandedSections.folders" @click.stop="addFolderPath()" class="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold text-notion-accent bg-notion-accent/10 hover:bg-notion-accent/20 rounded-md transition-colors">
+            <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
+            Add Folder
+        </button>
+    </div>
+    <div :class="sectionContentClass('folders')">
+        <div class="p-4 space-y-4">
+            <div class="rounded-lg border border-notion-border bg-notion-bg p-3 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                        <lucide-icon name="archive" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                        <div>
+                            <div class="text-xs font-semibold text-notion-text-primary">NZBPostarr Full Backups</div>
+                            <div class="text-[10px] text-notion-text-tertiary">Generate a fresh full backup in the configured backup directory without restarting the active job.</div>
+                        </div>
+                    </div>
+                    <button
+                        @click="createFullBackup"
+                        :disabled="backupJob.creating"
+                        :class="['px-3 h-9 rounded-md text-xs font-semibold transition-colors whitespace-nowrap', backupJob.creating ? 'bg-notion-bg-hover text-notion-text-tertiary cursor-wait' : 'bg-notion-accent text-white hover:bg-notion-accent/90']">
+                        {{ backupJob.creating ? 'Generating Backup...' : 'Generate New Backup' }}
+                    </button>
+                </div>
+
+                <div class="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[10px] text-emerald-300">
+                    <div class="max-w-md">
+                        <div class="font-semibold text-[10px] uppercase tracking-[0.14em] text-emerald-200 mb-1">What This Backup Includes</div>
+                        <div>
+                            Core NZBPostarr application files, saved configuration, database, and data needed to restore the app.
+                        </div>
+                        <details class="mt-2 group">
+                            <summary class="cursor-pointer select-none text-emerald-200 hover:text-emerald-100 transition-colors">
+                                Show more
+                            </summary>
+                            <div class="mt-2 space-y-1 text-emerald-300/90">
+                                <div>Application source and web UI files currently running on the server.</div>
+                                <div>Configuration stored under `.config/nzbpostarr`, including settings saved through the UI.</div>
+                                <div>The history database contents, which includes app state and history-backed records stored there.</div>
+                                <div>`data` folder contents, including runtime data and other important saved state.</div>
+                                <div>`anime_cache.json` and the active `systemd` service file used to run NZBPostarr on Linux.</div>
+                                <div>`tmp` can be reduced when the skip option is enabled, while keeping stateful temp files that matter for recovery.</div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+
+                <div class="rounded-md border border-notion-border bg-notion-bg-elevated/30 px-3 py-2 text-[10px] text-notion-text-tertiary">
+                    Creating a backup here runs the full NZBPostarr backup routine and writes a timestamped archive into the configured backup directory. The action is designed to generate the archive without restarting the application, so active uploads and queue processing can continue while the backup file is being created.
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <div class="text-[10px] text-notion-text-tertiary">
+                        Copy and paste the backup directory path here when editing is unlocked. Changes are autosaved and future backups will be written to that folder.
+                        <span v-if="backupJob.savingFolder" class="text-notion-accent"> Saving...</span>
+                        <span v-else-if="backupJob.folderSaveError" class="text-red-400"> {{ backupJob.folderSaveError }}</span>
+                        <span v-else-if="backupJob.lastSavedFolder" class="text-emerald-300"> Saved.</span>
+                    </div>
+
+                    <div class="rounded-md border border-notion-border bg-notion-bg-elevated/20 px-3 py-3 flex flex-col gap-2">
+                        <div class="flex flex-col lg:flex-row lg:items-center gap-2">
+                            <div class="relative flex-1">
+                                <input
+                                    type="text"
+                                    v-model="settings.folders.backup_folder"
+                                    @input="onBackupFolderInput"
+                                    @blur="persistBackupFolder"
+                                    :disabled="!backupJob.folderEditable"
+                                    :class="[
+                                        'w-full text-xs font-mono px-3 h-9 rounded-md border transition-colors',
+                                        backupJob.folderEditable
+                                            ? 'text-notion-text-secondary bg-notion-bg border-notion-border focus:border-notion-accent/50 focus:outline-none focus:bg-notion-bg-elevated'
+                                            : 'text-notion-text-tertiary bg-notion-bg-hover/60 border-notion-border opacity-70 cursor-not-allowed'
+                                    ]"
+                                    placeholder="/path/to/backups/" />
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button
+                                @click="toggleBackupFolderEditing"
+                                type="button"
+                                :class="[
+                                    'inline-flex items-center justify-center gap-1.5 px-3 h-9 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap',
+                                    backupJob.folderEditable
+                                        ? 'bg-notion-accent/15 text-notion-accent hover:bg-notion-accent/20'
+                                        : 'bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary'
+                                ]">
+                                <lucide-icon :name="backupJob.folderEditable ? 'lock-open' : 'lock'" icon-class="size-3.5"></lucide-icon>
+                                {{ backupJob.folderEditable ? 'Editing Enabled' : 'Unlock to Edit' }}
+                            </button>
+
+                            <label :class="[
+                                'inline-flex items-center gap-2 text-[11px] whitespace-nowrap transition-opacity',
+                                backupJob.folderEditable
+                                    ? 'text-notion-text-secondary'
+                                    : 'text-notion-text-tertiary opacity-70 cursor-not-allowed'
+                            ]">
+                                <input
+                                    type="checkbox"
+                                    v-model="backupJob.skipTmpContents"
+                                    :disabled="!backupJob.folderEditable"
+                                    class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg disabled:opacity-60 disabled:cursor-not-allowed" />
+                                Skip `tmp` contents
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="backupJob.lastArchivePath" class="text-[10px] text-notion-text-tertiary font-mono break-all">
+                    Last backup: {{ backupJob.lastArchivePath }}
+                    <span v-if="backupJob.lastArchiveSizeBytes"> · {{ formatBytesCompact(backupJob.lastArchiveSizeBytes) }}</span>
+                </div>
+            </div>
+
+            <!-- Dynamic Folder Paths -->
+            <div v-for="(fp, idx) in settings.folders.folder_paths" :key="idx" class="flex flex-col sm:flex-row sm:items-center gap-2 group relative" data-search="folder path monitor manual select bulk select auto categorize external">
+                <div class="flex items-center justify-center w-8 shrink-0">
+                    <lucide-icon name="folder-input" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <!-- Path Input -->
+                <div class="relative flex-1 flex items-center gap-1.5">
+                    <div class="relative flex-1">
+                        <input
+                            type="text"
+                            v-model="fp.path"
+                            class="w-full text-xs text-notion-text-secondary font-mono bg-notion-bg px-3 pr-11 h-9 rounded-md border border-notion-border focus:border-notion-accent/50 focus:outline-none focus:bg-notion-bg-elevated transition-colors"
+                            placeholder="/path/to/folder" />
+                        <button @click="openFolderBrowser(idx)" type="button" title="Browse folders" class="absolute inset-y-0 right-1 my-1 px-2 inline-flex items-center justify-center rounded-md text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-accent/15 transition-colors">
+                            <lucide-icon name="folder-search" icon-class="size-3.5"></lucide-icon>
+                        </button>
+                    </div>
+                    <div class="h-9 min-w-27 rounded-md border border-notion-border bg-notion-bg px-2 text-xs text-notion-text-tertiary flex items-center justify-center">
+                        Auto
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0 pl-1">
+                        <div class="flex items-center gap-1" :title="'Auto-monitor this folder for new content and upload automatically'">
+                            <lucide-icon name="radar" icon-class="size-3" :class="fp.monitor ? 'text-notion-accent' : 'text-notion-text-tertiary'"></lucide-icon>
+                            <button @click="fp.monitor = !fp.monitor" :class="toggleBtnClassDirect(fp.monitor)" title="Monitor - auto-upload on changes (experimental)">
+                                <span :class="toggleKnobClassDirect(fp.monitor)"></span>
+                            </button>
+                        </div>
+                        <!-- Manual selection only is stored inversely as allow_bulk_selection (on = allow_bulk_selection false) -->
+                        <div class="flex items-center gap-1" :title="'Manual selection only - disables bulk/group queue selection for this configured directory so rows must be selected individually'">
+                            <lucide-icon name="mouse-pointer-click" icon-class="size-3" :class="!fp.allow_bulk_selection ? 'text-amber-400' : 'text-notion-text-tertiary'"></lucide-icon>
+                            <button @click="fp.allow_bulk_selection = !fp.allow_bulk_selection" :class="toggleBtnClassDirect(!fp.allow_bulk_selection)" title="Manual selection only - disable bulk/group selection for this directory">
+                                <span :class="toggleKnobClassDirect(!fp.allow_bulk_selection)"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Remove button -->
+                    <button @click="removeFolderPath(idx)" title="Remove this folder" class="p-1.5 rounded hover:bg-red-500/15 text-notion-text-tertiary hover:text-red-400 transition-colors shrink-0">
+                        <lucide-icon name="x" icon-class="size-3.5"></lucide-icon>
+                    </button>
+                </div>
+            </div>
+            <!-- Empty state -->
+            <div v-if="settings.folders.folder_paths.length === 0" class="empty-state py-6">
+                <lucide-icon name="folder-plus" icon-class="empty-state-icon size-8 opacity-40"></lucide-icon>
+                <p class="empty-state-title">
+                    No folder paths configured. Click
+                    <strong>Add Folder</strong>
+                    above to get started.
+                </p>
+            </div>
+            <p class="text-[10px] text-notion-text-tertiary pl-1">Configured folders are always treated as generic external roots. Individual items are auto-categorized from naming and content heuristics on the queue page.</p>
+            <div v-if="settings.folders.folder_paths.some(fp => fp.allow_bulk_selection === false)" class="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-amber-500/5 border border-amber-500/20">
+                <lucide-icon name="mouse-pointer-click" icon-class="size-3.5 text-amber-400 shrink-0 mt-0.5"></lucide-icon>
+                <p class="text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
+                    <strong>Manual selection only:</strong>
+                    Directories using this option cannot be mass-selected from queue bulk actions or directory-level checkboxes. Items inside those directories must be chosen one by one.
+                </p>
+            </div>
+            <!-- Monitor experimental note -->
+            <div v-if="settings.folders.folder_paths.some(fp => fp.monitor)" class="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-amber-500/5 border border-amber-500/20">
+                <lucide-icon name="flask-conical" icon-class="size-3.5 text-amber-500 shrink-0 mt-0.5"></lucide-icon>
+                <p class="text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
+                    <strong>Experimental:</strong>
+                    Folder monitoring watches for new content and automatically triggers uploads. Monitored folders are scanned periodically - new items are queued as upload jobs without manual intervention. This feature is under active development and may behave unexpectedly.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>

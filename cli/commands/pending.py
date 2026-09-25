@@ -33,7 +33,7 @@ def cmd_pending(args: argparse.Namespace) -> int:
     from core.db import engine as db_engine
     from core.db import ledger as db_ledger
     from core.config import get_config
-    from core.registry import get_registry
+    from core.indexers.registry import get_registry
     from logic.pending.roots import collect_configured_scan_items, relative_key
 
     conf = get_config()

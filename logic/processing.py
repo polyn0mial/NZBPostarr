@@ -305,7 +305,7 @@ def prepare_item(
     if job:
         job["current_stage"] = "PREPARING"
 
-    from logic.stats_engine import ProgressTracker
+    from logic.pipeline.posting import ProgressTracker
 
     tracker = ProgressTracker(total_bytes)
 
@@ -1985,7 +1985,7 @@ def _log_job_completion(category: str, test_mode: bool, run_state: "_JobRunState
     if stats:
         # Build dynamic totals line from ALL enabled/active indexers
         active_stats = []
-        from core.registry import get_enabled_indexers
+        from core.indexers.registry import get_enabled_indexers
 
         for idx in get_enabled_indexers(get_config()):
             # Fetch count from stats dict (keys are format {idx_id}_count)
