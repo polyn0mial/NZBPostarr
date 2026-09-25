@@ -93,6 +93,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      # no-undef catches a name a page module uses without importing it, which the
+      # build leaves as a free global that only fails in the browser.
+      - name: Lint frontend sources
+        run: npm run lint
+
+      - name: Test frontend modules
+        run: npm test
+
       - name: Build production assets
         run: npm run build
 
@@ -102,3 +110,27 @@ jobs:
       - name: Verify generated assets are current
         working-directory: .
         run: git diff --exit-code -- webui/assets
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            requirements.lock
+            pyproject.toml
+
+      - name: Install app and browser test dependencies
+        working-directory: .
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.lock
+          python -m pip install --group dev
+          python -m playwright install chromium
+
+      # Opens every page against the freshly built assets and fails on any page error
+      # or console.error. NZBPOSTARR_REQUIRE_E2E turns a missing browser into a failure.
+      - name: Browser console smoke test
+        working-directory: .
+        env:
+          NZBPOSTARR_REQUIRE_E2E: "1"
+        run: pytest tests/e2e -q
