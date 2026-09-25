@@ -1,0 +1,9 @@
+usage: nzbpostarr --headless queue job stop [-h] [--clear] [--json] job_id
+
+positional arguments:
+  job_id      Job ID
+
+options:
+  -h, --help  show this help message and exit
+  --clear     Also remove the job from the queue once stopped
+  --json      Output the result as JSON

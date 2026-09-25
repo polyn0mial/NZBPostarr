@@ -1,0 +1,9 @@
+usage: nzbpostarr --headless config [-h] {get,set} ...
+
+positional arguments:
+  {get,set}   Configuration commands
+    get       Read a dotted configuration key
+    set       Update a dotted configuration key
+
+options:
+  -h, --help  show this help message and exit

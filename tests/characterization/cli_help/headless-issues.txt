@@ -1,0 +1,11 @@
+usage: nzbpostarr --headless issues [-h] [--destination DESTINATION] [--limit LIMIT]
+                                    [--since-days SINCE_DAYS] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --destination DESTINATION
+                        Limit to one indexer ID, or 'all' (default)
+  --limit, -l LIMIT     Maximum number of issue groups to show (default: 50)
+  --since-days SINCE_DAYS
+                        Only count failures from the last N days (default: all history)
+  --json                Output grouped issues as JSON

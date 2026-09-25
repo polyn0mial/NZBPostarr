@@ -1,0 +1,12 @@
+usage: nzbpostarr --headless pending [-h] [--verbose] [--folder FOLDER] [--limit LIMIT] [--json]
+                                     [category]
+
+positional arguments:
+  category         Filter by category (optional)
+
+options:
+  -h, --help       show this help message and exit
+  --verbose, -v    List individual pending items
+  --folder FOLDER  Restrict results to a configured folder path or folder name
+  --limit LIMIT    Maximum pending items listed per category when using --verbose
+  --json           Output the pending summary as JSON

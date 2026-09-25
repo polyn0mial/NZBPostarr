@@ -1,0 +1,8 @@
+usage: nzbpostarr --headless config get [-h] [--json] key
+
+positional arguments:
+  key         Configuration key, for example host or api_keys.geek
+
+options:
+  -h, --help  show this help message and exit
+  --json      Output the result as JSON

@@ -1,0 +1,6 @@
+usage: nzbpostarr --headless history [-h] [--limit LIMIT] [--json]
+
+options:
+  -h, --help         show this help message and exit
+  --limit, -l LIMIT  Number of jobs to show (default: 20)
+  --json             Output job history as JSON

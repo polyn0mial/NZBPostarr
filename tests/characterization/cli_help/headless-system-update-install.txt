@@ -1,0 +1,8 @@
+usage: nzbpostarr --headless system update install [-h] [--version VERSION] [--no-restart]
+                                                   [--json]
+
+options:
+  -h, --help         show this help message and exit
+  --version VERSION  Release version or tag to install
+  --no-restart       Do not restart after installation
+  --json             Output the result as JSON

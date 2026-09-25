@@ -1,0 +1,112 @@
+{
+  "dialogs": [
+    [
+      "confirmDialog",
+      "Cancel all ${this.counts.queued} waiting job(s)?"
+    ],
+    [
+      "confirmDialog",
+      "Clear ${count} ignored item(s)?"
+    ],
+    [
+      "confirmDialog",
+      "Delete \"${itemName}\" from upload history?"
+    ],
+    [
+      "confirmDialog",
+      "Delete ${count} job${count !== 1 ? 's' : ''} from history?"
+    ],
+    [
+      "confirmDialog",
+      "Delete ${selected.length} items from upload history?"
+    ],
+    [
+      "confirmDialog",
+      "Delete 3 jobs?"
+    ],
+    [
+      "confirmDialog",
+      "Delete job \"${jobId}\" from history?"
+    ],
+    [
+      "confirmDialog",
+      "Mark \"${item.name}\" as uploaded to all indexers?"
+    ],
+    [
+      "confirmDialog",
+      "Remove all ${this.queueItems.length} staged item(s)?"
+    ],
+    [
+      "confirmDialog",
+      "Restart the NZBPostarr service?"
+    ],
+    [
+      "confirmDialog",
+      "Save raw YAML configuration?"
+    ],
+    [
+      "confirmDialog",
+      "Set a specific time for this job?"
+    ],
+    [
+      "confirmDialog",
+      "Stop all running uploads and clear the queue?"
+    ],
+    [
+      "confirmDialog",
+      "Stop the active job and clear all waiting jobs?"
+    ],
+    [
+      "confirmDialog",
+      "Stop the active job and pause queue processing?"
+    ],
+    [
+      "confirmDialog",
+      "Stop this active job and remove it from the queue view?"
+    ],
+    [
+      "confirmDialog",
+      "You have unsaved changes. Close without saving?"
+    ],
+    [
+      "confirmDialog",
+      "You have unsaved changes. Close without saving?"
+    ],
+    [
+      "promptDialog",
+      "New name?"
+    ],
+    [
+      "promptDialog",
+      "Set a custom name for job ${job.job_id}."
+    ],
+    [
+      "promptDialog",
+      "Set a deferred date for job ${job.job_id}."
+    ],
+    [
+      "promptDialog",
+      "Time to start job ${job.job_id} on ${date}."
+    ]
+  ],
+  "storage_keys": [
+    "nzb_finished_jobs",
+    "nzb_pending_expanded",
+    "nzbpostarr_category_appearance_v1",
+    "nzbpostarr_category_appearance_v2",
+    "nzbpostarr_expanded_sections",
+    "nzbpostarr_pending_cache",
+    "nzbpostarr_pending_external_group_order",
+    "nzbpostarr_pending_external_group_order_locked",
+    "nzbpostarr_persist_",
+    "nzbpostarr_persist_queue",
+    "nzbpostarr_persist_queue_",
+    "nzbpostarr_queue_bootstrap_reset_v20260805_r3",
+    "nzbpostarr_theme",
+    "nzbpostarr_ui_revision_signature",
+    "nzbpostarr_update_banner_dismissed"
+  ],
+  "persist_revs": [
+    "20260805_queue_hotfix_r5"
+  ]
+}

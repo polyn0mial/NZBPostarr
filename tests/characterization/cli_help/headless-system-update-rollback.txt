@@ -1,0 +1,9 @@
+usage: nzbpostarr --headless system update rollback [-h] [--no-restart] [--json] backup_id
+
+positional arguments:
+  backup_id     Backup ID returned by the updater
+
+options:
+  -h, --help    show this help message and exit
+  --no-restart  Do not restart after rollback
+  --json        Output the result as JSON

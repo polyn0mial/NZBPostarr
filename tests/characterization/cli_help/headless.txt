@@ -1,0 +1,26 @@
+usage: nzbpostarr --headless [-h] [--version]
+                             {upload,stream,status,pending,history,issues,indexers,stream-monitors,stats,queue,config,system,logs} ...
+
+NZBPostarr Headless CLI - Upload automation without the WebUI.
+
+positional arguments:
+  {upload,stream,status,pending,history,issues,indexers,stream-monitors,stats,queue,config,system,logs}
+                        Available commands
+    upload              Run an upload job
+    stream              Queue direct NZB stream/repost jobs
+    status              Show system status (config, tools, indexers). Exit 1 if a required tool is
+                        missing
+    pending             Show items pending upload
+    history             Show recent job history
+    issues              Show failed indexer submissions grouped into a known-issues list
+    indexers            Show indexer details and stats. Exit 1 if no indexer is enabled
+    stream-monitors     List or remove saved stream monitor definitions
+    stats               Show an on-demand live system stats snapshot
+    queue               Inspect or control the shared upload queue (same actions as the WebUI)
+    config              Read or update a configuration value
+    system              Run update and service lifecycle controls
+    logs                Show recent console log lines from the shared in-memory buffer
+
+options:
+  -h, --help            show this help message and exit
+  --version             Show the NZBPostarr version and exit

@@ -1,0 +1,11 @@
+usage: nzbpostarr --headless system update [-h] {check,install,rollback} ...
+
+positional arguments:
+  {check,install,rollback}
+                        Update commands
+    check               Check GitHub for an update now
+    install             Install the latest or selected GitHub release
+    rollback            Restore a local updater backup
+
+options:
+  -h, --help            show this help message and exit

@@ -1,0 +1,94 @@
+"""Where NZBPostarr persists state, resolved through the code that uses it.
+
+Later batches may change how this test reaches each location (imports, function
+names); they must never change the expected strings.
+"""
+
+import pathlib
+import threading
+from pathlib import Path
+from types import SimpleNamespace
+
+import app as app_mod
+from core import config as config_mod
+from core import database as db
+from logic import anime_cache, category_overrides, queueing, updater, usenet_stream
+from tests.support import _run_async
+
+APP_ROOT = config_mod.APP_ROOT
+
+
+def _rel(path: Path, root: Path) -> str:
+    return Path(path).resolve().relative_to(root.resolve()).as_posix()
+
+
+def test_job_queue_state_files(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(queueing, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+    monkeypatch.setattr(queueing.database, "db_load_queue", lambda: [])
+    service = object.__new__(queueing.QueueServiceMixin)
+    service._lock = threading.Lock()
+    service._queue_scheduler_loop = lambda: None
+    service._try_start_queued = lambda: None
+
+    service._initialize_queue_state()
+
+    assert _rel(service._jobs_state_path, tmp_path) == "data/state/job_queue_state.json"
+    assert _rel(service._jobs_state_backup_path, tmp_path) == "data/state/job_queue_state.json.bak"
+
+
+def test_stream_monitor_state_file(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(usenet_stream, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+
+    assert _rel(usenet_stream._stream_monitor_state_path(), tmp_path) == "data/state/stream_monitors.json"
+
+
+def test_app_root_state_files(monkeypatch) -> None:
+    monkeypatch.setattr(anime_cache, "_cache_path", None)
+    monkeypatch.setattr(category_overrides, "_path", None)
+
+    assert _rel(anime_cache._get_cache_path(), APP_ROOT) == "data/cache/anime.json"
+    assert _rel(updater.STATE_FILE, APP_ROOT) == "data/updater/state.json"
+    assert _rel(updater.BACKUP_DIR, APP_ROOT) == "data/updater/backups"
+    assert _rel(category_overrides._get_path(), APP_ROOT) == "data/category_overrides.json"
+    assert _rel(category_overrides._legacy_path(), APP_ROOT) == "category_overrides.json"
+
+
+def test_deployed_revision_file(monkeypatch) -> None:
+    probed: list[Path] = []
+    real_exists = pathlib.Path.exists
+
+    def recording_exists(self, *args, **kwargs):
+        probed.append(self)
+        return real_exists(self, *args, **kwargs)
+
+    monkeypatch.setattr(pathlib.Path, "exists", recording_exists)
+    app_mod._runtime_revision()
+    monkeypatch.undo()
+
+    assert [_rel(path, APP_ROOT) for path in probed if path.name == "deployed_revision.json"] == [
+        "data/deployed_revision.json"
+    ]
+
+
+def test_queue_items_table() -> None:
+    assert db.QueueItem.__tablename__ == "queue_items"
+
+
+def test_pending_group_order_config_keys(monkeypatch) -> None:
+    saved: list[dict[str, object]] = []
+
+    def recording_save(updates):
+        saved.append(dict(updates))
+        return True
+
+    monkeypatch.setattr(config_mod, "save_config", recording_save)
+    _run_async(app_mod.update_pending_group_order(app_mod.PendingGroupOrderRequest(order=["a"])))
+    _run_async(app_mod.update_pending_group_order_locked(app_mod.PendingGroupOrderLockedRequest(locked=True)))
+
+    assert [sorted(update) for update in saved] == [
+        ["pending_external_group_order"],
+        ["pending_external_group_order_locked"],
+    ]
+    assert {"pending_external_group_order", "pending_external_group_order_locked"} <= set(
+        config_mod.Config.model_fields
+    )

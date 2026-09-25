@@ -1,0 +1,6 @@
+usage: nzbpostarr --headless queue stop [-h] [--clear] [--json]
+
+options:
+  -h, --help  show this help message and exit
+  --clear     Also clear queued jobs and hide the active row while it stops
+  --json      Output the result as JSON
