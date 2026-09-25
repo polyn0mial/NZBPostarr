@@ -1,0 +1,63 @@
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<!--  RECENTLY FINISHED (compact preview + "Show More" modal)       -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<section v-if="finished.length > 0" class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden">
+    <div class="px-4 py-2 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none hover:bg-notion-bg-hover transition-colors" @click="toggleQueueSection('finished')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="isQueueSectionExpanded('finished') ? 'chevron-down' : 'chevron-right'" icon-class="w-4 h-4 text-notion-text-tertiary"></lucide-icon>
+            <lucide-icon name="check-circle" icon-class="w-4 h-4 text-notion-success"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Recently Finished</h2>
+            <span class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium">{{ counts.finished }}</span>
+        </div>
+        <div class="flex items-center gap-3" @click.stop>
+            <button v-if="hasMoreFinished" @click="showFinishedModal = true" class="text-xs text-notion-accent hover:underline transition-colors">Show All ({{ finished.length }})</button>
+            <button @click="clearFinished()" class="text-xs text-notion-text-tertiary hover:text-notion-text-secondary transition-colors">Clear All</button>
+        </div>
+    </div>
+    <div :class="queueSectionClass('finished')">
+        <div class="divide-y divide-notion-divider">
+            <div v-for="job in finishedPreview" :key="job.job_id" class="flex items-center gap-3 px-4 py-1.5 bg-notion-bg hover:bg-notion-bg-hover transition-colors group">
+                <div :class="finishedStatusBg(job)" class="w-6 h-6 rounded-lg flex items-center justify-center shrink-0">
+                    <lucide-icon :name="getStatusConfig(job.status).icon" :icon-class="'w-3 h-3 ' + getStatusConfig(job.status).color"></lucide-icon>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-medium text-notion-text-primary truncate">{{ jobDisplayName(job) }}</span>
+                        <span :class="finishedStatusBadge(job)" class="text-[9px] font-bold uppercase px-1 py-0.5 rounded">{{ job.status }}</span>
+                        <span v-if="job.test_mode" class="bg-notion-warning/20 text-notion-warning rounded font-bold px-1 py-0.5 text-[9px]">TEST</span>
+                    </div>
+                    <div class="flex items-center gap-2 text-[10px] text-notion-text-tertiary mt-0.5">
+                        <span class="font-mono">{{ job.job_id }}</span>
+                        <span class="opacity-60">&bull;</span>
+                        <span>{{ job.items_processed || 0 }}/{{ job.items_total || 0 }} items</span>
+                        <template v-if="job.summary && job.summary.duration">
+                            <span class="opacity-60">&bull;</span>
+                            <span>{{ job.summary.duration }}</span>
+                        </template>
+                        <template v-if="job.attempt_count > 1">
+                            <span class="opacity-60">&bull;</span>
+                            <span>attempt {{ job.attempt_count }}</span>
+                        </template>
+                        <template v-if="job.finished_at">
+                            <span class="opacity-60">&bull;</span>
+                            <span>{{ formatDate(job.finished_at) }}</span>
+                        </template>
+                    </div>
+                    <div v-if="job.last_error" class="text-[10px] text-notion-error truncate mt-0.5" :title="job.last_error">{{ job.last_error }}</div>
+                </div>
+                <button v-if="(job.items_total || 0) > 0" @click="openCompletedJobModal(job)" class="p-1 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="View all items from this job">
+                    <lucide-icon name="list" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button v-if="job.retry_eligible" @click="retryJob(job)" :disabled="isJobActionPending(job.job_id)" class="p-1 rounded hover:bg-notion-accent/10 text-notion-text-tertiary hover:text-notion-accent transition-colors disabled:opacity-40 shrink-0" title="Retry Failed Job">
+                    <lucide-icon name="rotate-ccw" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button @click="renameJobInline(job)" class="p-1 rounded hover:bg-notion-info/10 text-notion-text-tertiary hover:text-notion-info transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="Rename Job">
+                    <lucide-icon name="pencil" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+                <button @click="deleteJob(job.job_id)" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors opacity-0 group-hover:opacity-100 shrink-0" title="Dismiss">
+                    <lucide-icon name="x" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+            </div>
+        </div>
+    </div>
+</section>

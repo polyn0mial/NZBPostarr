@@ -6,7 +6,7 @@ from logic.jobs import requests as job_requests
 from logic.jobs import store as job_store
 from logic.jobs.models import normalize_job_name, normalize_run_after, parse_iso_datetime_utc
 from logic.queueing_base import (
-    Any, Optional, ProcessingJobRequest, database, datetime, log_success, logger, timezone, usenet_stream,
+    Any, Optional, ProcessingJobRequest, database, datetime, log_success, logger, timezone, stream_monitors,
 )
 
 class _QueueServiceMixinPart2:
@@ -105,7 +105,7 @@ class _QueueServiceMixinPart2:
         clear_active_fields: bool,
         remove_from_active: bool,
     ) -> None:
-        from logic.stats_engine import format_seconds
+        from logic.stats.collector import format_seconds
 
         job_id = str(job.get("job_id", ""))
         duration_str = format_seconds(duration_sec)
@@ -181,7 +181,7 @@ class _QueueServiceMixinPart2:
         job_store.preserve_stopped_processing_job(job)
 
         if job.get("source_monitor_id"):
-            usenet_stream.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
+            stream_monitors.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
 
         if remove_from_active or clear_after_stop:
             self._jobs.pop(job_id, None)

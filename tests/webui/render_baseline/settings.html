@@ -1,0 +1,2068 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="description" content="NZBPostarr - A powerful tool for managing and uploading NZB files to indexers with ease." />
+        <meta name="theme-color" content="#191919" />
+        <title>Settings - NZBPostarr</title>
+        <link rel="icon" type="image/svg+xml" href="/assets/images/favicon.svg" />
+
+        <style>
+            [v-cloak] {
+                visibility: hidden;
+            }
+        </style>
+
+        <script>
+            (function () {
+                const savedTheme = localStorage.getItem('nzbpostarr_theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                if (savedTheme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.style.background = '#191919';
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.style.background = '#ffffff';
+                }
+            })();
+        </script>
+
+        <!-- UI Styles (Core) -->
+        <link rel="stylesheet" href="/assets/css/core.css?t=0" />
+        <link rel="stylesheet" href="/assets/css/tailwind.css?t=0" />
+
+        <script type="importmap">
+            {
+                "imports": {
+                    "page-base": "/assets/js/dist/page-base.js?t=0"
+                }
+            }
+        </script>
+
+        <script>
+            (function () {
+                const REVISION_STORAGE_KEY = 'nzbpostarr_ui_revision_signature';
+                const PERSIST_PREFIX = 'nzbpostarr_persist_';
+                const CLEAR_KEYS = new Set([
+                    'nzbpostarr_expanded_sections',
+                    'nzbpostarr_pending_cache',
+                ]);
+
+                function getStoredRevision() {
+                    try {
+                        return localStorage.getItem(REVISION_STORAGE_KEY) || '';
+                    } catch (_err) {
+                        return '';
+                    }
+                }
+
+                function setStoredRevision(signature) {
+                    try {
+                        localStorage.setItem(REVISION_STORAGE_KEY, signature);
+                    } catch (_err) {
+                        // Ignore storage failures and keep the page usable.
+                    }
+                }
+
+                function clearPersistedUiState() {
+                    try {
+                        const keysToRemove = [];
+                        for (let i = 0; i < localStorage.length; i += 1) {
+                            const key = localStorage.key(i);
+                            if (!key) continue;
+                            if (key === REVISION_STORAGE_KEY || CLEAR_KEYS.has(key) || key.startsWith(PERSIST_PREFIX)) {
+                                keysToRemove.push(key);
+                            }
+                        }
+                        keysToRemove.forEach((key) => localStorage.removeItem(key));
+                    } catch (_err) {
+                        // Ignore storage failures and keep the page usable.
+                    }
+                }
+
+                async function fetchRevisionSignal() {
+                    const response = await fetch('/api/system/revision', {
+                        cache: 'no-store',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                        },
+                    });
+                    if (!response.ok) {
+                        return null;
+                    }
+                    return await response.json();
+                }
+
+                async function syncRevision() {
+                    try {
+                        const payload = await fetchRevisionSignal();
+                        if (!payload || !payload.revision) {
+                            return;
+                        }
+                        const signature = String(payload.revision);
+                        const previous = getStoredRevision();
+                        if (!previous) {
+                            setStoredRevision(signature);
+                            return;
+                        }
+                        if (previous !== signature) {
+                            clearPersistedUiState();
+                            setStoredRevision(signature);
+                        }
+                    } catch (_err) {
+                        // Silently ignore transient network problems.
+                    }
+                }
+
+                if (!window.__nzbpostarrRevisionSyncStarted) {
+                    window.__nzbpostarrRevisionSyncStarted = true;
+                    window.addEventListener('pageshow', () => {
+                        syncRevision();
+                    });
+                    document.addEventListener('visibilitychange', () => {
+                        if (!document.hidden) {
+                            syncRevision();
+                        }
+                    });
+                    window.setTimeout(syncRevision, 1500);
+                    window.setInterval(syncRevision, 30 * 1000);
+                }
+            })();
+        </script>
+
+        
+    </head>
+
+    <body class="bg-notion-bg text-notion-text-secondary font-sans min-h-dvh">
+        <div id="app" data-page-title="Settings" v-cloak>
+            <div class="fixed right-3 top-1/2 -translate-y-1/2 z-50 hidden sm:flex flex-col gap-2">
+                <button
+                    type="button"
+                    onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"
+                    class="size-9 rounded-full border border-notion-border bg-notion-bg-secondary/90 text-notion-text-secondary hover:text-notion-accent hover:border-notion-accent/60 shadow-lg backdrop-blur flex items-center justify-center transition-colors"
+                    title="Scroll to top"
+                    aria-label="Scroll to top">
+                    <lucide-icon name="chevron-up" icon-class="size-4"></lucide-icon>
+                </button>
+                <button
+                    type="button"
+                    onclick="window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' })"
+                    class="size-9 rounded-full border border-notion-border bg-notion-bg-secondary/90 text-notion-text-secondary hover:text-notion-accent hover:border-notion-accent/60 shadow-lg backdrop-blur flex items-center justify-center transition-colors"
+                    title="Scroll to bottom"
+                    aria-label="Scroll to bottom">
+                    <lucide-icon name="chevron-down" icon-class="size-4"></lucide-icon>
+                </button>
+            </div>
+            <!-- Shared Header -->
+            <header class="sticky top-0 z-40 bg-notion-bg/95 backdrop-blur border-b border-notion-divider">
+                <div class="mx-auto w-full max-w-5xl px-4 sm:px-5 md:px-6 lg:px-8">
+                    <div class="flex items-center justify-between h-12">
+                        <!-- Logo / Title -->
+                        <div class="flex items-center gap-2">
+                            <a href="/" class="group flex items-center gap-2 text-notion-text-primary font-semibold hover:text-notion-accent transition-colors duration-300" aria-label="NZBPostarr Dashboard">
+                                <div class="relative size-6 shrink-0">
+                                    <!-- Blue Logo (Visible in Light mode OR on Hover in Dark mode) -->
+                                    <img src="/assets/images/logo.png" alt="NZBPostarr Logo" class="absolute inset-0 w-full h-full object-contain transition-opacity duration-300 opacity-100 dark:opacity-0 group-hover:opacity-100" />
+                                    <!-- White Logo (Only visible in Dark mode, fades out on Hover) -->
+                                    <img src="/assets/images/logo_white.png" alt="NZBPostarr Logo" class="absolute inset-0 w-full h-full object-contain transition-opacity duration-300 hidden dark:block dark:opacity-100 group-hover:dark:opacity-0" />
+                                </div>
+                                <span class="hidden xs:inline tracking-tight">NZBPostarr</span>
+                            </a>
+                        </div>
+
+                        <!-- Navigation (desktop: full nav, mobile: hamburger) -->
+                        <nav class="flex items-center gap-0.5 xs:gap-1">
+                            <!-- Desktop nav links (hidden on mobile) -->
+                            <template v-for="item in visibleNavItems" :key="item.href">
+                                <!-- Item without children: simple link -->
+                                <a v-if="!item.children" :href="item.href" :class="navLinkClass(item)" :aria-label="item.label" :title="item.label" class="hidden sm:flex min-w-8 min-h-8 justify-center sm:justify-start transition-colors">
+                                    <lucide-icon :name="item.icon" icon-class="size-4"></lucide-icon>
+                                    <span v-if="!item.iconOnly" class="hidden md:inline ml-1.5 font-medium">{{ item.label }}</span>
+                                </a>
+                                <!-- Item with children: hover dropdown -->
+                                <div v-else class="hidden sm:block relative nav-dropdown-parent">
+                                    <a :href="item.href" :class="navLinkClass(item)" :aria-label="item.label" :title="item.label" class="flex min-w-8 min-h-8 justify-center sm:justify-start transition-colors items-center">
+                                        <lucide-icon :name="item.icon" icon-class="size-4"></lucide-icon>
+                                        <span class="hidden md:inline ml-1.5 font-medium">{{ item.label }}</span>
+                                        <lucide-icon name="chevron-down" icon-class="size-3 ml-0.5 opacity-40 hidden md:block"></lucide-icon>
+                                    </a>
+                                    <div class="nav-dropdown-menu absolute left-0 top-full pt-1 z-50 hidden">
+                                        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl py-1 min-w-40">
+                                            <a
+                                                v-for="child in item.children"
+                                                :key="child.href"
+                                                :href="child.href"
+                                                :title="child.label"
+                                                class="flex items-center gap-2 px-3 py-2 text-xs transition-colors"
+                                                :class="pageTitle === child.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-secondary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                                <lucide-icon :name="child.icon" icon-class="size-3.5"></lucide-icon>
+                                                {{ child.label }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- Desktop Connection Status Indicator (hidden on mobile) -->
+                            <a href="/settings" role="status" class="hidden sm:flex ml-0.5 xs:ml-1 items-center justify-center size-8 infotip-trigger infotip-bottom-right" aria-label="Connection Status Indicator">
+                                <span class="relative flex h-1.5 w-1.5">
+                                    <span v-if="isConnected" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-notion-success opacity-75"></span>
+                                    <span class="status-dot relative inline-flex rounded-full h-1.5 w-1.5" :class="connectionDotClass"></span>
+                                </span>
+
+                                <!-- Fancy Hover Modal Content -->
+                                <div class="infotip-content p-0 shadow-2xl border-notion-border-strong w-48 overflow-hidden">
+                                    <div class="infotip-header bg-notion-bg-hover p-2 mb-0 border-none flex items-center justify-between">
+                                        <div class="flex items-center gap-1.5">
+                                            <lucide-icon name="activity" icon-class="size-3 text-notion-accent"></lucide-icon>
+                                            <span class="text-[9px]">SYSTEM STATUS</span>
+                                        </div>
+                                        <span class="text-[8px] px-1 bg-notion-bg-secondary rounded border border-notion-border text-notion-text-tertiary">{{ appVersionLabel }}</span>
+                                    </div>
+                                    <div class="p-2.5 flex flex-col">
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">API Status</span>
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="infotip-value" :class="isConnected ? 'text-notion-success' : 'text-notion-error'">{{ isConnected ? 'Online' : 'Offline' }}</span>
+                                                <div class="w-1.5 h-1.5 rounded-full" :class="connectionDotClass"></div>
+                                            </div>
+                                        </div>
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Update</span>
+                                            <span class="infotip-value" :class="updateStatusClass">{{ updateStatusText }}</span>
+                                        </div>
+                                        <div v-if="updateStatus.update_available" class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Latest</span>
+                                            <span class="infotip-value">{{ latestVersionLabel }}</span>
+                                        </div>
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Latency</span>
+                                            <span class="infotip-value">{{ isConnected ? (apiLatency || '< 1ms') : '---' }}</span>
+                                        </div>
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Refresh Rate</span>
+                                            <span class="infotip-value">{{ uiRefreshRate / 1000 }}s</span>
+                                        </div>
+                                        <div v-if="lastUpdated" class="infotip-footer mt-2 pt-2 border-t border-notion-divider flex items-center justify-between">
+                                            <span>Last Heartbeat</span>
+                                            <span class="font-mono text-[8.5px]">{{ lastUpdatedLabel }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="infotip-arrow"></div>
+                                </div>
+                            </a>
+
+                            <!-- Mobile hamburger button (visible only on mobile) -->
+                            <button @click="mobileMenuOpen = !mobileMenuOpen" class="sm:hidden flex items-center justify-center size-9 rounded-md text-notion-text-secondary hover:bg-notion-bg-hover transition-colors" aria-label="Open menu">
+                                <lucide-icon name="menu" icon-class="size-5"></lucide-icon>
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Mobile Menu Overlay & Drawer -->
+            <div class="mobile-menu-overlay" :class="{ active: mobileMenuOpen }" @click="mobileMenuOpen = false"></div>
+            <div class="mobile-menu-drawer flex flex-col overflow-hidden" :class="{ active: mobileMenuOpen }">
+                <div class="shrink-0 flex items-center justify-between px-4 py-3 border-b border-notion-divider">
+                    <div class="flex items-center gap-2">
+                        <img src="/assets/images/logo.png" alt="NZBPostarr Logo" class="dark:hidden size-6 object-contain" />
+                        <img src="/assets/images/logo_white.png" alt="NZBPostarr Logo" class="hidden dark:block size-6 object-contain" />
+                        <span class="text-sm font-semibold text-notion-text-primary tracking-tight">NZBPostarr</span>
+                    </div>
+                    <button @click="mobileMenuOpen = false" class="icon-btn" aria-label="Close menu">
+                        <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                    </button>
+                </div>
+
+                <div class="grow overflow-y-auto">
+                    <!-- Nav links -->
+                    <div class="py-2">
+                        <template v-for="item in visibleNavItems" :key="item.href">
+                            <a
+                                :href="item.href"
+                                @click="mobileMenuOpen = false"
+                                class="flex items-center gap-3 px-4 py-3 text-sm transition-colors"
+                                :class="pageTitle === item.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-secondary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                <lucide-icon :name="item.icon" icon-class="size-4"></lucide-icon>
+                                <span>{{ item.label }}</span>
+                            </a>
+                            <a
+                                v-for="child in (item.children || [])"
+                                :key="child.href"
+                                :href="child.href"
+                                @click="mobileMenuOpen = false"
+                                class="flex items-center gap-3 pl-11 pr-4 py-2.5 text-sm transition-colors"
+                                :class="pageTitle === child.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-tertiary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                <lucide-icon :name="child.icon" icon-class="size-3.5"></lucide-icon>
+                                <span class="text-xs">{{ child.label }}</span>
+                            </a>
+                        </template>
+                    </div>
+                    <!-- System Status in flyout -->
+                    <div class="mx-4 mt-2 mb-4 rounded-lg border border-notion-border bg-notion-bg p-3">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-1.5">
+                                <lucide-icon name="activity" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                                <span class="text-[10px] text-notion-text-tertiary uppercase tracking-wider font-semibold">System Status</span>
+                            </div>
+                            <span class="text-[9px] px-1.5 py-0.5 bg-notion-bg-secondary rounded border border-notion-border text-notion-text-tertiary font-medium">{{ appVersionLabel }}</span>
+                        </div>
+                        <div class="space-y-2 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">API Status</span>
+                                <div class="flex items-center gap-1.5">
+                                    <span :class="isConnected ? 'text-notion-success' : 'text-notion-error'" class="font-medium">{{ isConnected ? 'Online' : 'Offline' }}</span>
+                                    <span class="relative flex h-2 w-2">
+                                        <span v-if="isConnected" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-notion-success opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2" :class="connectionDotClass"></span>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Update</span>
+                                <span :class="updateStatusClass" class="font-medium">{{ updateStatusText }}</span>
+                            </div>
+                            <div v-if="updateStatus.update_available" class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Latest</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ latestVersionLabel }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Latency</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ isConnected ? (apiLatency || '< 1ms') : '---' }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Refresh Rate</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ uiRefreshRate / 1000 }}s</span>
+                            </div>
+                            <div v-if="lastUpdated" class="flex items-center justify-between pt-2 border-t border-notion-divider">
+                                <span class="text-notion-text-tertiary">Last Heartbeat</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ lastUpdatedLabel }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer of sidebar pinned to bottom -->
+                <div class="shrink-0 px-4 py-4 border-t border-notion-divider bg-notion-bg-secondary/50">
+                    <div class="flex items-center gap-6">
+                        <a href="/docs" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="Documentation">
+                            <lucide-icon name="book-open" icon-class="size-3.5"></lucide-icon>
+                            Docs
+                        </a>
+                        <a href="/indexer-guides" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="Indexer Guides">
+                            <lucide-icon name="globe" icon-class="size-3.5"></lucide-icon>
+                            Indexers
+                        </a>
+                        <a href="https://github.com/polyn0mial/nzbpostarr" target="_blank" rel="noopener" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="View Source on GitHub">
+                            <lucide-icon name="github" icon-class="size-3.5"></lucide-icon>
+                            GitHub
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standardized Page Layout -->
+            <main class="mx-auto w-full max-w-5xl min-w-0 overflow-x-hidden px-4 py-6 sm:px-5 md:px-6 lg:px-8">
+                <div class="space-y-6 min-w-0">
+                    <!-- Unified Page Header -->
+                    <div class="flex flex-wrap items-center justify-between gap-4 pb-0 mb-0 border-b-0 px-1">
+                        <div class="space-y-0.5 min-w-0">
+                            <h1 class="text-2xl font-semibold text-notion-text-primary tracking-tight">Settings</h1>
+                            <p class="text-xs text-notion-text-tertiary"></p>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3 min-w-0">
+<!-- Search Bar -->
+<div class="relative group hidden sm:block">
+    <lucide-icon name="search" icon-class="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary transition-colors group-focus-within:text-notion-accent"></lucide-icon>
+    <input type="text" v-model="searchQuery" placeholder="Search settings..." class="bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-8 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent w-36 md:w-48 transition-all" />
+</div>
+<span :class="saveStatusClass" class="text-xs hidden xs:inline">{{ saveStatus }}</span>
+<button
+    @click="toggleTheme()"
+    :title="theme === 'dark' ? 'Switch to Light mode' : 'Switch to Dark mode'"
+    class="size-8 flex items-center justify-center rounded border border-notion-border bg-notion-bg hover:bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary transition-colors">
+    <lucide-icon :name="theme === 'dark' ? 'sun' : 'moon'" icon-class="size-3.5"></lucide-icon>
+</button>
+<button
+    @click="openYamlModal()"
+    title="Edit Raw YAML Configuration"
+    :class="['size-8 flex items-center justify-center rounded border transition-colors', rawYamlDirty ? 'border-amber-500/60 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20' : 'border-notion-border bg-notion-bg hover:bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary']">
+    <lucide-icon name="file-code" icon-class="size-3.5"></lucide-icon>
+</button>
+<button @click="saveAllSettings" class="btn-primary px-4 h-9 sm:h-8 rounded text-xs font-semibold flex items-center gap-2">
+    <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
+    <span class="hidden xs:inline">Save</span>
+    <span class="xs:hidden">Save</span>
+</button>
+</div>
+                    </div>
+
+                    
+<!-- Mobile Search (visible only on small screens where header search is hidden) -->
+<div class="relative group sm:hidden mb-6">
+    <lucide-icon name="search" icon-class="size-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary transition-colors group-focus-within:text-notion-accent"></lucide-icon>
+    <input type="text" v-model="searchQuery" placeholder="Search settings..." class="bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-9 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent w-full transition-all" />
+</div>
+
+<div class="mb-6 flex flex-wrap items-center gap-2">
+    <button @click="setSettingsTab('general')" :class="settingsTabClass('general')">
+        <lucide-icon name="sliders-horizontal" icon-class="size-3.5"></lucide-icon>
+        General Settings
+    </button>
+    <button @click="setSettingsTab('category-colors')" :class="settingsTabClass('category-colors')">
+        <lucide-icon name="palette" icon-class="size-3.5"></lucide-icon>
+        Category Pill Colors
+    </button>
+</div>
+
+<div v-show="activeSettingsTab === 'general'">
+<!-- Settings Sections -->
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="global" v-show="sectionVisible('global')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('global')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.global ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="settings" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Global Controls</h2>
+        </div>
+    </div>
+    <div :class="sectionContentClass('global')" id="content-global">
+        <div class="p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <!-- Left Column -->
+                <div class="space-y-1">
+                    <!-- Verbose Logging -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('verbose logging debug logs')"
+                        title="Enable detailed debug logs for troubleshooting (increases disk usage)"
+                        data-search="verbose logging debug logs">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="file-text" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Verbose Logging</span>
+                        </div>
+                        <button @click="toggleSetting('verbose', 'processing')" :class="toggleBtnClass('verbose', 'processing')">
+                            <span :class="toggleKnobClass('verbose', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <!-- Dynamic Packs -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('dynamic packs virtual season auto generate unsorted')"
+                        title="Auto-generate virtual season packs from loose unsorted episodes"
+                        data-search="dynamic packs virtual season auto generate unsorted">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="boxes" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Dynamic Packs</span>
+                        </div>
+                        <button @click="toggleSetting('dynamic_packs', 'processing')" :class="toggleBtnClass('dynamic_packs', 'processing')">
+                            <span :class="toggleKnobClass('dynamic_packs', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('folder size limit pack skip tv season')"
+                        title="Reject folders larger than this size in GB. Individual files inside the folder are still processed."
+                        data-search="folder size limit pack skip tv season">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="folder-archive" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Folder Size Limit (GB)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input
+                                v-show="settings.processing.folder_size_limit_enabled"
+                                type="number"
+                                v-model.number="settings.processing.folder_size_limit_gb"
+                                placeholder="99"
+                                class="w-16 bg-notion-bg text-notion-text-primary px-2 py-1 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-xs" />
+                            <button @click="toggleSetting('folder_size_limit_enabled', 'processing')" :class="toggleBtnClass('folder_size_limit_enabled', 'processing')" title="Enable folder size checking">
+                                <span :class="toggleKnobClass('folder_size_limit_enabled', 'processing')"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('file size limit movie skip individual')"
+                        title="Reject individual files larger than this size in GB. 0 means unlimited."
+                        data-search="file size limit movie skip individual">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="file-x" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">File Size Limit (GB)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input
+                                v-show="settings.processing.file_size_limit_enabled"
+                                type="number"
+                                v-model.number="settings.processing.file_size_limit_gb"
+                                placeholder="∞"
+                                class="w-16 bg-notion-bg text-notion-text-primary px-2 py-1 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-xs" />
+                            <button @click="toggleSetting('file_size_limit_enabled', 'processing')" :class="toggleBtnClass('file_size_limit_enabled', 'processing')" title="Enable file size checking">
+                                <span :class="toggleKnobClass('file_size_limit_enabled', 'processing')"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Enable Password -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('enable password web access login protect basic auth')"
+                        title="Require a username and password to access NZBPostarr (HTTP Basic Auth)"
+                        data-search="enable password web access login protect basic auth">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="lock" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Enable Password</span>
+                        </div>
+                        <button @click="toggleSetting('enable_password', 'auth')" :class="toggleBtnClass('enable_password', 'auth')">
+                            <span :class="toggleKnobClass('enable_password', 'auth')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Column -->
+                <div class="space-y-1 md:border-l md:border-notion-divider md:pl-8">
+                    <!-- Duplicate Checking -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('duplicate checking fast processing')"
+                        title="Verify if a release was already uploaded before starting processing"
+                        data-search="duplicate checking fast processing">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="shield-check" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Duplicate Checking</span>
+                        </div>
+                        <button @click="toggleSetting('enable_duplicate_checking', 'processing')" :class="toggleBtnClass('enable_duplicate_checking', 'processing')">
+                            <span :class="toggleKnobClass('enable_duplicate_checking', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <!-- Enable Anime Checking (Jikan) -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('enable anime checking jikan myanimelist identification')"
+                        title="Use Jikan (MyAnimeList) to identify anime titles in TV shows"
+                        data-search="enable anime checking jikan myanimelist identification">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="tv" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Anime Detection (Jikan)</span>
+                        </div>
+                        <button @click="toggleSetting('enable_anime_checking', 'processing')" :class="toggleBtnClass('enable_anime_checking', 'processing')">
+                            <span :class="toggleKnobClass('enable_anime_checking', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('dashboard stats server stats modules sparkline')"
+                        title="Show live server metrics on the dashboard."
+                        data-search="dashboard stats server stats modules sparkline">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="layout-panel-top" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Dashboard Server Stats</span>
+                        </div>
+                        <button @click="toggleSetting('dashboard_stats_enabled', 'ui')" :class="toggleBtnClass('dashboard_stats_enabled', 'ui')">
+                            <span :class="toggleKnobClass('dashboard_stats_enabled', 'ui')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('stats page system stats page disable history collector navigation')"
+                        title="Disable the dedicated /stats page, hide its navigation link, and stop the extra full-page stats collection that page needs."
+                        data-search="stats page system stats page disable history collector navigation">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="activity" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Stats Page</span>
+                        </div>
+                        <button @click="toggleSetting('stats_page_enabled', 'ui')" :class="toggleBtnClass('stats_page_enabled', 'ui')">
+                            <span :class="toggleKnobClass('stats_page_enabled', 'ui')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('ui refresh rate seconds polling')"
+                        title="How often the dashboard and stats UI polls the server for updates."
+                        data-search="ui refresh rate seconds polling">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="timer-reset" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Stats Refresh Interval</span>
+                        </div>
+                        <input type="number" min="1" max="60" v-model.number="settings.ui.ui_refresh_seconds" class="w-16 bg-notion-bg text-notion-text-primary px-2 py-1 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-xs" />
+                    </div>
+
+                    <!-- Skip Files visibility toggle -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('skip files patterns filtering bypass enable')"
+                        title="Enable skip-file rules - when off, the Skip Files section is hidden"
+                        data-search="skip files patterns filtering bypass enable">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="file-x" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Skip Files</span>
+                        </div>
+                        <button @click="toggleSetting('enabled', 'skip_files')" :class="toggleBtnClass('enabled', 'skip_files')" title="Enable or disable skip-file pattern matching">
+                            <span :class="toggleKnobClass('enabled', 'skip_files')"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+
+<!-- Category Colors -->
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="category-colors" v-show="activeSettingsTab === 'category-colors' && sectionVisible('category-colors')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <lucide-icon name="palette" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Category Pill Colors</h2>
+        </div>
+        <span class="text-[10px] text-notion-text-tertiary">Two-up compact queue preview</span>
+    </div>
+    <div class="p-3 space-y-3">
+        <div class="rounded-md border border-notion-border bg-notion-bg px-3 py-2">
+            <p class="text-xs text-notion-text-secondary leading-relaxed">
+                The queue page uses the live color shown in each preview. Picking a saved snapshot makes that snapshot active. Moving the color picker after that switches the category to a custom live color until another snapshot is applied.
+            </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div v-for="cat in categoryAppearanceCards" :key="cat.id" class="rounded-lg border border-notion-border bg-notion-bg p-3">
+                <div class="flex flex-col gap-2.5">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div class="size-9 rounded-lg flex items-center justify-center border border-notion-border/70 shrink-0" :style="categoryAppearanceSwatchStyle(cat.id)">
+                            <lucide-icon :name="cat.icon" icon-class="size-4" :icon-style="categoryAppearanceIconStyle(cat.id)"></lucide-icon>
+                        </div>
+                        <div class="min-w-0 flex items-center gap-2.5 flex-wrap">
+                            <span class="h-7 px-2.5 rounded-full border text-[11px] font-semibold uppercase tracking-wider inline-flex items-center justify-center" :style="categoryAppearancePreviewStyle(cat.id)">
+                                {{ cat.label }}
+                            </span>
+                            <div class="min-w-0">
+                                <div class="text-[11px] font-semibold text-notion-text-primary">Active: {{ cat.activeSaveName }}</div>
+                                <div class="text-[10px] text-notion-text-tertiary font-mono">{{ cat.currentColor }}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                        <div class="space-y-2">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-notion-text-tertiary">Live Color</div>
+                            <input type="color" :value="cat.currentColor" @input="setCategoryAppearanceColor(cat.id, $event.target.value)" class="w-full h-8 bg-transparent border border-notion-border rounded-md cursor-pointer" />
+                            <button @click="saveCategoryAppearancePreset(cat.id)" class="w-full px-2.5 h-8 rounded-md bg-notion-accent text-white text-[11px] font-semibold hover:bg-notion-accent/90 transition-colors whitespace-nowrap">
+                                Save
+                            </button>
+                        </div>
+
+                        <div class="space-y-2">
+                            <div class="text-[10px] font-semibold uppercase tracking-wide text-notion-text-tertiary">Snapshots</div>
+                            <select :value="cat.currentSaveId" @change="applyCategoryAppearancePreset(cat.id, $event.target.value)" class="w-full h-8 bg-notion-bg text-notion-text-primary px-2.5 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]">
+                                <option value="">Custom live color</option>
+                                <option v-for="save in cat.saves" :key="save.id" :value="save.id">{{ save.name }}</option>
+                            </select>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button @click="resetCategoryAppearance(cat.id)" class="px-2.5 h-8 rounded-md border border-notion-border bg-notion-bg-hover text-notion-text-secondary text-[11px] font-medium hover:bg-notion-bg-active transition-colors whitespace-nowrap">
+                                    Reset
+                                </button>
+                                <button
+                                    @click="deleteSelectedCategoryAppearancePreset(cat.id)"
+                                    :disabled="!cat.currentSaveId"
+                                    :class="['px-2.5 h-8 rounded-md text-[11px] font-medium transition-colors whitespace-nowrap', cat.currentSaveId ? 'border border-notion-border bg-notion-bg-hover text-notion-text-secondary hover:text-notion-error hover:border-notion-error/30 hover:bg-notion-error/10' : 'border border-notion-border bg-notion-bg text-notion-text-tertiary opacity-50 cursor-not-allowed']">
+                                    Delete
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div v-if="cat.saves.length > 0" class="mt-0.5 flex flex-wrap gap-1.5">
+                        <div v-for="save in cat.saves" :key="save.id" class="inline-flex items-center gap-2 rounded-full border border-notion-border bg-notion-bg-secondary px-2.5 py-1.5">
+                            <button @click="applyCategoryAppearancePreset(cat.id, save.id)" class="size-4 rounded-full border border-white/10 shrink-0" :style="{ backgroundColor: save.color }" :title="'Apply ' + save.name"></button>
+                            <span class="text-[11px] font-medium text-notion-text-primary">{{ save.name }}</span>
+                            <span v-if="cat.currentSaveId === save.id" class="text-[10px] font-semibold text-notion-accent">Active</span>
+                            <button @click="deleteCategoryAppearancePreset(cat.id, save.id)" class="text-[10px] text-notion-text-tertiary hover:text-notion-error transition-colors">
+                                Delete
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div v-show="activeSettingsTab === 'general'">
+
+<!-- TV Pack Ignore Rules -->
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="tv-pack-ignore" v-show="sectionVisible('tv-pack-ignore')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('tv-pack-ignore')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections['tv-pack-ignore'] ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="list-filter" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">TV Pack Ignore Rules</h2>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] text-notion-text-tertiary">Season pack file filtering</span>
+            <button @click.stop="toggleTvPackIgnore('enabled')" :class="toggleBtnClassDirect(tvPackIgnoreOn('enabled'))" title="Master switch for TV/anime season-pack ignore rules">
+                <span :class="toggleKnobClassDirect(tvPackIgnoreOn('enabled'))"></span>
+            </button>
+        </div>
+    </div>
+    <div :class="sectionContentClass('tv-pack-ignore')" id="content-tv-pack-ignore">
+        <div class="p-4 space-y-4">
+            <div class="rounded-md border border-notion-border bg-notion-bg px-3 py-2">
+                <p class="text-xs text-notion-text-secondary leading-relaxed">
+                    These rules apply inside TV/anime season packs before upload prep. Enabled rules mark matching files as ignored/completed and keep them out of the filtered pack upload.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div
+                    v-for="rule in tvPackIgnoreRules"
+                    :key="rule.key"
+                    class="rounded-md border border-notion-border bg-notion-bg p-3"
+                    :class="tvPackIgnoreOn('enabled') ? '' : 'opacity-50'"
+                    :title="rule.description">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <lucide-icon :name="rule.icon" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                                <span class="text-[13px] font-medium text-notion-text-primary">{{ rule.label }}</span>
+                            </div>
+                            <p class="mt-1 text-[11px] text-notion-text-tertiary leading-relaxed">{{ rule.description }}</p>
+                        </div>
+                        <button
+                            @click="toggleTvPackIgnore(rule.key)"
+                            :disabled="!tvPackIgnoreOn('enabled')"
+                            :class="toggleBtnClassDirect(tvPackIgnoreOn(rule.key))"
+                            :title="rule.description">
+                            <span :class="toggleKnobClassDirect(tvPackIgnoreOn(rule.key))"></span>
+                        </button>
+                    </div>
+                    <div class="mt-2 text-[11px] text-notion-text-secondary font-mono wrap-break-word">
+                        {{ rule.examples }}
+                    </div>
+                    <button
+                        v-if="rule.examplesMore"
+                        @click="toggleTvPackRuleExpanded(rule.key)"
+                        class="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-notion-accent hover:text-notion-accent/80 transition-colors">
+                        <lucide-icon :name="isTvPackRuleExpanded(rule.key) ? 'chevron-up' : 'chevron-down'" icon-class="size-3"></lucide-icon>
+                        {{ isTvPackRuleExpanded(rule.key) ? 'Show less' : 'Show more' }}
+                    </button>
+                    <div v-if="rule.examplesMore && isTvPackRuleExpanded(rule.key)" class="mt-2 text-[11px] text-notion-text-tertiary font-mono wrap-break-word">
+                        {{ rule.examplesMore }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="rounded-md border border-notion-border bg-notion-bg px-3 py-2">
+                    <div class="text-[11px] font-semibold uppercase tracking-wide text-notion-text-tertiary mb-1">Ignored File Types</div>
+                    <p class="text-[11px] text-notion-text-secondary font-mono leading-relaxed">
+                        .nfo, .txt, .srt, .ass, .ssa, .sub, .idx, .sup, .jpg, .jpeg, .png, .webp, .gif, .sfv, .md5, .par2, .url
+                    </p>
+                </div>
+                <div class="rounded-md border border-notion-border bg-notion-bg px-3 py-2">
+                    <div class="text-[11px] font-semibold uppercase tracking-wide text-notion-text-tertiary mb-1">Ignored Names / Non-file Content</div>
+                    <p class="text-[11px] text-notion-text-secondary leading-relaxed">
+                        sample, samples, NFO, proof, screens, subtitles, extras, featurettes, trailers, teaser, preview, PV, special, specials, OP, ED, OVA, OAD, NCOP, NCED, and folders or sidecar content that are not valid episode media files.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Login Settings (shown when enable_password is on) -->
+<Transition>
+    <div v-if="settings.auth.enable_password" class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6">
+        <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('auth')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="expandedSections.auth ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+                <lucide-icon name="lock" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Login Settings</h2>
+            </div>
+            <a v-if="expandedSections.auth" href="/logout" @click.stop title="Log out" class="flex items-center gap-1.5 text-xs text-notion-text-tertiary hover:text-notion-error transition-colors px-2 py-1 rounded-md hover:bg-notion-bg-hover">
+                <lucide-icon name="log-out" icon-class="size-3.5"></lucide-icon>
+                Log out
+            </a>
+        </div>
+        <div :class="sectionContentClass('auth')">
+            <div class="p-4 space-y-3">
+                <p class="text-xs text-notion-text-tertiary">
+                    Protect NZBPostarr with a login page. All pages and API endpoints require authentication. Credentials are stored in
+                    <code class="bg-notion-bg px-1 py-0.5 rounded text-[11px]">config.yaml</code>
+                    .
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+                    <div class="space-y-1.5">
+                        <label class="text-[10px] uppercase tracking-wider font-semibold text-notion-text-tertiary">Username</label>
+                        <input
+                            type="text"
+                            v-model="settings.auth.web_username"
+                            class="w-full bg-notion-bg text-notion-text-primary px-3 py-2 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent text-xs font-mono"
+                            placeholder="admin"
+                            autocomplete="username" />
+                    </div>
+                    <div class="space-y-1.5">
+                        <label class="text-[10px] uppercase tracking-wider font-semibold text-notion-text-tertiary">New Password</label>
+                        <input
+                            type="password"
+                            v-model="settings.auth.new_password"
+                            class="w-full bg-notion-bg text-notion-text-primary px-3 py-2 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent text-xs"
+                            placeholder="Leave blank to keep existing"
+                            autocomplete="new-password" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</Transition>
+
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="skip-files" v-show="settings.skip_files.enabled && sectionVisible('skip-files')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('skip-files')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections['skip-files'] ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="file-x-2" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Skip Files</h2>
+        </div>
+        <div v-show="expandedSections['skip-files']" class="flex items-center gap-3" @click.stop>
+            <span class="text-[10px] text-notion-text-tertiary">{{ settings.skip_files.patterns.length }} pattern{{ settings.skip_files.patterns.length !== 1 ? 's' : '' }}</span>
+            <button @click="toggleSetting('enabled', 'skip_files')" :class="toggleBtnClass('enabled', 'skip_files')" title="Enable or disable skip-file pattern matching">
+                <span :class="toggleKnobClass('enabled', 'skip_files')"></span>
+            </button>
+        </div>
+    </div>
+    <div :class="sectionContentClass('skip-files')">
+        <div class="p-4 space-y-4">
+            <!-- Description -->
+            <p class="text-xs text-notion-text-tertiary">
+                Define filename patterns to skip during processing. Supports glob wildcards:
+                <code class="bg-notion-bg px-1 rounded text-[10px]">*</code>
+                (any characters),
+                <code class="bg-notion-bg px-1 rounded text-[10px]">?</code>
+                (single character). Matching is case-insensitive.
+            </p>
+
+            <!-- Display Mode Toggle -->
+            <div class="setting-item flex items-center justify-between p-2 -mx-2 hover:bg-notion-bg-hover/10 transition-colors rounded-md" v-show="matchesSearch('skip files display mode hidden disabled queue')" data-search="skip files display mode hidden disabled queue">
+                <div class="flex items-center gap-3">
+                    <lucide-icon name="eye" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                    <div class="flex flex-col">
+                        <span class="text-notion-text-secondary text-[13px]">Queue Display Mode</span>
+                        <span class="text-notion-text-tertiary text-[10px]">How skipped files appear in the Pending Queue</span>
+                    </div>
+                </div>
+                <div class="flex items-center border border-notion-border rounded overflow-hidden h-8 bg-notion-bg/30 shadow-inner">
+                    <button
+                        @click="settings.skip_files.display_mode = 'disabled'"
+                        :class="settings.skip_files.display_mode === 'disabled' ? 'bg-notion-accent text-white' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
+                        class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors">
+                        <lucide-icon name="eye-off" icon-class="size-3.5"></lucide-icon>
+                        <span class="text-[10px] font-bold uppercase tracking-tight">Greyed Out</span>
+                    </button>
+                    <button @click="settings.skip_files.display_mode = 'hidden'" :class="settings.skip_files.display_mode === 'hidden' ? 'bg-notion-accent text-white' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'" class="flex items-center gap-1.5 px-3 h-full transition-colors">
+                        <lucide-icon name="eye" icon-class="size-3.5"></lucide-icon>
+                        <span class="text-[10px] font-bold uppercase tracking-tight">Hidden</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="h-px bg-notion-border mx-2"></div>
+
+            <!-- Patterns List -->
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-[11px] font-bold text-notion-text-tertiary uppercase tracking-wider">Skip Patterns</h3>
+                    <button @click="addSkipPattern()" class="flex items-center gap-1.5 text-[10px] text-notion-accent hover:text-notion-accent/80 transition-colors">
+                        <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
+                        Add Pattern
+                    </button>
+                </div>
+
+                <!-- Empty state -->
+                <div v-if="settings.skip_files.patterns.length === 0" class="empty-state py-6 border border-dashed border-notion-border rounded-lg">
+                    <lucide-icon name="file-x-2" icon-class="empty-state-icon size-6 text-notion-text-placeholder"></lucide-icon>
+                    <p class="empty-state-title">No skip patterns yet</p>
+                    <button @click="addSkipPattern()" class="mt-2 text-[10px] text-notion-accent hover:underline">Add your first pattern</button>
+                </div>
+
+                <!-- Pattern rows -->
+                <div
+                    v-for="(rule, idx) in settings.skip_files.patterns"
+                    :key="idx"
+                    class="setting-item group bg-notion-bg/50 border border-notion-border rounded-lg p-3 space-y-2.5 hover:border-notion-text-tertiary/30 transition-colors"
+                    v-show="matchesSearch(`skip files pattern filename glob wildcard ${rule.pattern || ''} ${(rule.categories || []).join(' ')}`)"
+                    data-search="skip files pattern filename glob wildcard">
+                    <div class="flex items-center gap-2">
+                        <!-- Pattern input -->
+                        <div class="flex-1 relative">
+                            <lucide-icon :name="rule.is_regex ? 'regex' : 'asterisk'" :icon-class="'size-3 absolute left-2.5 top-1/2 -translate-y-1/2 ' + (rule.is_regex ? 'text-notion-accent' : 'text-notion-text-tertiary')"></lucide-icon>
+                            <input
+                                type="text"
+                                v-model="rule.pattern"
+                                :placeholder="rule.is_regex ? 'e.g. .*\\.nfo$, ^Sample, (?i)sample' : 'e.g. *.nfo, Sample*, *-sample.*'"
+                                class="w-full bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" />
+                        </div>
+
+                        <!-- Regex toggle -->
+                        <label class="flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer select-none shrink-0 transition-colors" :class="rule.is_regex ? 'bg-notion-accent/10 text-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover'" title="Use regular expression">
+                            <input type="checkbox" v-model="rule.is_regex" class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                            <span class="text-[10px] font-semibold uppercase tracking-wider">Regex</span>
+                        </label>
+
+                        <!-- Delete button -->
+                        <button @click="settings.skip_files.patterns.splice(idx, 1)" class="p-1.5 rounded hover:bg-red-500/15 text-notion-text-tertiary hover:text-red-400 transition-colors opacity-40 group-hover:opacity-100 shrink-0" title="Remove pattern">
+                            <lucide-icon name="trash-2" icon-class="size-3.5"></lucide-icon>
+                        </button>
+                    </div>
+
+                    <!-- Category chips -->
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-[10px] text-notion-text-tertiary font-semibold uppercase tracking-wider mr-1">Applies to:</span>
+                        <button
+                            v-for="cat in skipFileCategories"
+                            :key="cat.value"
+                            @click="toggleSkipCategory(rule, cat.value)"
+                            :class="[
+                                'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
+                                rule.categories.length === 0 || rule.categories.includes(cat.value)
+                                    ? 'bg-notion-accent/10 border-notion-accent/30 text-notion-accent'
+                                    : 'bg-notion-bg border-notion-border text-notion-text-tertiary hover:border-notion-text-tertiary'
+                            ]">
+                            {{ cat.label }}
+                        </button>
+                        <span class="text-[10px] text-notion-text-placeholder italic ml-1" v-if="rule.categories.length === 0">(all categories)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Examples hint -->
+            <div class="bg-notion-bg/50 border border-notion-border rounded-lg p-3">
+                <div v-if="hasGlobPatterns">
+                    <h4 class="text-[10px] font-bold text-notion-text-tertiary uppercase tracking-wider mb-2">Glob Examples</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">*.nfo</code>
+                            <span class="text-notion-text-tertiary">Skip all NFO files</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">Sample*</code>
+                            <span class="text-notion-text-tertiary">Skip files starting with "Sample"</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">*-sample.*</code>
+                            <span class="text-notion-text-tertiary">Skip sample files like movie-sample.mkv</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">*.txt</code>
+                            <span class="text-notion-text-tertiary">Skip all text files</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="hasRegexPatterns" :class="{ 'mt-3': hasGlobPatterns }">
+                    <h4 class="text-[10px] font-bold text-notion-text-tertiary uppercase tracking-wider mb-2">Regex Examples</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">.*\.nfo$</code>
+                            <span class="text-notion-text-tertiary">Skip all NFO files</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">(?i)sample</code>
+                            <span class="text-notion-text-tertiary">Skip anything containing "sample"</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">^\.</code>
+                            <span class="text-notion-text-tertiary">Skip hidden/dot files</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">\.(srt|sub|idx)$</code>
+                            <span class="text-notion-text-tertiary">Skip subtitle files</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="updates" class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="updates" v-show="sectionVisible('updates')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('updates')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.updates ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="refresh-cw" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Updates</h2>
+        </div>
+        <button
+            v-if="expandedSections.updates"
+            @click.stop="checkUpdatesNow"
+            :disabled="updater.checking"
+            class="px-2.5 py-1 text-[10px] font-semibold rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+            {{ updater.checking ? 'Checking...' : 'Check Now' }}
+        </button>
+    </div>
+    <div :class="sectionContentClass('updates')">
+        <div class="p-4 space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div class="rounded-md border border-notion-border bg-notion-bg p-3">
+                    <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Current</div>
+                    <div class="text-sm font-semibold text-notion-text-primary mt-1">{{ formatVersionLabel((updater.status && updater.status.current_version) || appVersion) }}</div>
+                </div>
+                <div class="rounded-md border border-notion-border bg-notion-bg p-3">
+                    <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Latest GitHub</div>
+                    <div class="text-sm font-semibold text-notion-text-primary mt-1">{{ formatVersionLabel(updater.status && updater.status.latest_version) }}</div>
+                </div>
+                <div class="rounded-md border border-notion-border bg-notion-bg p-3">
+                    <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary">Status</div>
+                    <div class="text-sm font-semibold mt-1" :class="(updater.status && updater.status.update_available) ? 'text-amber-400' : 'text-notion-success'">{{ (updater.status && updater.status.update_available) ? 'Update available' : 'Up to date' }}</div>
+                </div>
+            </div>
+
+            <div v-if="updater.status && updater.status.check_error" class="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">Last check error: {{ updater.status.check_error }}</div>
+
+            <div class="rounded-lg border border-notion-border p-3 space-y-3">
+                <!-- Main GitHub actions row -->
+                <div class="flex flex-wrap items-center gap-2">
+                    <button
+                        @click="checkUpdatesNow"
+                        :disabled="updater.checking || updater.installing || updater.uploading || updater.rollingBack"
+                        class="px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5">
+                        <lucide-icon :name="updater.checking ? 'loader-2' : 'refresh-cw'" :icon-class="'size-3.5' + (updater.checking ? ' animate-spin' : '')"></lucide-icon>
+                        {{ updater.checking ? 'Checking...' : 'Check for Updates' }}
+                    </button>
+                    <button
+                        v-if="updater.status && updater.status.update_available"
+                        @click="installLatestFromGithub"
+                        :disabled="updater.installing || updater.uploading || updater.rollingBack"
+                        class="btn-primary px-3 h-8 rounded text-xs font-semibold">
+                        {{ updater.installing ? 'Installing...' : 'Install Update' }}
+                    </button>
+                    <span v-if="updater.status && !updater.status.update_available && updater.status.current_version" class="text-xs text-notion-success flex items-center gap-1">
+                        <lucide-icon name="check-circle" icon-class="size-3.5"></lucide-icon>
+                        Up to date
+                    </span>
+                    <button @click="updater.showManualUpdate = !updater.showManualUpdate" class="ml-auto px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium transition-colors flex items-center gap-1.5">
+                        <lucide-icon :name="updater.showManualUpdate ? 'chevron-up' : 'chevron-down'" icon-class="size-3.5"></lucide-icon>
+                        Manual Update
+                    </button>
+                </div>
+                <!-- Manual install controls (collapsible) -->
+                <div v-show="updater.showManualUpdate" class="pt-3 border-t border-notion-divider space-y-3">
+                    <!-- ZIP upload -->
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="text-xs text-notion-text-tertiary w-24 shrink-0">Install from ZIP</span>
+                        <label class="inline-flex items-center gap-2 px-3 h-8 rounded border border-notion-border bg-notion-bg text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium cursor-pointer transition-colors">
+                            <lucide-icon name="paperclip" icon-class="size-3.5"></lucide-icon>
+                            <span>{{ updater.selectedUploadFile ? 'Change ZIP' : 'Choose ZIP' }}</span>
+                            <input type="file" accept=".zip" @change="onUpdateZipChosen" class="hidden" />
+                        </label>
+                        <div class="min-w-55 max-w-full h-8 px-3 rounded border border-dashed border-notion-border bg-notion-bg/60 text-xs text-notion-text-secondary flex items-center">
+                            <span class="truncate">{{ updater.selectedUploadFile ? updater.selectedUploadFile.name : 'No ZIP selected' }}</span>
+                        </div>
+                        <button
+                            @click="installUpdateZip"
+                            :disabled="!updater.selectedUploadFile || updater.installing || updater.uploading || updater.rollingBack"
+                            class="px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                            {{ updater.uploading ? 'Uploading...' : 'Install ZIP' }}
+                        </button>
+                    </div>
+                    <!-- Version selector -->
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-xs text-notion-text-tertiary w-24 shrink-0">Specific version</span>
+                        <select v-model="updater.selectedVersion" class="bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent min-w-50">
+                            <option v-for="rel in updater.releases" :key="rel.version" :value="rel.version">{{ formatVersionLabel(rel.version) }}{{ rel.prerelease ? ' (pre)' : '' }}</option>
+                        </select>
+                        <button
+                            @click="installSelectedRelease"
+                            :disabled="!updater.selectedVersion || updater.installing || updater.uploading || updater.rollingBack"
+                            class="px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                            Install Selected
+                        </button>
+                    </div>
+                    <!-- Restart after action -->
+                    <label class="flex items-center gap-2 text-xs text-notion-text-secondary pl-28">
+                        <input type="checkbox" v-model="updater.restartAfterAction" class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg cursor-pointer" />
+                        Restart after action
+                    </label>
+                </div>
+            </div>
+
+            <div class="rounded-lg border border-notion-border p-3 space-y-2">
+                <div class="text-xs font-semibold text-notion-text-primary">Rollback Snapshots</div>
+                <div v-if="!updater.backups || updater.backups.length === 0" class="text-xs text-notion-text-tertiary">No snapshots yet. A snapshot is created before every install.</div>
+                <div v-for="backup in updater.backups" :key="backup.backup_id" class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 px-2 py-2 rounded border border-notion-border bg-notion-bg">
+                    <div class="text-xs min-w-0">
+                        <div class="text-notion-text-primary font-medium truncate">{{ backup.backup_id }}</div>
+                        <div class="text-notion-text-tertiary truncate">{{ formatVersionLabel(backup.current_version) }} -> {{ formatVersionLabel(backup.target_version) }} · {{ formatBytesCompact(backup.size_bytes) }}</div>
+                    </div>
+                    <button
+                        @click="rollbackBackup(backup.backup_id)"
+                        :disabled="updater.installing || updater.uploading || updater.rollingBack"
+                        class="px-3 h-8 rounded border border-notion-border text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-bg-hover text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                        {{ updater.rollingBack ? 'Rolling Back...' : 'Rollback' }}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="destinations" v-show="sectionVisible('destinations')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('destinations')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.destinations ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="send" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Upload Indexers</h2>
+        </div>
+        <button v-if="expandedSections.destinations" @click.stop="reloadIndexers" class="compact-touch text-xs text-notion-text-tertiary hover:text-notion-accent transition-colors flex items-center gap-1 min-h-0" title="Reload indexer plugins">
+            <lucide-icon name="refresh-cw" icon-class="size-3"></lucide-icon>
+            <span>Reload Plugins</span>
+        </button>
+    </div>
+    <div :class="sectionContentClass('destinations')">
+        <div class="p-4 space-y-0.5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 mb-2">
+                <!-- Global Enable (Backfill) -->
+                <div>
+                    <div
+                        class="setting-item flex items-center justify-between p-2 -mx-2 hover:bg-notion-bg-hover/10 transition-colors rounded-md min-h-8"
+                        v-show="matchesSearch('enable backfill global master switch')"
+                        title="Master switch - enable backfill uploads across all configured indexers"
+                        data-search="enable backfill global master switch">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="zap" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                            <span class="font-medium text-notion-text-primary text-[13px]">Enable Backfill</span>
+                        </div>
+                        <button @click="toggleSetting('enable_backfill', 'destinations')" :class="toggleBtnClass('enable_backfill', 'destinations')">
+                            <span :class="toggleKnobClass('enable_backfill', 'destinations')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Duplicate Error Bypass Setting -->
+                <div class="md:border-l md:border-notion-divider md:pl-6">
+                    <div
+                        class="setting-item flex items-center justify-between gap-3 p-2 -mx-2 hover:bg-notion-bg-hover/10 transition-colors rounded-md min-h-8"
+                        v-show="matchesSearch('duplicate error bypass retry indexer repeat')"
+                        title="Automatically retry with a modified name if an indexer complains about a duplicate submission."
+                        data-search="duplicate error bypass retry indexer repeat">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <lucide-icon name="copy-plus" icon-class="size-3.5 text-notion-accent shrink-0"></lucide-icon>
+                            <span class="font-medium text-notion-text-primary text-[13px]">Duplicate Error Bypass</span>
+                        </div>
+                        <button @click="toggleSetting('enable_duplicate_bypass', 'destinations')" :class="toggleBtnClass('enable_duplicate_bypass', 'destinations')" class="shrink-0">
+                            <span :class="toggleKnobClass('enable_duplicate_bypass', 'destinations')"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-4 pb-4">
+                <div class="h-px bg-notion-border mx-2"></div>
+            </div>
+
+            <!-- Dynamic Indexers Grid - Vue v-for rendering -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div class="space-y-0.5">
+                    <div
+                        v-for="indexer in leftColumnIndexers"
+                        :key="indexer.id"
+                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-[color,background-color,opacity] group min-h-8 gap-y-1"
+                        v-show="matchesSearch((indexer.name || '') + ' ' + (indexer.id || '') + ' indexer api')"
+                        :style="{ opacity: settings.destinations['enable_' + indexer.id] ? 1 : 0.4 }"
+                        :data-search="indexer.name.toLowerCase() + ' ' + indexer.id + ' indexer api'">
+                        <div class="flex items-center gap-2">
+                            <div class="size-5 rounded flex items-center justify-center bg-notion-bg-hover">
+                                <img v-if="indexer.favicon_url && !indexer.faviconError" :src="indexer.favicon_url" referrerpolicy="no-referrer" class="size-3.5 object-contain" :alt="indexer.name" @error="handleFaviconError(indexer)" />
+                                <lucide-icon v-else :name="indexer.icon || 'database'" :icon-class="['size-3.5', getColorClasses(indexer.color).text]" :icon-style="getColorClasses(indexer.color).style?.text"></lucide-icon>
+                            </div>
+                            <span class="text-notion-text-secondary text-[13px]">{{ indexer.name }}</span>
+                            <!-- Edit Key Button -->
+                            <button @click.stop="openKeyModal(indexer)" class="p-1 hover:bg-notion-bg-active text-notion-text-tertiary hover:text-notion-accent rounded transition-all opacity-40 group-hover:opacity-100" title="Edit Credentials">
+                                <lucide-icon name="key" icon-class="size-3"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="flex items-center">
+                            <!-- Segmented Toggle Group -->
+                            <div class="flex items-center border border-notion-border rounded overflow-hidden h-8 bg-notion-bg/30 shadow-inner">
+                                <!-- ACTIVE SEGMENT -->
+                                <button
+                                    @click="toggleSetting('enable_' + indexer.id, 'destinations')"
+                                    :class="settings.destinations['enable_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Toggle Indexer">
+                                    <lucide-icon name="power" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] font-bold uppercase tracking-tight">On</span>
+                                </button>
+
+                                <!-- BACKFILL SEGMENT -->
+                                <button
+                                    v-show="settings.destinations.enable_backfill"
+                                    @click="settings.destinations['backfill_' + indexer.id] = !settings.destinations['backfill_' + indexer.id]"
+                                    :disabled="!canBackfill(indexer.id)"
+                                    :class="[
+                                        settings.destinations['backfill_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !canBackfill(indexer.id) ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Enable Backfill uploads for this indexer">
+                                    <lucide-icon name="history" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Backfill</span>
+                                </button>
+
+                                <!-- PRIORITY SEGMENT -->
+                                <button
+                                    @click="settings.destinations['priority_' + indexer.id] = !settings.destinations['priority_' + indexer.id]"
+                                    :disabled="!settings.destinations['enable_' + indexer.id]"
+                                    :class="[
+                                        settings.destinations['priority_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !settings.destinations['enable_' + indexer.id] ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full transition-colors"
+                                    title="Check to include this indexer in the first (priority) upload set">
+                                    <lucide-icon name="zap" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Priority</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-0.5 md:border-l md:border-notion-divider md:pl-6">
+                    <div
+                        v-for="indexer in rightColumnIndexers"
+                        :key="indexer.id"
+                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-[color,background-color,opacity] group min-h-8 gap-y-1"
+                        v-show="matchesSearch((indexer.name || '') + ' ' + (indexer.id || '') + ' indexer api')"
+                        :style="{ opacity: settings.destinations['enable_' + indexer.id] ? 1 : 0.4 }"
+                        :data-search="indexer.name.toLowerCase() + ' ' + indexer.id + ' indexer api'">
+                        <div class="flex items-center gap-2">
+                            <div class="size-5 rounded flex items-center justify-center bg-notion-bg-hover">
+                                <img v-if="indexer.favicon_url && !indexer.faviconError" :src="indexer.favicon_url" referrerpolicy="no-referrer" class="size-3.5 object-contain" :alt="indexer.name" @error="handleFaviconError(indexer)" />
+                                <lucide-icon v-else :name="indexer.icon || 'database'" :icon-class="['size-3.5', getColorClasses(indexer.color).text]" :icon-style="getColorClasses(indexer.color).style?.text"></lucide-icon>
+                            </div>
+                            <span class="text-notion-text-secondary text-[13px]">{{ indexer.name }}</span>
+                            <!-- Edit Key Button -->
+                            <button @click.stop="openKeyModal(indexer)" class="p-1 hover:bg-notion-bg-active text-notion-text-tertiary hover:text-notion-accent rounded transition-all opacity-40 group-hover:opacity-100" title="Edit Credentials">
+                                <lucide-icon name="key" icon-class="size-3"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="flex items-center">
+                            <!-- Segmented Toggle Group -->
+                            <div class="flex items-center border border-notion-border rounded overflow-hidden h-8 bg-notion-bg/30 shadow-inner">
+                                <!-- ACTIVE SEGMENT -->
+                                <button
+                                    @click="toggleSetting('enable_' + indexer.id, 'destinations')"
+                                    :class="settings.destinations['enable_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Toggle Indexer">
+                                    <lucide-icon name="power" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] font-bold uppercase tracking-tight">On</span>
+                                </button>
+
+                                <!-- BACKFILL SEGMENT -->
+                                <button
+                                    v-show="settings.destinations.enable_backfill"
+                                    @click="settings.destinations['backfill_' + indexer.id] = !settings.destinations['backfill_' + indexer.id]"
+                                    :disabled="!canBackfill(indexer.id)"
+                                    :class="[
+                                        settings.destinations['backfill_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !canBackfill(indexer.id) ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Enable Backfill uploads for this indexer">
+                                    <lucide-icon name="history" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Backfill</span>
+                                </button>
+
+                                <!-- PRIORITY SEGMENT -->
+                                <button
+                                    @click="settings.destinations['priority_' + indexer.id] = !settings.destinations['priority_' + indexer.id]"
+                                    :disabled="!settings.destinations['enable_' + indexer.id]"
+                                    :class="[
+                                        settings.destinations['priority_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !settings.destinations['enable_' + indexer.id] ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full transition-colors"
+                                    title="Check to include this indexer in the first (priority) upload set">
+                                    <lucide-icon name="zap" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Priority</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="upload" v-show="sectionVisible('upload')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('upload')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.upload ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="upload" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Upload Settings</h2>
+        </div>
+    </div>
+    <div :class="sectionContentClass('upload')">
+        <div class="p-4">
+            <div class="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-4">
+                <!-- Poster Name -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('poster username uploader name')" data-search="poster username uploader name">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Poster Name</label>
+                    <input type="text" v-model="settings.upload.poster_name" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="Name" />
+                </div>
+                <!-- Poster Email -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('poster email')" data-search="poster email">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Poster Email</label>
+                    <input type="text" v-model="settings.upload.poster_email" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="email@example.com" />
+                </div>
+                <!-- RAR Size -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('rar size split volume bits')" data-search="rar size split volume bits">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">RAR Size (e.g., 100m)</label>
+                    <input type="text" v-model="settings.upload.rar_size" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="100m" />
+                </div>
+                <!-- Article Size -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('article size chunk segment')" data-search="article size chunk segment">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Article Size (e.g., 1M)</label>
+                    <input type="text" v-model="settings.upload.article_size" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="1M" />
+                </div>
+                <!-- Max Retries -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('max retries upload failure attempts')" data-search="max retries upload failure attempts">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Max Retries</label>
+                    <input type="number" v-model.number="settings.upload.upload_max_retries" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="3" />
+                </div>
+                <!-- Retry Delay -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('retry delay wait time seconds')" data-search="retry delay wait time seconds">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Retry Delay (s)</label>
+                    <input type="number" v-model.number="settings.upload.upload_retry_delay_seconds" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="5" />
+                </div>
+                <!-- Include Readme -->
+                <div
+                    class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md col-span-1 xs:col-span-2 md:col-span-3"
+                    v-show="matchesSearch('include readme branding file info')"
+                    title="Include the branded readme.txt file from indexers/readme/ in all future uploads"
+                    data-search="include readme branding file info">
+                    <div class="flex items-center gap-3">
+                        <lucide-icon name="file-text" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                        <span class="text-notion-text-secondary text-[13px]">Include Readme</span>
+                        <button @click.stop="openReadmeModal()" title="Edit readme.txt" class="p-0.5 rounded text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-bg-hover transition-colors">
+                            <lucide-icon name="pencil" icon-class="size-3"></lucide-icon>
+                        </button>
+                    </div>
+                    <button @click="toggleSetting('include_readme', 'upload')" :class="toggleBtnClass('include_readme', 'upload')">
+                        <span :class="toggleKnobClass('include_readme', 'upload')"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="nntp" v-show="sectionVisible('nntp')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('nntp')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.nntp ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="server" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Usenet Servers</h2>
+        </div>
+        <!-- Subtle Add Server Button -->
+        <button v-if="expandedSections.nntp" @click.stop="addServer" class="px-2 py-1 hover:bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent rounded font-medium transition-colors flex items-center border border-notion-border text-[11px] gap-1.5">
+            <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
+            Add Server
+        </button>
+    </div>
+    <div :class="sectionContentClass('nntp')">
+        <div class="p-4 overflow-x-hidden">
+            <table class="w-full text-left border-collapse table-fixed">
+                <thead>
+                    <tr class="uppercase tracking-wider text-notion-text-tertiary border-b border-notion-border text-[10px]">
+                        <th class="py-2 px-2 font-semibold text-center w-8.75">Use</th>
+                        <th class="py-2 px-2 font-semibold w-[15%]">Label</th>
+                        <th class="py-2 px-2 font-semibold w-[22%]">Host</th>
+                        <th class="py-2 px-2 font-semibold w-13.75 text-center">Port</th>
+                        <th class="py-2 px-2 font-semibold w-8.75 text-center">SSL</th>
+                        <th class="py-2 px-2 font-semibold w-13.75 text-center">Conns</th>
+                        <th class="py-2 px-2 font-semibold w-[18%]">User</th>
+                        <th class="py-2 px-2 font-semibold w-15">Pass</th>
+                        <th class="py-2 px-2 font-semibold w-8.75 text-right pr-4"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-notion-divider">
+                    <tr v-for="(server, index) in servers" :key="index" class="hover:bg-notion-bg-hover/30 transition-colors group">
+                        <td class="py-2 px-1 text-center">
+                            <div class="flex items-center justify-center">
+                                <input type="checkbox" v-model="server.enabled" class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg cursor-pointer" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-1">
+                            <input type="text" v-model="server.name" class="w-full bg-transparent border-0 text-notion-text-primary focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input type="text" v-model="server.host" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <input type="number" v-model.number="server.port" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <div class="flex items-center justify-center">
+                                <input type="checkbox" v-model="server.ssl" class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg cursor-pointer" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <input type="number" v-model.number="server.max_connections" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input type="text" v-model="server.user" class="w-full bg-transparent border-0 text-notion-text-secondary focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <div class="relative group/pass">
+                                <span class="block text-notion-text-tertiary text-[11px] px-1 tracking-[0.2em] group-focus-within/pass:invisible pointer-events-none select-none">•••••</span>
+                                <input type="password" v-model="server.password" autocomplete="off" class="absolute inset-0 w-full bg-transparent border-0 text-notion-text-secondary opacity-0 focus:opacity-100 focus:bg-notion-bg-elevated rounded transition-all text-[11px] px-1 cursor-text" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-1 text-right pr-4">
+                            <button @click="removeServer(index)" class="p-1 text-notion-text-tertiary hover:text-red-400 hover:bg-notion-bg-active rounded transition-all opacity-0 group-hover:opacity-100">
+                                <lucide-icon name="trash-2" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+                <tfoot class="bg-notion-bg/30">
+                    <tr class="border-t border-notion-divider">
+                        <td class="py-2 px-1 text-center">
+                            <span class="text-[9px] font-semibold uppercase tracking-wider text-notion-accent">Add</span>
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="text"
+                                v-model="newServer.name"
+                                placeholder="Name (e.g. Eweka)"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="text"
+                                v-model="newServer.host"
+                                placeholder="Server Address"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-[11px]" />
+                        </td>
+                        <td class="py-2 px-0 text-center">
+                            <input
+                                type="number"
+                                v-model.number="newServer.port"
+                                placeholder="port"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-0 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-center font-mono text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <div class="flex items-center justify-center">
+                                <input type="checkbox" v-model="newServer.ssl" class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg cursor-pointer" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-0 text-center">
+                            <input
+                                type="number"
+                                v-model.number="newServer.max_connections"
+                                placeholder="cons"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-0 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-center font-mono text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="text"
+                                v-model="newServer.user"
+                                placeholder="Username"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="password"
+                                v-model="newServer.password"
+                                placeholder="Password"
+                                autocomplete="new-password"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1 text-right pr-4">
+                            <button @click="addServer" class="w-6.5 h-6.5 inline-flex items-center justify-center shrink-0 bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-bg-active rounded transition-colors" title="Add server">
+                                <lucide-icon name="plus" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6 relative z-10" data-section="folders" v-show="sectionVisible('folders')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('folders')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.folders ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="folder" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Folder Paths</h2>
+            <span class="text-xs text-notion-text-tertiary">(from config file)</span>
+        </div>
+        <!-- Add Folder button in header - only visible when expanded -->
+        <button v-if="expandedSections.folders" @click.stop="addFolderPath()" class="flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-semibold text-notion-accent bg-notion-accent/10 hover:bg-notion-accent/20 rounded-md transition-colors">
+            <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
+            Add Folder
+        </button>
+    </div>
+    <div :class="sectionContentClass('folders')">
+        <div class="p-4 space-y-4">
+            <div class="rounded-lg border border-notion-border bg-notion-bg p-3 space-y-3">
+                <div class="flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2">
+                        <lucide-icon name="archive" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                        <div>
+                            <div class="text-xs font-semibold text-notion-text-primary">NZBPostarr Full Backups</div>
+                            <div class="text-[10px] text-notion-text-tertiary">Generate a fresh full backup in the configured backup directory without restarting the active job.</div>
+                        </div>
+                    </div>
+                    <button
+                        @click="createFullBackup"
+                        :disabled="backupJob.creating"
+                        :class="['px-3 h-9 rounded-md text-xs font-semibold transition-colors whitespace-nowrap', backupJob.creating ? 'bg-notion-bg-hover text-notion-text-tertiary cursor-wait' : 'bg-notion-accent text-white hover:bg-notion-accent/90']">
+                        {{ backupJob.creating ? 'Generating Backup...' : 'Generate New Backup' }}
+                    </button>
+                </div>
+
+                <div class="rounded-md border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-[10px] text-emerald-300">
+                    <div class="max-w-md">
+                        <div class="font-semibold text-[10px] uppercase tracking-[0.14em] text-emerald-200 mb-1">What This Backup Includes</div>
+                        <div>
+                            Core NZBPostarr application files, saved configuration, database, and data needed to restore the app.
+                        </div>
+                        <details class="mt-2 group">
+                            <summary class="cursor-pointer select-none text-emerald-200 hover:text-emerald-100 transition-colors">
+                                Show more
+                            </summary>
+                            <div class="mt-2 space-y-1 text-emerald-300/90">
+                                <div>Application source and web UI files currently running on the server.</div>
+                                <div>Configuration stored under `.config/nzbpostarr`, including settings saved through the UI.</div>
+                                <div>The history database contents, which includes app state and history-backed records stored there.</div>
+                                <div>`data` folder contents, including runtime data and other important saved state.</div>
+                                <div>`anime_cache.json` and the active `systemd` service file used to run NZBPostarr on Linux.</div>
+                                <div>`tmp` can be reduced when the skip option is enabled, while keeping stateful temp files that matter for recovery.</div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+
+                <div class="rounded-md border border-notion-border bg-notion-bg-elevated/30 px-3 py-2 text-[10px] text-notion-text-tertiary">
+                    Creating a backup here runs the full NZBPostarr backup routine and writes a timestamped archive into the configured backup directory. The action is designed to generate the archive without restarting the application, so active uploads and queue processing can continue while the backup file is being created.
+                </div>
+
+                <div class="flex flex-col gap-2">
+                    <div class="text-[10px] text-notion-text-tertiary">
+                        Copy and paste the backup directory path here when editing is unlocked. Changes are autosaved and future backups will be written to that folder.
+                        <span v-if="backupJob.savingFolder" class="text-notion-accent"> Saving...</span>
+                        <span v-else-if="backupJob.folderSaveError" class="text-red-400"> {{ backupJob.folderSaveError }}</span>
+                        <span v-else-if="backupJob.lastSavedFolder" class="text-emerald-300"> Saved.</span>
+                    </div>
+
+                    <div class="rounded-md border border-notion-border bg-notion-bg-elevated/20 px-3 py-3 flex flex-col gap-2">
+                        <div class="flex flex-col lg:flex-row lg:items-center gap-2">
+                            <div class="relative flex-1">
+                                <input
+                                    type="text"
+                                    v-model="settings.folders.backup_folder"
+                                    @input="onBackupFolderInput"
+                                    @blur="persistBackupFolder"
+                                    :disabled="!backupJob.folderEditable"
+                                    :class="[
+                                        'w-full text-xs font-mono px-3 h-9 rounded-md border transition-colors',
+                                        backupJob.folderEditable
+                                            ? 'text-notion-text-secondary bg-notion-bg border-notion-border focus:border-notion-accent/50 focus:outline-none focus:bg-notion-bg-elevated'
+                                            : 'text-notion-text-tertiary bg-notion-bg-hover/60 border-notion-border opacity-70 cursor-not-allowed'
+                                    ]"
+                                    placeholder="/path/to/backups/" />
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <button
+                                @click="toggleBackupFolderEditing"
+                                type="button"
+                                :class="[
+                                    'inline-flex items-center justify-center gap-1.5 px-3 h-9 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap',
+                                    backupJob.folderEditable
+                                        ? 'bg-notion-accent/15 text-notion-accent hover:bg-notion-accent/20'
+                                        : 'bg-notion-bg-hover text-notion-text-secondary hover:text-notion-text-primary'
+                                ]">
+                                <lucide-icon :name="backupJob.folderEditable ? 'lock-open' : 'lock'" icon-class="size-3.5"></lucide-icon>
+                                {{ backupJob.folderEditable ? 'Editing Enabled' : 'Unlock to Edit' }}
+                            </button>
+
+                            <label :class="[
+                                'inline-flex items-center gap-2 text-[11px] whitespace-nowrap transition-opacity',
+                                backupJob.folderEditable
+                                    ? 'text-notion-text-secondary'
+                                    : 'text-notion-text-tertiary opacity-70 cursor-not-allowed'
+                            ]">
+                                <input
+                                    type="checkbox"
+                                    v-model="backupJob.skipTmpContents"
+                                    :disabled="!backupJob.folderEditable"
+                                    class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg disabled:opacity-60 disabled:cursor-not-allowed" />
+                                Skip `tmp` contents
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="backupJob.lastArchivePath" class="text-[10px] text-notion-text-tertiary font-mono break-all">
+                    Last backup: {{ backupJob.lastArchivePath }}
+                    <span v-if="backupJob.lastArchiveSizeBytes"> · {{ formatBytesCompact(backupJob.lastArchiveSizeBytes) }}</span>
+                </div>
+            </div>
+
+            <!-- Dynamic Folder Paths -->
+            <div v-for="(fp, idx) in settings.folders.folder_paths" :key="idx" class="flex flex-col sm:flex-row sm:items-center gap-2 group relative" data-search="folder path monitor manual select bulk select auto categorize external">
+                <div class="flex items-center justify-center w-8 shrink-0">
+                    <lucide-icon name="folder-input" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <!-- Path Input -->
+                <div class="relative flex-1 flex items-center gap-1.5">
+                    <div class="relative flex-1">
+                        <input
+                            type="text"
+                            v-model="fp.path"
+                            class="w-full text-xs text-notion-text-secondary font-mono bg-notion-bg px-3 pr-11 h-9 rounded-md border border-notion-border focus:border-notion-accent/50 focus:outline-none focus:bg-notion-bg-elevated transition-colors"
+                            placeholder="/path/to/folder" />
+                        <button @click="openFolderBrowser(idx)" type="button" title="Browse folders" class="absolute inset-y-0 right-1 my-1 px-2 inline-flex items-center justify-center rounded-md text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-accent/15 transition-colors">
+                            <lucide-icon name="folder-search" icon-class="size-3.5"></lucide-icon>
+                        </button>
+                    </div>
+                    <div class="h-9 min-w-27 rounded-md border border-notion-border bg-notion-bg px-2 text-xs text-notion-text-tertiary flex items-center justify-center">
+                        Auto
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0 pl-1">
+                        <div class="flex items-center gap-1" :title="'Auto-monitor this folder for new content and upload automatically'">
+                            <lucide-icon name="radar" icon-class="size-3" :class="fp.monitor ? 'text-notion-accent' : 'text-notion-text-tertiary'"></lucide-icon>
+                            <button @click="fp.monitor = !fp.monitor" :class="toggleBtnClassDirect(fp.monitor)" title="Monitor - auto-upload on changes (experimental)">
+                                <span :class="toggleKnobClassDirect(fp.monitor)"></span>
+                            </button>
+                        </div>
+                        <!-- Manual selection only is stored inversely as allow_bulk_selection (on = allow_bulk_selection false) -->
+                        <div class="flex items-center gap-1" :title="'Manual selection only - disables bulk/group queue selection for this configured directory so rows must be selected individually'">
+                            <lucide-icon name="mouse-pointer-click" icon-class="size-3" :class="!fp.allow_bulk_selection ? 'text-amber-400' : 'text-notion-text-tertiary'"></lucide-icon>
+                            <button @click="fp.allow_bulk_selection = !fp.allow_bulk_selection" :class="toggleBtnClassDirect(!fp.allow_bulk_selection)" title="Manual selection only - disable bulk/group selection for this directory">
+                                <span :class="toggleKnobClassDirect(!fp.allow_bulk_selection)"></span>
+                            </button>
+                        </div>
+                    </div>
+                    <!-- Remove button -->
+                    <button @click="removeFolderPath(idx)" title="Remove this folder" class="p-1.5 rounded hover:bg-red-500/15 text-notion-text-tertiary hover:text-red-400 transition-colors shrink-0">
+                        <lucide-icon name="x" icon-class="size-3.5"></lucide-icon>
+                    </button>
+                </div>
+            </div>
+            <!-- Empty state -->
+            <div v-if="settings.folders.folder_paths.length === 0" class="empty-state py-6">
+                <lucide-icon name="folder-plus" icon-class="empty-state-icon size-8 opacity-40"></lucide-icon>
+                <p class="empty-state-title">
+                    No folder paths configured. Click
+                    <strong>Add Folder</strong>
+                    above to get started.
+                </p>
+            </div>
+            <p class="text-[10px] text-notion-text-tertiary pl-1">Configured folders are always treated as generic external roots. Individual items are auto-categorized from naming and content heuristics on the queue page.</p>
+            <div v-if="settings.folders.folder_paths.some(fp => fp.allow_bulk_selection === false)" class="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-amber-500/5 border border-amber-500/20">
+                <lucide-icon name="mouse-pointer-click" icon-class="size-3.5 text-amber-400 shrink-0 mt-0.5"></lucide-icon>
+                <p class="text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
+                    <strong>Manual selection only:</strong>
+                    Directories using this option cannot be mass-selected from queue bulk actions or directory-level checkboxes. Items inside those directories must be chosen one by one.
+                </p>
+            </div>
+            <!-- Monitor experimental note -->
+            <div v-if="settings.folders.folder_paths.some(fp => fp.monitor)" class="mt-3 flex items-start gap-2 px-3 py-2 rounded-md bg-amber-500/5 border border-amber-500/20">
+                <lucide-icon name="flask-conical" icon-class="size-3.5 text-amber-500 shrink-0 mt-0.5"></lucide-icon>
+                <p class="text-[10px] text-amber-600 dark:text-amber-400 leading-relaxed">
+                    <strong>Experimental:</strong>
+                    Folder monitoring watches for new content and automatically triggers uploads. Monitored folders are scanned periodically - new items are queued as upload jobs without manual intervention. This feature is under active development and may behave unexpectedly.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Service Controls (Danger Zone) -->
+<div class="bg-notion-bg-secondary rounded-lg border border-red-500/30 mb-6" data-section="service-controls" v-show="sectionVisible('service-controls')">
+    <div class="px-4 py-3 border-b border-red-500/20 flex items-center justify-between cursor-pointer hover:bg-red-500/5 transition-colors" @click="toggleSection('service-controls')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections['service-controls'] ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-red-400 transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="shield-alert" icon-class="size-4 text-red-400"></lucide-icon>
+            <h2 class="text-sm font-semibold text-red-400">Service Controls</h2>
+        </div>
+        <span class="text-[10px] font-medium text-red-400/70 uppercase tracking-wider">Danger Zone</span>
+    </div>
+    <div :class="sectionContentClass('service-controls')" id="content-service-controls">
+        <div class="p-4 space-y-4">
+            <!-- Stop All Uploads -->
+            <div class="flex items-start justify-between gap-4 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                        <lucide-icon name="square" icon-class="size-3.5 text-red-400"></lucide-icon>
+                        <span class="text-[13px] font-semibold text-notion-text-primary">Stop All Uploads</span>
+                    </div>
+                    <p class="text-[11px] text-notion-text-tertiary leading-relaxed pl-5">Immediately stops the active upload job and clears all queued jobs. Use this if uploads are running out of control or you need to halt everything right now.</p>
+                </div>
+                <button
+                    @click="stopAllJobs"
+                    :disabled="serviceControls.stopping"
+                    class="shrink-0 flex items-center gap-2 px-3 h-8 rounded border border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-semibold">
+                    <lucide-icon :name="serviceControls.stopping ? 'loader-2' : 'square'" :icon-class="'size-3.5' + (serviceControls.stopping ? ' animate-spin' : '')"></lucide-icon>
+                    {{ serviceControls.stopping ? 'Stopping...' : 'Stop All' }}
+                </button>
+            </div>
+
+            <!-- Restart Service -->
+            <div class="flex items-start justify-between gap-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                        <lucide-icon name="refresh-cw" icon-class="size-3.5 text-amber-500"></lucide-icon>
+                        <span class="text-[13px] font-semibold text-notion-text-primary">Restart Service</span>
+                    </div>
+                    <p class="text-[11px] text-notion-text-tertiary leading-relaxed pl-5">Gracefully restarts the NZBPostarr process. Any running uploads will be interrupted. The page will reload automatically after ~4 seconds.</p>
+                </div>
+                <button
+                    @click="restartService"
+                    :disabled="serviceControls.restarting"
+                    class="shrink-0 flex items-center gap-2 px-3 h-8 rounded border border-amber-500/50 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 hover:text-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-semibold">
+                    <lucide-icon :name="serviceControls.restarting ? 'loader-2' : 'refresh-cw'" :icon-class="'size-3.5' + (serviceControls.restarting ? ' animate-spin' : '')"></lucide-icon>
+                    {{ serviceControls.restarting ? 'Restarting...' : 'Restart' }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Indexer Key Modal -->
+<teleport to="body">
+    <div v-if="showKeyModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" @click.self="showKeyModal = false">
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div class="px-6 py-4 border-b border-notion-border flex items-center justify-between bg-notion-bg/50">
+                <div class="flex items-center gap-3">
+                    <div class="size-8 rounded-lg bg-notion-bg-hover flex items-center justify-center">
+                        <img v-if="activeIndexer?.favicon_url" :src="activeIndexer.favicon_url" class="size-4 object-contain" />
+                        <lucide-icon v-else name="key" icon-class="size-4 text-notion-accent"></lucide-icon>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-semibold text-notion-text-primary">{{ activeIndexer?.name }} Credentials</h3>
+                        <p class="text-[10px] text-notion-text-tertiary">Saved to config.yaml</p>
+                    </div>
+                </div>
+                <button @click="showKeyModal = false" class="icon-btn">
+                    <lucide-icon name="x" icon-class="size-4"></lucide-icon>
+                </button>
+            </div>
+            <div class="p-6 space-y-5">
+                <div class="space-y-1.5 focus-within:text-notion-accent transition-colors">
+                    <div class="flex items-center justify-between px-0.5">
+                        <label class="text-[11px] font-bold text-notion-text-tertiary uppercase tracking-wider">API Key</label>
+                        <button @click="toggleKeyVisibility" class="text-[10px] text-notion-text-tertiary hover:text-notion-accent transition-colors flex items-center gap-1">
+                            <lucide-icon :name="showKey ? 'eye-off' : 'eye'" icon-class="size-3"></lucide-icon>
+                            {{ showKey ? 'Hide' : 'Show' }}
+                        </button>
+                    </div>
+                    <input
+                        :type="showKey ? 'text' : 'password'"
+                        v-model="modalKey"
+                        placeholder="Enter API Key"
+                        class="w-full bg-notion-bg text-notion-text-primary text-xs px-3 h-10 rounded-md border border-notion-border focus:ring-1 focus:ring-notion-accent focus:outline-none font-mono transition-all" />
+                </div>
+
+                <div v-if="activeIndexer?.requires_username" class="space-y-1.5 focus-within:text-notion-accent transition-colors">
+                    <label class="text-[11px] font-bold text-notion-text-tertiary uppercase tracking-wider px-0.5">Username</label>
+                    <input type="text" v-model="modalUsername" placeholder="Enter Username" class="w-full bg-notion-bg text-notion-text-primary text-xs px-3 h-10 rounded-md border border-notion-border focus:ring-1 focus:ring-notion-accent focus:outline-none font-mono transition-all" />
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-notion-border flex items-center justify-end gap-3 bg-notion-bg/30">
+                <button @click="showKeyModal = false" class="px-4 h-9 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
+                <button @click="saveIndexerKey" class="btn-primary px-6 h-9 rounded-md text-xs font-bold flex items-center gap-2">
+                    <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
+                    Save Key
+                </button>
+            </div>
+        </div>
+    </div>
+</teleport>
+
+<!-- Raw YAML Modal -->
+<modal
+    :open="showYamlModal"
+    title="Raw YAML Configuration"
+    :subtitle="rawConfigPath"
+    subtitle-class="font-mono"
+    icon="file-code"
+    max-width="max-w-3xl"
+    panel-class="bg-notion-bg-secondary max-h-[90vh]"
+    @close="closeYamlModal()">
+    <template #header-actions>
+        <div v-if="rawYamlDirty" class="flex items-center gap-1.5 text-amber-500">
+            <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+            <span class="text-[10px] font-medium">Unsaved changes</span>
+        </div>
+        <div v-else class="flex items-center gap-1.5 text-notion-text-tertiary">
+            <div class="w-1.5 h-1.5 rounded-full bg-notion-success animate-pulse"></div>
+            <span class="text-[10px] italic">Live Syncing</span>
+        </div>
+    </template>
+
+    <!-- Editor -->
+    <div class="flex-1 overflow-hidden p-4 min-h-0">
+        <div class="relative h-full min-h-100 rounded border overflow-hidden" :class="rawYamlDirty ? 'border-amber-500/40' : 'border-notion-border'">
+            <!-- Per-line diff highlight layer: transparent text, amber bg on changed lines, scrolls in sync with textarea -->
+            <div ref="yamlHighlight" aria-hidden="true" class="absolute inset-0 p-4 font-mono text-xs leading-[1.45rem] overflow-hidden pointer-events-none select-none bg-notion-bg text-transparent" style="white-space: pre; word-break: normal; overflow-wrap: normal; tab-size: 2">
+                <div v-for="(line, idx) in rawYamlLines" :key="idx" :class="yamlDiffLines[idx] ? 'bg-amber-500/20' : ''" style="min-height: 1.45rem; line-height: 1.45rem">{{ line || '\u200b' }}</div>
+            </div>
+            <!-- Editable textarea - bg transparent so highlights show through -->
+            <textarea
+                v-model="rawYaml"
+                ref="yamlEditor"
+                wrap="off"
+                @focus="isEditingRawYaml = true"
+                @blur="isEditingRawYaml = false"
+                @scroll="syncYamlScroll"
+                class="absolute inset-0 w-full h-full bg-transparent font-mono text-xs p-4 text-notion-text-primary focus:outline-none resize-none caret-amber-500"
+                style="line-height: 1.45rem; tab-size: 2; white-space: pre"
+                spellcheck="false"></textarea>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-notion-border flex items-center justify-between gap-4 bg-notion-bg/30 shrink-0">
+        <button v-if="rawYamlDirty" @click="resetYaml()" class="text-xs text-notion-text-tertiary hover:text-notion-error transition-colors flex items-center gap-1.5">
+            <lucide-icon name="rotate-ccw" icon-class="size-3.5"></lucide-icon>
+            Discard changes
+        </button>
+        <span v-else class="text-[10px] text-notion-text-tertiary">Edit the YAML above to make changes</span>
+        <div class="flex items-center gap-3 ml-auto">
+            <button @click="closeYamlModal()" class="px-4 h-9 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Close</button>
+            <button
+                @click="saveRawSettings()"
+                :disabled="!rawYamlDirty"
+                :class="['px-6 h-9 rounded-md text-xs font-bold transition-all flex items-center gap-2', rawYamlDirty ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-notion-bg-hover text-notion-text-tertiary cursor-not-allowed opacity-50']">
+                <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
+                Save Config
+            </button>
+        </div>
+    </div>
+</modal>
+
+<!-- Readme Editor Modal -->
+<modal
+    :open="showReadmeModal"
+    title="Readme Editor"
+    :subtitle="readmeFilePath"
+    subtitle-class="font-mono"
+    icon="file-text"
+    max-width="max-w-3xl"
+    panel-class="bg-notion-bg-secondary max-h-[90vh]"
+    @close="closeReadmeModal()">
+    <template #header-actions>
+        <div v-if="readmeDirty" class="flex items-center gap-1.5 text-amber-500">
+            <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+            <span class="text-[10px] font-medium">Unsaved changes</span>
+        </div>
+    </template>
+
+    <!-- Editor -->
+    <div class="flex-1 overflow-hidden p-4 min-h-0">
+        <div class="relative h-full min-h-100 rounded border overflow-hidden" :class="readmeDirty ? 'border-amber-500/40' : 'border-notion-border'">
+            <textarea
+                v-model="readmeContent"
+                wrap="off"
+                class="absolute inset-0 w-full h-full bg-notion-bg font-mono text-xs p-4 text-notion-text-primary focus:outline-none resize-none caret-amber-500"
+                style="line-height: 1.45rem; tab-size: 2; white-space: pre"
+                spellcheck="false"
+                placeholder="Enter readme content here..."></textarea>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-notion-border flex items-center justify-between gap-4 bg-notion-bg/30 shrink-0">
+        <button v-if="readmeDirty" @click="readmeContent = readmeOriginal" class="text-xs text-notion-text-tertiary hover:text-notion-error transition-colors flex items-center gap-1.5">
+            <lucide-icon name="rotate-ccw" icon-class="size-3.5"></lucide-icon>
+            Discard changes
+        </button>
+        <span v-else class="text-[10px] text-notion-text-tertiary">Edit the readme.txt above - included in all uploads when enabled</span>
+        <div class="flex items-center gap-3 ml-auto">
+            <button @click="closeReadmeModal()" class="px-4 h-9 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Close</button>
+            <button
+                @click="saveReadme()"
+                :disabled="!readmeDirty"
+                :class="['px-6 h-9 rounded-md text-xs font-bold transition-all flex items-center gap-2', readmeDirty ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-notion-bg-hover text-notion-text-tertiary cursor-not-allowed opacity-50']">
+                <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
+                Save Readme
+            </button>
+        </div>
+    </div>
+</modal>
+
+<!-- Folder Browser Modal -->
+<modal
+    :open="folderBrowser.open"
+    title="Browse Folders"
+    icon="folder-open"
+    max-width="max-w-lg"
+    panel-class="bg-notion-bg-secondary max-h-[70vh]"
+    z-class="z-100"
+    @close="closeFolderBrowser()">
+    <!-- Current Path -->
+    <div class="px-4 py-2 border-b border-notion-border bg-notion-bg flex items-center gap-2 shrink-0">
+        <lucide-icon name="map-pin" icon-class="size-3 text-notion-text-tertiary shrink-0"></lucide-icon>
+        <span class="text-xs font-mono text-notion-text-secondary truncate">{{ folderBrowser.currentPath }}</span>
+    </div>
+
+    <!-- Directory Listing -->
+    <div class="overflow-y-auto flex-1 min-h-0">
+        <!-- Up / Parent -->
+        <button v-if="folderBrowser.parentPath !== null" @click="browseTo(folderBrowser.parentPath)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left border-b border-notion-divider">
+            <lucide-icon name="corner-left-up" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+            <span class="text-xs text-notion-accent font-medium">..</span>
+        </button>
+
+        <!-- Loading -->
+        <div v-if="folderBrowser.loading" class="px-4 py-8 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-2" icon-class="size-5 mx-auto mb-2 animate-spin opacity-50"></lucide-icon>
+            <p class="text-xs">Loading...</p>
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="folderBrowser.dirs.length === 0" class="empty-state py-8">
+            <lucide-icon name="folder-x" icon-class="empty-state-icon size-6 opacity-40"></lucide-icon>
+            <p class="empty-state-title">No subdirectories found</p>
+        </div>
+
+        <!-- Directories -->
+        <button v-else v-for="dir in folderBrowser.dirs" :key="dir.path" @click="browseTo(dir.path)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left group">
+            <lucide-icon name="folder" icon-class="size-3.5 text-notion-text-tertiary group-hover:text-notion-accent transition-colors"></lucide-icon>
+            <span class="text-xs text-notion-text-primary truncate">{{ dir.name }}</span>
+        </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-4 py-3 border-t border-notion-border flex items-center justify-between shrink-0 bg-notion-bg">
+        <span class="text-[10px] text-notion-text-tertiary">Navigate to the desired folder, then click Select</span>
+        <div class="flex items-center gap-2">
+            <button @click="closeFolderBrowser()" class="px-3 h-8 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
+            <button @click="selectBrowsedFolder()" class="btn-primary px-4 h-8 rounded-md text-xs font-bold flex items-center gap-2">
+                <lucide-icon name="check" icon-class="size-3.5"></lucide-icon>
+                Select
+            </button>
+        </div>
+    </div>
+</modal>
+
+</div>
+
+
+                </div>
+            </main>
+
+            <!-- Unified Footer -->
+            <footer class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-5 md:px-6 lg:px-8 border-t border-notion-divider mt-8">
+                <div class="flex items-center justify-end gap-4">
+                    <div class="flex items-center gap-2 text-notion-text-secondary mr-auto">
+                        <img src="/assets/images/logo.png" alt="NZBPostarr Logo" class="dark:hidden size-5 object-contain" />
+                        <img src="/assets/images/logo_white.png" alt="NZBPostarr Logo" class="hidden dark:block size-5 object-contain" />
+                        <span class="text-xs font-medium">NZBPostarr {{ appVersionLabel }}</span>
+                        <span class="text-[10px] px-1.5 py-0.5 bg-notion-bg-hover border border-notion-border rounded text-notion-text-secondary font-bold uppercase tracking-wider">STABLE</span>
+                    </div>
+
+                    <div class="hidden sm:flex items-center gap-4">
+                        <a href="/docs" class="min-h-8 px-2 text-[11px] text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-1.5" title="Documentation">
+                            <lucide-icon name="book-open" icon-class="size-3.5"></lucide-icon>
+                            Docs
+                        </a>
+                        <a href="/indexer-guides" class="min-h-8 px-2 text-[11px] text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-1.5" title="Indexer Guides">
+                            <lucide-icon name="globe" icon-class="size-3.5"></lucide-icon>
+                            Indexers
+                        </a>
+                        <a href="https://github.com/polyn0mial/nzbpostarr" target="_blank" rel="noopener" class="min-h-8 px-2 text-[11px] text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-1.5" title="View Source on GitHub">
+                            <lucide-icon name="github" icon-class="size-3.5"></lucide-icon>
+                            GitHub
+                        </a>
+                    </div>
+                </div>
+            </footer>
+
+            <!-- Toast Container (Vue-driven) -->
+            <div v-if="toasts.length" class="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-4 z-50 space-y-2 pointer-events-none">
+                <transition-group>
+                    <div v-for="toast in toasts" :key="toast.id" class="pointer-events-auto max-w-md bg-notion-bg-secondary border border-notion-border rounded-lg shadow-lg overflow-hidden min-w-0 sm:min-w-75">
+                        <div class="px-4 py-3 flex items-start gap-3">
+                            <div :class="toastIconClass(toast)">
+                                <lucide-icon :name="toastIcon(toast)" icon-class="size-5"></lucide-icon>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-sm font-semibold text-notion-text-primary">{{ toast.title }}</h3>
+                                <p class="text-xs text-notion-text-secondary mt-1">{{ toast.message }}</p>
+                                <div v-if="toast.actions && toast.actions.length" class="flex items-center gap-2 mt-2">
+                                    <button
+                                        v-for="action in toast.actions"
+                                        :key="action.label"
+                                        @click="action.callback(); removeToast(toast.id)"
+                                        class="px-2.5 py-1 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded text-[10px] font-medium hover:bg-notion-bg-active hover:text-notion-text-primary transition-colors flex items-center gap-1">
+                                        <lucide-icon v-if="action.icon" :name="action.icon" icon-class="size-3"></lucide-icon>
+                                        {{ action.label }}
+                                    </button>
+                                </div>
+                            </div>
+                            <button @click="removeToast(toast.id)" class="icon-btn shrink-0">
+                                <lucide-icon name="x" icon-class="size-4"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="h-0.5 bg-notion-border relative overflow-hidden">
+                            <div :class="toastProgressClass(toast)" class="h-full transition-colors duration-300"></div>
+                        </div>
+                    </div>
+                </transition-group>
+            </div>
+
+            <!-- Shared Confirm Dialog (Vue-driven, see confirmDialog() in page-base.js) -->
+            <Transition name="modal">
+                <div v-if="confirmState.open" class="fixed inset-0 z-60 flex items-end sm:items-center justify-center sm:p-4" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+                    <div class="absolute inset-0 bg-black/60" @click="cancelConfirmDialog()"></div>
+                    <div class="relative bg-notion-bg border border-notion-border rounded-t-xl sm:rounded-xl shadow-2xl w-full max-w-md flex flex-col">
+                        <div class="shrink-0 flex items-center justify-between px-5 py-4 border-b border-notion-border bg-notion-bg-secondary">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <lucide-icon :name="confirmState.icon" :icon-class="['size-5', confirmState.danger ? 'text-notion-error' : 'text-notion-accent']"></lucide-icon>
+                                <h3 id="confirm-dialog-title" class="text-lg font-semibold text-notion-text-primary truncate">{{ confirmState.title }}</h3>
+                            </div>
+                            <button @click="cancelConfirmDialog()" class="icon-btn shrink-0" aria-label="Cancel">
+                                <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="px-5 py-4 space-y-2">
+                            <p class="text-sm text-notion-text-primary whitespace-pre-line wrap-break-word">{{ confirmState.message }}</p>
+                            <p v-if="confirmState.detail" class="text-xs text-notion-text-tertiary whitespace-pre-line wrap-break-word">{{ confirmState.detail }}</p>
+                            <input
+                                v-if="confirmState.prompt"
+                                ref="confirmDialogInput"
+                                v-model="confirmState.value"
+                                :type="confirmState.inputType"
+                                :placeholder="confirmState.placeholder"
+                                class="mt-1 px-3 h-9 w-full bg-notion-bg border border-notion-border rounded-md text-sm text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+                        </div>
+                        <div class="shrink-0 flex items-center justify-end gap-2 px-5 py-3 border-t border-notion-border bg-notion-bg-secondary rounded-b-xl">
+                            <button @click="cancelConfirmDialog()" class="btn-secondary px-4 h-9 rounded-lg text-xs font-medium">{{ confirmState.cancelLabel }}</button>
+                            <button ref="confirmDialogAccept" @click="acceptConfirmDialog()" :class="confirmState.danger ? 'btn-danger' : 'btn-primary'" class="px-4 h-9 rounded-lg text-xs font-medium">{{ confirmState.confirmLabel }}</button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </div>
+        <!-- End #app -->
+
+        
+<script type="module" crossorigin src="/assets/js/dist/pages/settings/index.js?t=0"></script>
+
+    </body>
+</html>

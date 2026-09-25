@@ -1,160 +1,18 @@
-import { createVuePage, formatUtils, colorClassMap, isMovieType, statusConfig, categoryMeta } from 'page-base';
+import { createVuePage, statusConfig, categoryMeta } from 'page-base';
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import debounce from 'lodash.debounce';
+import { statusBadgeClass } from '../../shared/status.js';
+
+import { buildUploadGroupFromServerGroup } from './groups.js';
+import { knownIssuesMethods } from './known-issues.js';
+import { selectionMethods } from './selection.js';
 
 dayjs.extend(utc);
 
 // ============================================================
 //  UPLOADS PAGE - Full Vue Reactive Implementation
 // ============================================================
-
-// Per-season completeness stats for one TV season bucket built by buildUploadGroupSeasons:
-// total size, the missing-episode list (when there are at least 2 known episode numbers to
-// bound a range), and whether the whole season looks entirely absent.
-function computeUploadSeasonStats(season) {
-    season.totalSize = season.items.reduce((sum, it) => sum + (Number(it.filesize) || 0), 0);
-    season.missingCount = 0;
-    season.missingList = [];
-    season.expectedEps = 0;
-    season.foundEps = 0;
-    season.firstEp = 0;
-    season.lastEp = 0;
-    season.allEpMissing = false;
-
-    if (season.epNumbers.length === 0 && season.items.length > 0) {
-        // Season 0 (specials) are inherently incomplete - never flag them as "All EP Missing".
-        if (season.num !== 0) {
-            season.allEpMissing = true;
-        }
-    } else if (season.epNumbers.length >= 2) {
-        season.epNumbers.sort((a, b) => a - b);
-        const first = season.epNumbers[0];
-        const last = season.epNumbers[season.epNumbers.length - 1];
-        const epSet = new Set(season.epNumbers);
-        const missing = [];
-        for (let e = first; e <= last; e++) {
-            if (!epSet.has(e)) missing.push(e);
-        }
-        season.firstEp = first;
-        season.lastEp = last;
-        season.expectedEps = last - first + 1;
-        season.foundEps = epSet.size;
-        season.missingCount = missing.length;
-        season.missingList = missing.slice(0, 20);
-    }
-}
-
-// Bucket a TV group's items into season sub-groups (or its stray movie-item bucket), expand
-// multi-episode ranges (e.g. E05-E06 -> [5, 6]), then compute per-season stats. Fills in
-// `group.movieItems`, `.seasonList`, `.missingCount`, and `.allEpMissingSeasonsCount` in place.
-function buildUploadGroupSeasons(group) {
-    const seasonsMap = new Map();
-    for (const item of group.items) {
-        // Items individually classified as movies shouldn't be jammed into Season 0 - keep
-        // them in a separate bucket.
-        if (isMovieType(item.media_type) && !item.season_number && !item.episode_number) {
-            group.movieItems.push(item);
-            continue;
-        }
-
-        const seasonNum = item.season_number || 0;
-        const epNum = item.episode_number || null;
-        const epEnd = item.episode_end_number || null;
-
-        if (!seasonsMap.has(seasonNum)) {
-            seasonsMap.set(seasonNum, {
-                num: seasonNum,
-                label: 'S' + String(seasonNum).padStart(2, '0'),
-                items: [],
-                epNumbers: [],
-            });
-        }
-        const season = seasonsMap.get(seasonNum);
-        season.items.push(item);
-        if (epNum !== null) {
-            if (epEnd !== null && epEnd > epNum) {
-                for (let e = epNum; e <= epEnd; e++) {
-                    season.epNumbers.push(e);
-                }
-            } else {
-                season.epNumbers.push(epNum);
-            }
-        }
-    }
-
-    group.seasonList = Array.from(seasonsMap.values()).sort((a, b) => a.num - b.num);
-
-    group.missingCount = 0;
-    group.allEpMissingSeasonsCount = 0;
-    for (const season of group.seasonList) {
-        computeUploadSeasonStats(season);
-        if (season.allEpMissing) group.allEpMissingSeasonsCount++;
-        group.missingCount += season.missingCount;
-    }
-}
-
-// One server-side group -> one row for the grouped-uploads view. A summary-only group (details
-// not loaded yet) and a movie group both short-circuit before season analysis; only a loaded TV
-// group needs buildUploadGroupSeasons.
-function buildUploadGroupFromServerGroup(sg) {
-    const rawItems = Array.isArray(sg.items) ? sg.items : [];
-    const detailsLoaded = Array.isArray(sg.items) && !sg.summary_only;
-    const itemCount = Number(sg.item_count ?? rawItems.length) || 0;
-    const titleKey = sg.title_key || (sg.show_name || '').toLowerCase();
-
-    if (!detailsLoaded) {
-        return {
-            key: titleKey,
-            titleKey,
-            name: sg.show_name,
-            items: rawItems,
-            itemCount,
-            mediaType: (sg.media_type || 'other').toLowerCase(),
-            isMovie: isMovieType(sg.media_type || ''),
-            movieItems: [],
-            seasonList: [],
-            missingCount: 0,
-            allEpMissingSeasonsCount: 0,
-            totalSize: Number(sg.total_size || 0),
-            latestDate: sg.latest_date || null,
-            detailsLoaded,
-        };
-    }
-
-    // Determine media type: use server-provided value, or vote across items for the most
-    // common type.
-    const rawType = (sg.media_type || '').toLowerCase();
-    const isMovie = isMovieType(rawType);
-
-    const group = {
-        key: titleKey,
-        titleKey,
-        name: sg.show_name,
-        items: rawItems,
-        itemCount,
-        mediaType: rawType || 'other',
-        isMovie: isMovie,
-        movieItems: [],   // movie-typed items inside a TV group
-        detailsLoaded,
-    };
-
-    group.totalSize = group.items.reduce((sum, it) => sum + (Number(it.filesize) || 0), 0);
-    group.latestDate = group.items.reduce((latest, it) => {
-        return it.updated_at > latest ? it.updated_at : latest;
-    }, group.items[0].updated_at);
-
-    // Movies: skip season/episode analysis entirely
-    if (isMovie) {
-        group.seasonList = [];
-        group.missingCount = 0;
-        group.allEpMissingSeasonsCount = 0;
-        return group;
-    }
-
-    buildUploadGroupSeasons(group);
-    return group;
-}
 
 // The history routes report a database failure (e.g. a locked DB) either as an error status
 // with a `detail` message or as an empty payload carrying an `error` message. Treat the latter
@@ -414,6 +272,9 @@ const vm = createVuePage({
     },
 
     methods: {
+        ...selectionMethods,
+        ...knownIssuesMethods,
+
         // ============================================================
         //  Category Icon Helpers
         // ============================================================
@@ -525,16 +386,7 @@ const vm = createVuePage({
         },
 
         jobStatusBadgeClass(status) {
-            const config = this.getJobStatusConfig(status);
-            return `inline-flex items-center gap-1 px-2 rounded uppercase font-bold tracking-tight py-0.5 text-[10px] ${config.bg} ${config.text || config.color}`;
-        },
-
-        toggleSelectAllJobs() {
-            if (this.isAllJobsSelected) {
-                this.selectedJobIds = [];
-            } else {
-                this.selectedJobIds = this.jobsList.map(j => j.job_id);
-            }
+            return statusBadgeClass(status);
         },
 
         async loadJobs() {
@@ -671,49 +523,6 @@ const vm = createVuePage({
         },
 
         // ============================================================
-        //  Known Issues Panel
-        // ============================================================
-        toggleKnownIssuesPanel() {
-            this.knownIssuesOpen = !this.knownIssuesOpen;
-            if (this.knownIssuesOpen && this.knownIssues.length === 0) {
-                this.loadKnownIssues();
-            }
-        },
-
-        async loadKnownIssues() {
-            if (!this.isConnected) return;
-            this.knownIssuesLoading = true;
-            try {
-                const params = new URLSearchParams({ include_muted: String(this.knownIssuesShowMuted) });
-                const result = await this.apiFetch(`/api/uploads/errors/grouped?${params}`);
-                this.knownIssues = Array.isArray(result?.issues) ? result.issues : [];
-            } catch (e) {
-                if (!e.isOffline) {
-                    this.showToast('error', 'Error', 'Failed to load known issues');
-                }
-            } finally {
-                this.knownIssuesLoading = false;
-            }
-        },
-
-        async toggleIssueMute(issue) {
-            const wasMuted = issue.muted;
-            try {
-                const endpoint = wasMuted ? '/api/uploads/errors/unmute' : '/api/uploads/errors/mute';
-                await this.apiPost(endpoint, { indexer_id: issue.indexer_id, signature: issue.signature });
-                issue.muted = !wasMuted;
-                this.showToast('success', wasMuted ? 'Unmuted' : 'Muted', wasMuted ? 'Issue restored to the default view' : 'Issue silenced');
-                if (!this.knownIssuesShowMuted && issue.muted) {
-                    this.knownIssues = this.knownIssues.filter(i => i !== issue);
-                }
-            } catch (e) {
-                if (!e.isOffline) {
-                    this.showToast('error', 'Error', `Failed to ${wasMuted ? 'unmute' : 'mute'} issue`);
-                }
-            }
-        },
-
-        // ============================================================
         //  Data Loading
         // ============================================================
         async loadIndexers() {
@@ -828,32 +637,6 @@ const vm = createVuePage({
         },
 
         // ============================================================
-        //  Selection
-        // ============================================================
-        toggleSelectAll(checked) {
-            if (checked) {
-                this.uploads.forEach(item => this.selectedItems.add(item.item_name));
-            } else {
-                this.selectedItems.clear();
-            }
-            this.selectAll = checked;
-        },
-
-        toggleItemSelection(itemName, checked) {
-            if (checked) {
-                this.selectedItems.add(itemName);
-            } else {
-                this.selectedItems.delete(itemName);
-            }
-            // Update selectAll state
-            this.selectAll = this.selectedItems.size === this.uploads.length && this.uploads.length > 0;
-        },
-
-        isItemSelected(itemName) {
-            return this.selectedItems.has(itemName);
-        },
-
-        // ============================================================
         //  Delete Operations
         // ============================================================
         async deleteUpload(itemName) {
@@ -914,39 +697,6 @@ const vm = createVuePage({
 
         toggleSeason(key) {
             this.expandedSeasons[key] = !this.expandedSeasons[key];
-        },
-
-        isGroupSelected(group) {
-            if (!group || !Array.isArray(group.items) || !group.items.length) return false;
-            const eps = group.items.filter(it => it.episode_number != null);
-            if (eps.length === 0) {
-                // No individual episodes - check if ALL items are selected
-                return group.items.length > 0 && group.items.every(it => this.selectedItems.has(it.item_name));
-            }
-            // If eps exist, check if all EPISODES are selected (ignore packs)
-            return eps.every(it => this.selectedItems.has(it.item_name));
-        },
-
-        toggleGroupSelection(group, checked) {
-            if (!group || !Array.isArray(group.items) || !group.items.length) return;
-            const eps = group.items.filter(it => it.episode_number != null);
-            const targets = eps.length > 0 ? eps : group.items;
-
-            targets.forEach(it => {
-                if (checked) {
-                    this.selectedItems.add(it.item_name);
-                } else {
-                    this.selectedItems.delete(it.item_name);
-                }
-            });
-
-            // If we are unchecking, and it's a season/group header, also uncheck any packs in that group/season
-            // because otherwise checking the season again would do nothing (behaviorally, usually uncheck = full clear)
-            if (!checked) {
-                group.items.forEach(it => this.selectedItems.delete(it.item_name));
-            }
-
-            this.selectAll = this.selectedItems.size === this.uploads.length && this.uploads.length > 0;
         },
 
         async loadGroupDetails(group) {

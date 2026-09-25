@@ -30,7 +30,7 @@ def test_stats_engine_parsing_and_formatting() -> None:
 
 
 def test_process_stats_collector_ranks_rows_and_honors_collapsed_sections(monkeypatch) -> None:
-    from logic import process_stats
+    from logic.stats import process_stats
 
     class FakeProcess:
         def __init__(self, info):
@@ -78,7 +78,7 @@ def test_process_stats_collector_ranks_rows_and_honors_collapsed_sections(monkey
 
 
 def test_process_stats_collector_skips_idle_quiet_ui(monkeypatch) -> None:
-    from logic import process_stats
+    from logic.stats import process_stats
 
     monkeypatch.setattr(
         process_stats.psutil,
@@ -99,7 +99,8 @@ def test_process_stats_collector_skips_idle_quiet_ui(monkeypatch) -> None:
 
 
 def test_headless_stats_command_outputs_json_without_starting_collector(monkeypatch, capsys) -> None:
-    from logic import services, stats_engine
+    from logic import services
+    from logic.stats import collector as stats_engine, system_info
 
     sample = {
         "hostname": "test-host",
@@ -120,7 +121,7 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
     }
 
     monkeypatch.setattr(services, "init_app", lambda: None)
-    monkeypatch.setattr(stats_engine, "collect_instant_system_info", lambda interval_seconds=0.25: sample)
+    monkeypatch.setattr(system_info, "collect_instant_system_info", lambda interval_seconds=0.25: sample)
 
     def fail_start_collector(*_args, **_kwargs):
         raise AssertionError("headless stats should not start the background collector")
@@ -135,10 +136,10 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
     assert payload["network"]["connections"] == 7
 
 def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
-    from logic import stats_engine
+    from logic.stats import system_info
 
     monkeypatch.setattr(
-        stats_engine,
+        system_info,
         "collect_instant_system_info",
         lambda interval_seconds=0.25: {"hostname": "test-host", "platform": "TestOS", "uptime_seconds": 0},
     )
@@ -164,7 +165,7 @@ def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
     assert "Stopped." in output
 
 def test_arm_process_reaper_schedules_boot_scan_in_background(monkeypatch) -> None:
-    from logic import process_reaper
+    from logic.system import reaper as process_reaper
 
     calls: list[str] = []
 
@@ -492,7 +493,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
             ),
         )
         assert deps_api._stats_collector_required() is expect_collector, case_name
-        assert deps_api._stats_history_enabled() is expect_history, case_name
+        assert deps_api.feature_enabled("history") is expect_history, case_name
 
     patch_hit(
         monkeypatch,
@@ -963,7 +964,7 @@ def test_log_pack_completion_state_uses_verbose_level(monkeypatch) -> None:
     ]
 
 def test_parse_nzb_structure_collects_files_and_segments(tmp_path) -> None:
-    from logic.usenet_stream import parse_nzb_structure
+    from logic.stream.nzb import parse_nzb_structure
 
     source = tmp_path / "sample.nzb"
     source.write_text(
@@ -993,7 +994,7 @@ def test_parse_nzb_structure_collects_files_and_segments(tmp_path) -> None:
     assert file_entry["segments"][1]["message_id"] == "<part2@example>"
 
 def test_build_procjson_inputs_points_back_to_helper(tmp_path) -> None:
-    from logic.usenet_stream import build_procjson_inputs
+    from logic.stream.manifest import build_procjson_inputs
 
     manifest_path = tmp_path / "release.stream.json"
     manifest = {
@@ -1010,10 +1011,27 @@ def test_build_procjson_inputs_points_back_to_helper(tmp_path) -> None:
     first = json.loads(inputs[0][len("procjson://") :])
     assert first[0] == "one.bin"
     assert first[1] == 111
-    assert "logic.usenet_stream" in first[2]
+    assert "logic.stream.manifest" in first[2]
+    assert "-m logic.stream.manifest emit --manifest" in first[2]
+
+
+def test_stream_manifest_module_is_runnable_helper() -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "logic.stream.manifest", "emit", "--help"],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "python -m logic.stream.manifest emit" in result.stdout
 
 def test_resolve_source_nzb_paths_supports_file_and_directory(tmp_path) -> None:
-    from logic.usenet_stream import resolve_source_nzb_paths
+    from logic.stream.repost import resolve_source_nzb_paths
 
     single = tmp_path / "single.nzb"
     single.write_text("<nzb></nzb>", encoding="utf-8")

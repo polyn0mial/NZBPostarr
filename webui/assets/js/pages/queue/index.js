@@ -19,6 +19,7 @@ import jobsList from "./jobs-list.js";
 import jobControls from "./job-controls.js";
 import activeJobModal from "./active-job-modal.js";
 import queuedJobModal from "./queued-job-modal.js";
+import { startPageComponents } from "../../core/page.js";
 
 const features = [
   sortable,
@@ -373,3 +374,4 @@ persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterM
   } catch (_overlayError) {
   }
 }
+startPageComponents();
