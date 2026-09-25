@@ -82,15 +82,22 @@ from core.registry import (
     submit_to_indexer,
 )
 
-from logic import folder_monitor, updater
+from logic import updater
+from logic import autoupload as autoupload
+from logic.pending import children as pending_children
+from logic.pending import completion as pending_completion
+from logic.pending import index as pending_index
+from logic.pending import overrides as pending_overrides
+from logic.pending import rules as pending_rules
+from logic.pending import selection as pending_selection
+from logic.pending import tree as pending_tree
+from logic.pending import view as pending_view
 from logic.classify import content as classify_content
 from logic.classify import explicit as classify_explicit
 from logic.classify import names as classify_names
 from logic.classify import tv_packs as classify_tv_packs
 from logic.classify.anime import cached_lookup as anime_cached_lookup
 from logic.pending import roots as pending_roots
-
-from logic import pending_snapshot as pending_snapshot_mod
 
 from logic import headless as headless_mod
 
@@ -391,9 +398,17 @@ def _make_pending_snapshot(
     }
 
 def _pending_lazy_children(snapshot: dict[str, object], item: dict[str, object]) -> list[dict[str, object]]:
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic import autoupload as autoupload
+    from logic.pending import children as pending_children
+    from logic.pending import completion as pending_completion
+    from logic.pending import index as pending_index
+    from logic.pending import overrides as pending_overrides
+    from logic.pending import rules as pending_rules
+    from logic.pending import selection as pending_selection
+    from logic.pending import tree as pending_tree
+    from logic.pending import view as pending_view
 
-    result = pending_snapshot_mod.build_external_children_for_request(
+    result = pending_children.build_external_children_for_request(
         snapshot,
         str(item.get("key") or ""),
         str(item.get("path") or ""),
@@ -429,7 +444,6 @@ def _make_dashboard_summary_service():
 
 def _configure_pending_snapshot_environment(
     monkeypatch,
-    pending_snapshot_mod,
     conf,
     *,
     dashboard_data,
@@ -443,26 +457,27 @@ def _configure_pending_snapshot_environment(
         def enabled(self, _conf):
             return list(indexers or [])
 
-    monkeypatch.setattr(pending_snapshot_mod, "get_config", lambda: conf)
+    for owner in (pending_tree, pending_completion, pending_view):
+        monkeypatch.setattr(owner, "get_config", lambda: conf)
     if callable(dashboard_data):
         monkeypatch.setattr(
-            pending_snapshot_mod.database,
+            db,
             "get_dashboard_data",
             lambda ids: _as_dashboard_data(dashboard_data(ids)),
         )
     else:
         monkeypatch.setattr(
-            pending_snapshot_mod.database,
+            db,
             "get_dashboard_data",
             lambda _ids: _as_dashboard_data(dashboard_data),
         )
     monkeypatch.setattr(
-        pending_snapshot_mod,
+        pending_tree,
         "get_configured_category_folders",
         lambda *_a, **_kw: configured_folders,
     )
     if compute_size_uncached is not None:
-        monkeypatch.setattr(pending_snapshot_mod, "compute_size_uncached", compute_size_uncached)
+        monkeypatch.setattr(pending_tree, "compute_size_uncached", compute_size_uncached)
     monkeypatch.setattr("core.registry.get_registry", lambda: _Registry())
     monkeypatch.setattr("core.registry.get_available_categories", lambda: list(available_categories or []))
     monkeypatch.setattr(
@@ -502,10 +517,11 @@ def _configure_pending_scan_all(
         def all(self):
             return list(indexers or [])
 
-    monkeypatch.setattr(app_mod, "get_config", lambda: _Conf())
-    monkeypatch.setattr(app_mod.database, "get_dashboard_data", lambda _ids: _as_dashboard_data(dashboard_data))
+    for owner in (pending_tree, pending_completion, pending_view):
+        monkeypatch.setattr(owner, "get_config", lambda: _Conf())
+    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: _as_dashboard_data(dashboard_data))
     monkeypatch.setattr(
-        app_mod,
+        pending_tree,
         "get_configured_category_folders",
         lambda _conf, include_external=True, must_exist=True: [(folder_category, folder_path)],
     )

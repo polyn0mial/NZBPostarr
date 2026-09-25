@@ -5,6 +5,7 @@ from app_base import (
     UploadService, asyncio, console, console_router, copy, dashboard_router, database, get_upload_service, indexers_router, logger, os, settings_router,
     uploads_router, usenet_stream,
 )
+from logic.pending.selection import category_upload_itype
 
 class UploadRequest(BaseModel):
     """API request model for starting an upload job."""
@@ -122,17 +123,7 @@ def _normalize_request_strings(values: List[str]) -> List[str]:
     return normalized
 
 def _default_itype_for_category(path: Path, category: str) -> str:
-    normalized = str(category or "").strip().lower()
-    if normalized == "tv":
-        return "TV Show" if path.is_dir() else "TV Episode"
-    return {
-        "movies": "Movie",
-        "anime": "Anime",
-        "music": "Music",
-        "audiobooks": "Audiobook",
-        "books": "Ebook",
-        "apps": "App",
-    }.get(normalized, "Misc")
+    return category_upload_itype(category, is_dir=path.is_dir())
 
 def _mask_config_secrets(value: Any, *, key: str = "") -> Any:
     normalized_key = str(key or "").strip().lower()
@@ -696,7 +687,7 @@ async def download_log_file() -> Response:
 async def reload_indexers_route() -> Dict[str, Any]:
     """Reload all indexer definitions from YAML files."""
     from core.registry import get_all_indexers, reload_indexers
-    from logic.pending_snapshot import invalidate_pending_indexer_context
+    from logic.pending.completion import invalidate_pending_indexer_context
 
     reload_indexers()
     invalidate_pending_indexer_context()

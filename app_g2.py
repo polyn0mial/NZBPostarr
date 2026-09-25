@@ -7,6 +7,7 @@ from app_base import (
     asyncio, database, get_configured_folders, get_upload_service, json, logger, os, processing, settings_router, system_router,
     tempfile, tests_router, time, updater, uploads_router, usenet_stream,
 )
+from logic.pending.selection import stamp_upload_itype
 from app_g1 import (BulkDeleteRequest, CreateBackupRequest, QueuePriorityRequest, QueueRevalidateRequest, QueueScheduleRequest, RemoveQueuedJobItemRequest, RenameJobRequest, ReorderQueueRequest, ReorderQueuedJobItemsRequest, StartQueueRequest, StreamStartResponse, UpdateInstallRequest, _history_database_error, _mask_config_secrets, _normalize_request_strings, _resolved_policy_path)  # noqa: F401
 
 def _bulk_selection_excluded_roots(conf: Any) -> tuple[Path, ...]:
@@ -786,6 +787,7 @@ def _slim_pending_node(node: Any) -> Any:
     if not isinstance(node, dict):
         return node
     slim = {key: value for key, value in node.items() if not str(key).startswith("_")}
+    stamp_upload_itype(slim)
     raw_children = node.get("children")
     raw_files = node.get("files")
     child_source = raw_children if isinstance(raw_children, list) else raw_files

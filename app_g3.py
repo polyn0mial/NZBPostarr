@@ -158,20 +158,20 @@ async def update_pending_group_order_locked(req: PendingGroupOrderLockedRequest)
 @pending_router.get("/category-overrides")
 def get_category_overrides() -> Dict[str, Any]:
     """Return all persisted manual category overrides for pending items."""
-    from logic import category_overrides
+    from logic.pending import overrides as pending_overrides
 
-    return {"overrides": category_overrides.get_all()}
+    return {"overrides": pending_overrides.get_all()}
 
 @pending_router.post("/category-overrides")
 def set_category_override(req: CategoryOverrideRequest) -> Dict[str, Any]:
     """Persist (or clear, when category is empty) a manual category override."""
-    from logic import category_overrides
+    from logic.pending import overrides as pending_overrides
 
     key = (req.key or "").strip()
     if not key:
         raise HTTPException(status_code=400, detail="Missing item key")
     category = (req.category or "").strip().lower() or None
-    category_overrides.set_override(key, category)
+    pending_overrides.set_override(key, category)
     return {"status": "success", "key": key, "category": category}
 
 def _slim_pending_items(items: Any) -> Any:

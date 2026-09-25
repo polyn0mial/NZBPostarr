@@ -7,7 +7,7 @@ import tarfile
 from tests.support import *
 
 import app_base
-from logic import category_overrides
+from logic.pending import overrides as pending_overrides
 from logic.queueing import ProcessingJobRequest as _RealProcessingJobRequest
 from logic.services import UploadService
 
@@ -152,9 +152,9 @@ def test_create_full_backup_failure_is_a_readable_500(monkeypatch) -> None:
 @pytest.fixture
 def _override_store(monkeypatch, tmp_path):
     monkeypatch.setattr(config_mod, "APP_ROOT", tmp_path)
-    monkeypatch.setattr(category_overrides, "_path", None)
-    monkeypatch.setattr(category_overrides, "_store", {})
-    monkeypatch.setattr(category_overrides, "_loaded", False)
+    monkeypatch.setattr(pending_overrides, "_path", None)
+    monkeypatch.setattr(pending_overrides, "_store", {})
+    monkeypatch.setattr(pending_overrides, "_loaded", False)
     return tmp_path
 
 
@@ -285,7 +285,7 @@ def test_anime_check_has_no_cooldown_after_an_empty_batch(monkeypatch) -> None:
     monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(enable_anime_checking=True))
     uncached_calls: list[object] = []
     monkeypatch.setattr(
-        pending_snapshot_mod,
+        pending_index,
         "collect_uncached_anime_check_names",
         lambda _data: uncached_calls.append(_data) or ["Some Title"],
     )

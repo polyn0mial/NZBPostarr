@@ -62,7 +62,7 @@ def log_queue_update(*, red_indexers: int, total_tasks: int) -> None:
 def request_live_queue_refresh(reason: str = "manual") -> None:
     """Refresh pending snapshot and live statistics after DB-backed status changes."""
     try:
-        from logic.pending_index import get_pending_index_manager
+        from logic.pending.index import get_pending_index_manager
 
         get_pending_index_manager().request_refresh(reason=f"db-{reason}")
     except Exception as exc:  # pylint: disable=broad-exception-caught

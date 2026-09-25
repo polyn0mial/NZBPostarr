@@ -20,7 +20,7 @@ from app_base import (
     get_configured_category_folders as get_configured_category_folders, get_configured_folders as get_configured_folders,
     get_pending_index_manager as get_pending_index_manager, get_upload_service as get_upload_service, hashlib as hashlib, hmac as hmac,
     indexers_router as indexers_router, json as json, logger as logger, os as os, pending_router as pending_router,
-    pending_snapshot_mod as pending_snapshot_mod, processing as processing, re as re, scan_configured_items as scan_configured_items,
+    processing as processing, re as re, scan_configured_items as scan_configured_items,
     settings_router as settings_router, start_watchdog_observer as start_watchdog_observer, stats_router as stats_router,
     stop_watchdog_observer as stop_watchdog_observer, system_router as system_router, tempfile as tempfile, templates as templates,
     tests_router as tests_router, threading as threading, time as time, updater as updater, uploads_router as uploads_router, urllib as urllib,
@@ -80,6 +80,10 @@ from app_g3 import (
     stop_all_service_activity as stop_all_service_activity, update_pending_group_order as update_pending_group_order,
     update_pending_group_order_locked as update_pending_group_order_locked,
 )
+from logic.pending import children as pending_children
+from logic.pending import index as pending_index_mod
+from logic.pending import tree as pending_tree
+from logic.pending import view as pending_view
 from logic.stats_engine import dashboard_stats_enabled, history_tracking_enabled, stats_page_enabled
 
 _anime_check_inflight: bool = False  # True while Jikan background check is running
@@ -590,7 +594,7 @@ async def get_current_settings() -> Dict[str, Any]:
 
 def _invalidate_pending_indexer_context() -> None:
     """Drop the pending tree's cached indexer ticks after an indexer change."""
-    from logic.pending_snapshot import invalidate_pending_indexer_context
+    from logic.pending.completion import invalidate_pending_indexer_context
 
     invalidate_pending_indexer_context()
 
@@ -641,7 +645,7 @@ async def update_settings(_section: str, updates: Dict[str, Any]) -> Dict[str, A
         if _section == "folders":
             monitor_status: Dict[str, Any] = {"attempted": True, "ok": True}
             try:
-                from logic.folder_monitor import restart_folder_monitor
+                from logic.autoupload import restart_folder_monitor
 
                 await restart_folder_monitor()
             except Exception as exc:
@@ -783,10 +787,7 @@ async def _stop_startup_reaper() -> None:
         pass
 
 def _scan_pending_all() -> Dict[str, Any]:
-    pending_snapshot_mod.get_config = get_config
-    pending_snapshot_mod.get_configured_category_folders = get_configured_category_folders
-    pending_snapshot_mod.database = database
-    return pending_snapshot_mod.scan_pending_snapshot()
+    return pending_tree.scan_pending_snapshot()
 
 def _refresh_pending_snapshot_now(reason: str = "manual") -> Dict[str, Any]:
     """Rebuild the pending snapshot synchronously and replace the cache."""
@@ -822,7 +823,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
     global _anime_check_inflight, _anime_check_thread
     from logic.classify.anime import check_titles_batch
 
-    names = pending_snapshot_mod.collect_uncached_anime_check_names(data)
+    names = pending_index_mod.collect_uncached_anime_check_names(data)
     if not names:
         return
 
@@ -866,7 +867,7 @@ def get_pending_summary() -> Dict[str, Any]:
 
     if not data:
         return {
-            "summary": pending_snapshot_mod.empty_pending_summary(),
+            "summary": pending_view.empty_pending_summary(),
             "categories": [],
             "indexers": [],
             "cached_at": None,
@@ -924,7 +925,7 @@ def get_pending_items(
         data = state.get("snapshot")
 
     if not data:
-        res = pending_snapshot_mod.filter_pending_snapshot({}, search, category, literal)
+        res = pending_view.filter_pending_snapshot({}, search, category, literal)
         res["ready"] = False
         res["refreshing"] = True
         res["anime_detecting"] = _anime_check_inflight
@@ -946,7 +947,7 @@ def get_pending_items(
         }
 
     anime_enabled = bool(getattr(get_config(), "enable_anime_checking", False))
-    if anime_enabled and pending_snapshot_mod.collect_uncached_anime_check_names(data):
+    if anime_enabled and pending_index_mod.collect_uncached_anime_check_names(data):
         with _anime_check_lock:
             can_start = not _anime_check_inflight and (_anime_check_thread is None or not _anime_check_thread.is_alive())
             if can_start:
@@ -956,7 +957,7 @@ def get_pending_items(
     if not search and category == "all" and not literal:
         res = dict(data)
     else:
-        res = pending_snapshot_mod.filter_pending_snapshot(data, search, category, literal)
+        res = pending_view.filter_pending_snapshot(data, search, category, literal)
 
     # Return only top-level pending rows.
     # Build fresh containers so the shared cached snapshot remains untouched.
@@ -979,7 +980,7 @@ def get_pending_children(
     """Fetch children lazily for a specific pending directory node."""
     state = _pending_index.get_state()
     data = state.get("snapshot") or {}
-    return pending_snapshot_mod.build_external_children_for_request(data, key, path)
+    return pending_children.build_external_children_for_request(data, key, path)
 
 @pending_router.post("/anime-cache")
 def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, Any]:
@@ -1238,7 +1239,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         logger.debug(f"  [2/2] Stats Collector skipped ({time.time() - start:.3f}s)")
 
     # Folder Monitor (experimental) - auto-upload on new content
-    from logic.folder_monitor import start_folder_monitor
+    from logic.autoupload import start_folder_monitor
 
     await start_folder_monitor()
     logger.debug(f"  [3/3] Folder Monitor checked ({time.time() - start:.3f}s)")
@@ -1252,7 +1253,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.debug(f"  [3.5/4] Pending index manager started ({time.time() - start:.3f}s)")
 
     # Warm the pending tree's indexer context off the request path (daemon thread).
-    from logic.pending_snapshot import prewarm_pending_indexer_context
+    from logic.pending.completion import prewarm_pending_indexer_context
 
     prewarm_pending_indexer_context()
 
@@ -1271,7 +1272,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
     from core.database import checkpoint_wal
-    from logic.folder_monitor import stop_folder_monitor
+    from logic.autoupload import stop_folder_monitor
     from logic.process_reaper import shutdown_scheduler
     from logic.stats_engine import stop_collector
 

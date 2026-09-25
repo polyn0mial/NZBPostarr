@@ -203,7 +203,7 @@ def test_pending_bulk_selection_applies_exclusions_and_path_consolidation(tmp_pa
     assert [str(root) for root in app_mod._bulk_selection_excluded_roots(conf)] == [str(blocked_root.resolve())]
 
 def test_build_pending_summary_supports_dynamic_categories() -> None:
-    summary = pending_snapshot_mod.build_pending_summary(
+    summary = pending_view.build_pending_summary(
         {
             "tv": [
                 {"episode_count": 5, "indexers": {"geek": False, "planet": True}},
@@ -403,7 +403,7 @@ def test_pending_items_slims_children_without_mutating_cached_snapshot(monkeypat
     assert top_level["files"] == [child]
 
 def test_pending_snapshot_compacts_descendants_and_preserves_search() -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic.pending import view as pending_view
 
     children = [
         {
@@ -445,7 +445,7 @@ def test_pending_snapshot_compacts_descendants_and_preserves_search() -> None:
         return total
 
     before = retained_size(top)
-    search_index, metadata_blob = pending_snapshot_mod._compact_external_groups([{"items": [top]}])
+    search_index, metadata_blob = pending_view._compact_external_groups([{"items": [top]}])
     after = retained_size(top) + retained_size(search_index) + retained_size(metadata_blob)
 
     assert top["children"] == []
@@ -460,11 +460,11 @@ def test_pending_snapshot_compacts_descendants_and_preserves_search() -> None:
         _external_search_index=search_index,
         _external_metadata_zlib=metadata_blob,
     )
-    filtered = pending_snapshot_mod.filter_pending_snapshot(data, "S01E173", "all")
+    filtered = pending_view.filter_pending_snapshot(data, "S01E173", "all")
     assert filtered["items"]["external"][0]["items"] == [top]
 
 def test_pending_children_rejects_paths_outside_snapshot_root(tmp_path, monkeypatch) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic.pending import children as pending_children
 
     root = tmp_path / "root"
     top_path = root / "Release"
@@ -486,12 +486,12 @@ def test_pending_children_rejects_paths_outside_snapshot_root(tmp_path, monkeypa
         }
     )
     monkeypatch.setattr(
-        pending_snapshot_mod,
+        pending_children,
         "build_external_children_snapshot",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("outside path was accepted")),
     )
 
-    assert pending_snapshot_mod.build_external_children_for_request(
+    assert pending_children.build_external_children_for_request(
         data,
         "ext:root:../outside",
         str(outside),
@@ -570,7 +570,7 @@ def test_pending_filter_tv_includes_external_tv_groups() -> None:
         "categories": [{"id": "tv", "label": "TV Shows"}],
     }
 
-    result = pending_snapshot_mod.filter_pending_snapshot(data, None, "tv", False)
+    result = pending_view.filter_pending_snapshot(data, None, "tv", False)
 
     assert len(result["items"]["external"]) == 2
     assert result["items"]["external"][0]["items"][0]["name"] == "Show.With.Ambiguous.Name"
@@ -602,7 +602,7 @@ def test_collect_anime_check_names_includes_tv_movies_and_external() -> None:
         }
     }
 
-    names = pending_snapshot_mod.collect_anime_check_names(data)
+    names = pending_index.collect_anime_check_names(data)
 
     assert set(names) == {
         "Frieren",
@@ -1204,12 +1204,12 @@ def test_confirmed_anime_cache_still_overrides_external_tv_shape(monkeypatch, tm
     ],
 )
 def test_snapshot_metadata_keeps_unknown_video_for_manual_review(monkeypatch, tmp_path, name) -> None:
-    from logic import pending_snapshot
+    from logic.pending import tree as pending_tree
 
     entry = _touch(tmp_path / name, b"x")
     monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
-    metadata = pending_snapshot._build_detected_item_metadata(entry)
+    metadata = pending_tree._build_detected_item_metadata(entry)
 
     assert metadata["detected_category"] == "misc"
     assert metadata["detection_method"] == "Folder fallback"
@@ -1218,7 +1218,8 @@ def test_snapshot_metadata_keeps_unknown_video_for_manual_review(monkeypatch, tm
 
 
 def test_guessit_episode_signal_reaches_snapshot_and_processing(monkeypatch, tmp_path) -> None:
-    from logic import pending_snapshot, processing
+    from logic import processing
+    from logic.pending import tree as pending_tree
 
     episode = _touch(tmp_path / "Show.Name.S1.1.1080p.WEB-DL.mkv", b"x")
     parsed = {
@@ -1233,7 +1234,7 @@ def test_guessit_episode_signal_reaches_snapshot_and_processing(monkeypatch, tmp
         episode,
         anime_lookup=lambda _name: False,
     )
-    metadata = pending_snapshot._build_detected_item_metadata(episode)
+    metadata = pending_tree._build_detected_item_metadata(episode)
     processing_items = processing._collect_targeted_job_items(
         paths=[str(episode)],
         item_hints=[],
@@ -1257,7 +1258,7 @@ def test_guessit_episode_signal_reaches_snapshot_and_processing(monkeypatch, tmp
 
 
 def test_guessit_movie_collection_reaches_explicit_and_snapshot_paths(monkeypatch, tmp_path) -> None:
-    from logic import pending_snapshot
+    from logic.pending import tree as pending_tree
 
     collection = tmp_path / "Example.Trilogy.1080p.BluRay"
     _touch(collection / "First.Film.2001.1080p.BluRay.mkv", b"a")
@@ -1275,7 +1276,7 @@ def test_guessit_movie_collection_reaches_explicit_and_snapshot_paths(monkeypatc
         category_hint="external",
         anime_lookup=lambda _name: False,
     )
-    metadata = pending_snapshot._build_detected_item_metadata(collection, category_hint="external")
+    metadata = pending_tree._build_detected_item_metadata(collection, category_hint="external")
 
     assert resolution.category == "movies"
     assert resolution.queue_paths == (collection,)
@@ -1429,7 +1430,7 @@ def test_resolve_explicit_path_disc_content_is_flagged_and_ignored(tmp_path) -> 
 
 @pytest.mark.parametrize("extension", [".iso", ".img", ".mdf", ".mds", ".nrg"])
 def test_bare_disc_images_are_apps_not_video_discs(monkeypatch, tmp_path, extension) -> None:
-    from logic import pending_snapshot
+    from logic.pending import tree as pending_tree
 
     release_dir = tmp_path / "SomeGame-RUNE"
     image = _touch(release_dir / f"somegame{extension}", b"a")
@@ -1449,7 +1450,7 @@ def test_bare_disc_images_are_apps_not_video_discs(monkeypatch, tmp_path, extens
     assert result.detection_method == "File scan"
     assert result.queue_paths == (image,)
     assert result.content_flags == ()
-    assert pending_snapshot._build_detected_item_metadata(release_dir)["detected_category"] == "apps"
+    assert pending_tree._build_detected_item_metadata(release_dir)["detected_category"] == "apps"
 
 
 def test_installer_folder_with_disc_image_is_app_content(tmp_path) -> None:
@@ -1639,7 +1640,7 @@ def test_scan_pending_snapshot_lazy_tree_sizes_each_top_level_folder_once(tmp_pa
     # queue-backend-16 (DECISIONS: lazy one-level pending tree): top-level folders are
     # scanned without children, so each is sized once with compute_size_uncached.
     from core.utils import compute_size_uncached as real_compute_size
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic.pending import tree as pending_tree
 
     external_dir = tmp_path / "external"
     release_dir = external_dir / "Release.Dir"
@@ -1658,14 +1659,13 @@ def test_scan_pending_snapshot_lazy_tree_sizes_each_top_level_folder_once(tmp_pa
 
     _configure_pending_snapshot_environment(
         monkeypatch,
-        pending_snapshot_mod,
         conf,
         dashboard_data=({}, {}, {}),
         configured_folders=[("external", external_dir)],
         compute_size_uncached=counting_size,
     )
 
-    payload = pending_snapshot_mod.scan_pending_snapshot()
+    payload = pending_tree.scan_pending_snapshot()
 
     item = payload["items"]["external"][0]["items"][0]
     assert sized == [release_dir]
@@ -1676,7 +1676,7 @@ def test_scan_pending_snapshot_lazy_tree_sizes_each_top_level_folder_once(tmp_pa
     assert payload["summary"]["external"] == 1
 
 def test_scan_pending_snapshot_exposes_bulk_selection_policy(tmp_path, monkeypatch) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic.pending import tree as pending_tree
 
     external_dir = tmp_path / "qbittorrent"
     release_dir = external_dir / "Release.Dir"
@@ -1695,20 +1695,19 @@ def test_scan_pending_snapshot_exposes_bulk_selection_policy(tmp_path, monkeypat
 
     _configure_pending_snapshot_environment(
         monkeypatch,
-        pending_snapshot_mod,
         conf,
         dashboard_data=(set(), {}, {}),
         configured_folders=[("external", external_dir)],
     )
 
-    payload = pending_snapshot_mod.scan_pending_snapshot()
+    payload = pending_tree.scan_pending_snapshot()
 
     assert payload["items"]["external"][0]["allow_bulk_selection"] is False
 
 def test_scan_pending_snapshot_external_dir_completion_rolls_up_from_deferred_children(tmp_path, monkeypatch) -> None:
     # queue-backend-16 (deferred completion as on the server): a folder is done for an
     # indexer when all of its direct children are in the upload map.
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic.pending import tree as pending_tree
 
     external_dir = tmp_path / "external"
     release_dir = external_dir / "Movie.Name.2026"
@@ -1721,7 +1720,6 @@ def test_scan_pending_snapshot_external_dir_completion_rolls_up_from_deferred_ch
 
     _configure_pending_snapshot_environment(
         monkeypatch,
-        pending_snapshot_mod,
         conf,
         dashboard_data=(set(), {movie_file.name: {"idx1"}}, {}),
         configured_folders=[("external", external_dir)],
@@ -1729,7 +1727,7 @@ def test_scan_pending_snapshot_external_dir_completion_rolls_up_from_deferred_ch
         resolve_backfill=lambda _idx, _conf: True,
     )
 
-    payload = pending_snapshot_mod.scan_pending_snapshot()
+    payload = pending_tree.scan_pending_snapshot()
 
     item = payload["items"]["external"][0]["items"][0]
     assert item["is_dir"] is True
@@ -1756,9 +1754,9 @@ def test_folder_monitor_trigger_uploads_respects_configured_category(monkeypatch
             return [{"job_id": "job-1", "category": "movies", "paths": grouped_paths["movies"]}]
 
     monkeypatch.setattr(services_mod, "get_upload_service", lambda: _FakeService())
-    monkeypatch.setattr(folder_monitor, "detect_auto_category", lambda _path: "tv")
+    monkeypatch.setattr(autoupload, "detect_auto_category", lambda _path: "tv")
 
-    folder_monitor._trigger_uploads(str(monitored_dir), {release_dir.name: "movies"})
+    autoupload._trigger_uploads(str(monitored_dir), {release_dir.name: "movies"})
 
     assert started == [
         (
@@ -1896,7 +1894,7 @@ def test_scan_pending_all_keeps_pokemon_folder_and_episodes_anime(monkeypatch, t
     assert top_item["detected_category"] == "anime"
     assert top_item["itype"] == "Anime"
     assert top_item["auto_selectable"] is True
-    assert "pokemon" in {name.casefold() for name in pending_snapshot_mod.collect_anime_check_names(result)}
+    assert "pokemon" in {name.casefold() for name in pending_index.collect_anime_check_names(result)}
 
 
 def test_scan_pending_all_ignored_extra_files_do_not_block_pack_completion(monkeypatch, tmp_path) -> None:
@@ -2044,7 +2042,6 @@ def test_targeted_job_assembly_never_uses_live_anime_lookup(monkeypatch, tmp_pat
 
 
 def test_dashboard_snapshot_rows_skip_external_items_without_category() -> None:
-    from logic import services as services_mod
 
     snapshot = {
         "items": {
@@ -2060,7 +2057,7 @@ def test_dashboard_snapshot_rows_skip_external_items_without_category() -> None:
         }
     }
 
-    rows = services_mod.UploadService._iter_dashboard_snapshot_rows(snapshot)
+    rows = pending_view.iter_dashboard_snapshot_rows(snapshot)
 
     assert rows == [
         ("movies", {"name": "Movie.One"}),
@@ -2229,4 +2226,100 @@ def test_pending_scan_category_folder_filtering(tmp_path) -> None:
         ("external", ext),
         ("external", implicit_ext),
         ("tv", tmp_path / "missing-tv"),
+    ]
+
+def test_bulk_selection_parity_between_ui_stamps_and_server_filter(tmp_path, monkeypatch) -> None:
+    # W10-B9: the rows the tree stamps as bulk-selectable are exactly the rows the server accepts.
+    from logic.pending import tree as pending_tree
+
+    manual_root = tmp_path / "manual"
+    bulk_root = tmp_path / "bulk"
+    for root in (manual_root, bulk_root):
+        release = root / "Movie.2026.1080p.WEB-DL"
+        release.mkdir(parents=True)
+        (release / "Movie.2026.1080p.WEB-DL.mkv").write_bytes(b"x")
+        (root / "Other.Movie.2025.1080p.BluRay.mkv").write_bytes(b"x")
+    conf = SimpleNamespace(
+        folder_paths=[
+            {"path": str(manual_root), "category": "external", "allow_bulk_selection": False},
+            {"path": str(bulk_root), "category": "external", "allow_bulk_selection": True},
+        ],
+        skip_files=None,
+    )
+    _configure_pending_snapshot_environment(
+        monkeypatch,
+        conf,
+        dashboard_data=(set(), {}, {}),
+        configured_folders=[("external", manual_root), ("external", bulk_root)],
+    )
+
+    payload = pending_tree.scan_pending_snapshot()
+
+    rows = [
+        (group, item)
+        for group in payload["items"]["external"]
+        for item in group.get("items") or []
+    ]
+    assert len(rows) == 4
+    stamped = {
+        item["path"]
+        for group, item in rows
+        if group.get("allow_bulk_selection", True) and item.get("auto_selectable")
+    }
+    accepted, excluded = app_mod._filter_bulk_selectable_items(
+        [{"path": item["path"]} for _group, item in rows if item.get("auto_selectable")], conf
+    )
+    assert stamped == {entry["path"] for entry in accepted}
+    assert stamped and excluded == 2
+
+
+def test_pending_rows_and_children_carry_the_server_upload_itype(tmp_path, monkeypatch) -> None:
+    from logic.pending import tree as pending_tree
+
+    external_dir = tmp_path / "external"
+    pack = external_dir / "Show.S01.1080p.WEB-DL"
+    pack.mkdir(parents=True)
+    for episode in (1, 2):
+        (pack / f"Show.S01E0{episode}.1080p.WEB-DL.mkv").write_bytes(b"x")
+    conf = SimpleNamespace(folder_paths=[{"path": str(external_dir), "category": "external"}], skip_files=None)
+    _configure_pending_snapshot_environment(
+        monkeypatch,
+        conf,
+        dashboard_data=(set(), {}, {}),
+        configured_folders=[("external", external_dir)],
+    )
+
+    payload = pending_tree.scan_pending_snapshot()
+    slim = app_mod._slim_pending_items(payload["items"])
+    top = slim["external"][0]["items"][0]
+    assert top["upload_itype"] == top["itype"]
+
+    children = pending_children.build_external_children_for_request(payload, top["key"], top["path"])["children"]
+    assert children
+    assert {child["upload_itype"] for child in children} == {"TV Episode"}
+
+
+def test_upload_itype_falls_back_to_the_category_upload_mapping() -> None:
+    assert pending_selection.upload_itype({"itype": "External", "detected_category": "tv", "is_dir": True}) == "TV Show"
+    assert pending_selection.upload_itype({"itype": "", "category": "books"}) == "Ebook"
+    assert pending_selection.upload_itype({"itype": "Anime", "category": "tv"}) == "Anime"
+    assert app_mod._default_itype_for_category(Path("missing.mkv"), "tv") == "TV Episode"
+
+
+def test_autoupload_characterization_monitors_manual_selection_only_roots(monkeypatch) -> None:
+    # W10-B9 characterization: auto-upload does NOT consult "Manual selection only"
+    # (allow_bulk_selection=False); a monitored root is watched either way. Kept as-is
+    # pending the owner's decision, so it is not routed through pending.selection.
+    conf = SimpleNamespace(
+        get_folder_path_entries=lambda: [
+            {"path": "/media/manual", "category": "movies", "monitor": True, "allow_bulk_selection": False},
+            {"path": "/media/bulk", "category": "tv", "monitor": True},
+            {"path": "/media/off", "category": "tv", "monitor": False},
+        ]
+    )
+    monkeypatch.setattr("core.config.get_config", lambda: conf)
+
+    assert autoupload._get_monitored_folders() == [
+        {"path": "/media/manual", "category": "movies"},
+        {"path": "/media/bulk", "category": "tv"},
     ]

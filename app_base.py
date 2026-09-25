@@ -37,9 +37,8 @@ from core import database
 from core.config import APP_ROOT, get_config
 from core.redaction import SECRET_MASK
 from core.utils import VIDEO_EXTENSIONS, start_watchdog_observer, stop_watchdog_observer
-from logic import pending_snapshot as pending_snapshot_mod
 from logic import processing, updater, usenet_stream
-from logic.pending_index import get_pending_index_manager
+from logic.pending.index import get_pending_index_manager
 from logic.pending.roots import (
     get_configured_category_folders,
     get_configured_folders,
@@ -82,7 +81,7 @@ __all__ = [
     'console', 'console_router', 'copy', 'dashboard_router', 'database', 'get_config',
     'get_configured_category_folders', 'get_configured_folders', 'get_pending_index_manager',
     'get_upload_service', 'hashlib', 'hmac', 'indexers_router', 'json', 'logger', 'os', 'pending_router',
-    'pending_snapshot_mod', 'processing', 're', 'scan_configured_items', 'settings_router',
+    'processing', 're', 'scan_configured_items', 'settings_router',
     'start_watchdog_observer', 'stats_router', 'stop_watchdog_observer', 'system_router', 'tempfile',
     'templates', 'tests_router', 'threading', 'time', 'updater', 'uploads_router', 'urllib', 'usenet_stream',
 ]
