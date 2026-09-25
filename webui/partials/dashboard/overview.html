@@ -1,0 +1,316 @@
+    <!-- Primary Stats Section -->
+    <section
+        v-if="shouldRenderCard('overview')"
+        class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-all duration-200"
+        :class="[cardDragClass('overview'), dashboardCardStateClass('overview')]"
+        :style="{ order: cardOrder('overview') }"
+        data-card="overview"
+        :draggable="editMode"
+        @dragstart="onCardDragStart($event, 'overview')"
+        @dragover.prevent="onCardDragOver($event, 'overview')"
+        @drop="onCardDrop($event, 'overview')"
+        @dragend="onCardDragEnd()">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none" @click="toggleSection('overview')">
+            <div class="flex items-center gap-2">
+                <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded" @click.stop>
+                    <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <lucide-icon :name="isSectionExpanded('overview') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="layout-grid" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Overview</h2>
+            </div>
+            <div class="flex items-center gap-2" @click.stop>
+                <button
+                    v-show="editMode"
+                    @click="toggleDashboardCard('overview')"
+                    :class="['dashboard-toggle-btn', isDashboardCardEnabled('overview') ? 'is-enabled' : '']"
+                    :title="isDashboardCardEnabled('overview') ? 'Disable card' : 'Enable card'"
+                    class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <lucide-icon :name="isDashboardCardEnabled('overview') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                    <span>{{ isDashboardCardEnabled('overview') ? 'Disable' : 'Enable' }}</span>
+                </button>
+            </div>
+        </div>
+        <div :class="sectionContentClass('overview')">
+            <div>
+                <div class="p-3">
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 relative">
+                        <!-- Last 24h -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-green-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="calendar-check" icon-class="size-3.5 text-notion-success"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Last 24h</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.today }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Rolling 24h Window</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Total Inventories -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-indigo-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="folder-open" icon-class="size-3.5 text-indigo-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Total (TV/Movies)</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.totalInventory.pending }} / {{ stats.totalInventory.complete }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Total items</div>
+                                <div class="infotip-footer">Inventory breakdown: Pending / Complete</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Total Uploads (all-time DB count) -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger" title="Total releases successfully uploaded since start of database">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-notion-accent-muted rounded-md flex items-center justify-center shrink-0">
+                                    <img src="/assets/images/logo.png" alt="NZBPostarr" class="dark:hidden size-4 object-contain" />
+                                    <img src="/assets/images/logo_white.png" alt="NZBPostarr" class="hidden dark:block size-4 object-contain" />
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Total Uploads</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.total }}</p>
+                                </div>
+                            </div>
+                            <div class="infotip-content">
+                                <div class="infotip-header">All-time uploaded (DB count)</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- 24h Avg Speed -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger" title="Average speed from last 24 hours">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-yellow-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="zap" icon-class="size-3.5 text-notion-warning"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">24h Avg Speed</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ formatSpeed(stats.speed) }}</p>
+                                </div>
+                            </div>
+                            <div class="infotip-content">
+                                <div class="infotip-header">Average upload speed (last 24h)</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- GB per Hour -->
+                        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger" title="GB uploaded per hour of active upload time (24h window)">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-emerald-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="gauge" icon-class="size-3.5 text-emerald-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">GB/Hour</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.gbPerHour }}</p>
+                                </div>
+                            </div>
+                            <div class="infotip-content">
+                                <div class="infotip-header">GB per active upload hour (last 24h)</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- TV Pending -->
+                        <div v-if="isTvEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-cyan-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="tv" icon-class="size-3.5 text-cyan-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">TV Pending</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.tv.pending }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('tv')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- TV Complete -->
+                        <div v-if="isTvEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-teal-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="tv-2" icon-class="size-3.5 text-teal-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">TV Complete</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.tv.complete }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('tv')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- TV Episodes -->
+                        <div v-if="isTvEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-violet-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="list-video" icon-class="size-3.5 text-violet-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">TV (Episodes)</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.tv.episodes.uploaded }} / {{ stats.tv.episodes.total }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('tv')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Movies Pending -->
+                        <div v-if="isMoviesEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-rose-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="film" icon-class="size-3.5 text-rose-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Movies Pending</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.movies.pending }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('movies')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+
+                        <!-- Movies Complete -->
+                        <div v-if="isMoviesEnabled" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex items-center gap-3 transition-colors hover:bg-notion-bg-hover infotip-trigger">
+                            <div class="flex items-center gap-2">
+                                <div class="size-7 bg-red-500/15 rounded-md flex items-center justify-center shrink-0">
+                                    <lucide-icon name="clapperboard" icon-class="size-3.5 text-red-400"></lucide-icon>
+                                </div>
+                                <div class="min-w-0 flex-1">
+                                    <p class="text-notion-text-tertiary uppercase tracking-wide text-[10px] leading-tight">Movies Complete</p>
+                                    <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ stats.movies.complete }}</p>
+                                </div>
+                            </div>
+                            <!-- Fancy Tooltip -->
+                            <div class="infotip-content">
+                                <div class="infotip-header">Indexer Breakdown</div>
+                                <div class="flex flex-col">
+                                    <div v-for="item in getBreakdownList('movies')" :key="item.id" class="infotip-row">
+                                        <div class="flex items-center gap-1.5 min-w-0">
+                                            <img v-if="item.favicon" :src="item.favicon" referrerpolicy="no-referrer" class="size-2.5 object-contain" @error="item.favicon = null" />
+                                            <lucide-icon v-else :name="item.icon" :icon-class="['size-2.5', getColorClasses(item.color).text]" :icon-style="getColorClasses(item.color).style?.text"></lucide-icon>
+                                            <span class="truncate text-notion-text-secondary">{{ item.id }}</span>
+                                        </div>
+                                        <span class="infotip-value font-bold transition-colors">
+                                            <span :class="item.complete === item.total ? 'text-green-500' : 'text-red-500'">{{ item.complete }}</span>
+                                            /{{ item.total }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Uploads by Indexer Subsection -->
+                    <div class="mt-3 pt-3 border-t border-notion-divider">
+                        <div class="flex items-center gap-2 mb-2">
+                            <lucide-icon name="database" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-xs font-medium text-notion-text-secondary uppercase tracking-wide">Uploads by Indexer</span>
+                        </div>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+                            <div
+                                v-for="indexer in loadedIndexers"
+                                :key="indexer.id"
+                                class="bg-notion-bg border border-notion-border rounded-lg p-3 hover:border-notion-accent/30 transition-colors infotip-trigger relative"
+                                :class="[!indexer.enabled ? 'opacity-40 grayscale' : '', indexer.search_url && indexer.enabled ? 'cursor-pointer' : '']">
+                                <!-- Enable/Disable toggle -->
+                                <label class="absolute top-1.5 right-1.5 z-5 cursor-pointer opacity-50 hover:opacity-100 transition-opacity" @click.stop title="Toggle indexer on/off">
+                                    <input type="checkbox" :checked="indexer.enabled" @change="toggleIndexer(indexer)" class="size-2.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                                </label>
+                                <a v-if="indexer.search_url && indexer.enabled" :href="getSearchUrl(indexer)" target="_blank" class="absolute inset-0 z-1 rounded-lg"></a>
+                                <div class="flex items-center gap-2 relative z-0">
+                                    <div class="size-7 rounded-md flex items-center justify-center shrink-0 bg-notion-bg-hover">
+                                        <img v-if="indexer.favicon_url && !indexer.faviconError" :src="indexer.favicon_url" referrerpolicy="no-referrer" class="size-4 object-contain" @error="handleFaviconError(indexer)" />
+                                        <lucide-icon v-else :name="indexer.icon || 'database'" :icon-class="['size-3.5', getColorClasses(indexer.color).text]" :icon-style="getColorClasses(indexer.color).style?.text"></lucide-icon>
+                                    </div>
+                                    <div class="min-w-0 flex-1">
+                                        <p class="text-[10px] text-notion-text-tertiary uppercase tracking-wide truncate">{{ indexer.name }}</p>
+                                        <p class="text-sm font-semibold text-notion-text-primary whitespace-nowrap">{{ formatIndexerStats(indexer.stats) }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>

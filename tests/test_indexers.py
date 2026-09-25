@@ -3,6 +3,7 @@
 """NZBPostarr indexers tests."""
 
 from tests.support import *
+from logic import settings as settings_service
 
 def test_indexer_secret_resolution() -> None:
     idx = IndexerDefinition(
@@ -46,7 +47,7 @@ def test_ordinary_api_secret_masking_and_save_merge() -> None:
         nntp_servers=[current_server],
         web_password="private-web-password",
     )
-    masked = settings_api._mask_config_secrets(
+    masked = settings_service.mask_config_secrets(
         {
             "enable_password": True,
             "api_keys": conf.api_keys,
@@ -61,7 +62,7 @@ def test_ordinary_api_secret_masking_and_save_merge() -> None:
     assert masked["nntp_servers"][0]["user"] == SECRET_MASK
     assert masked["nntp_servers"][0]["password"] == SECRET_MASK
 
-    merged = settings_api._merge_masked_secret_updates(
+    merged = settings_service.merge_masked_secret_updates(
         {
             "api_keys": {"geek": SECRET_MASK},
             "usernames": {"omg": SECRET_MASK},

@@ -21,7 +21,8 @@ from core.utils import (
     reset_thread_job,
     set_thread_job,
 )
-from logic import processing, usenet_stream
+from logic import processing
+from logic.stream import manifest as stream_manifest, monitors as stream_monitors, repost as stream_repost
 from logic.pending.index import get_pending_index_manager
 from logic.pending.view import build_dashboard_summary
 from logic.jobs.models import ProcessingJobRequest, StreamJobRequest
@@ -320,7 +321,7 @@ class UploadService(QueueServiceMixin):
             if not request.source_path:
                 raise RuntimeError("Stream source path is missing")
 
-            manifest_path = usenet_stream.build_stream_manifest_path(
+            manifest_path = stream_manifest.build_stream_manifest_path(
                 request.release_name or Path(str(request.source_path)).stem
             )
             with self._lock:
@@ -329,7 +330,7 @@ class UploadService(QueueServiceMixin):
                 job["cleanup_paths"] = list(dict.fromkeys(cleanup_paths))
                 self._persist_jobs_locked()
 
-            usenet_stream.stream_nzb_upload(
+            stream_repost.stream_nzb_upload(
                 source_path=Path(str(request.source_path)),
                 category=request.category,
                 release_name=request.release_name,
@@ -343,7 +344,7 @@ class UploadService(QueueServiceMixin):
         except Exception as e:  # pylint: disable=broad-exception-caught
             self._mark_job_failed(job, e, log_prefix="STREAM JOB CRASHED")
             if job.get("source_monitor_id"):
-                usenet_stream.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
+                stream_monitors.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
         finally:
             reset_thread_job(token)
 

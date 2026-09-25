@@ -5,7 +5,8 @@
 from tests.support import *
 
 def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
-    from logic import services, usenet_stream
+    from logic import services
+    from logic.stream import repost as stream_repost
 
     captured: dict[str, object] = {}
 
@@ -16,7 +17,7 @@ def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(services, "init_app", lambda: None)
     monkeypatch.setattr(services, "get_upload_service", lambda: FakeService())
-    monkeypatch.setattr(usenet_stream, "resolve_source_nzb_paths", lambda _source: [Path("D:/tmp/example.nzb")])
+    monkeypatch.setattr(stream_repost, "resolve_source_nzb_paths", lambda _source: [Path("D:/tmp/example.nzb")])
 
     rc = cli_run.run_headless(
         [
@@ -52,9 +53,9 @@ def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
     assert "Stream Jobs Queued" in output
 
 def test_stream_request_normalization_contract() -> None:
-    from logic import usenet_stream
+    from logic.stream import nntp as stream_nntp, repost as stream_repost
 
-    options = usenet_stream.normalize_stream_request(
+    options = stream_repost.normalize_stream_request(
         upload_filename="release.nzb",
         source_path=None,
         monitor_folder=False,
@@ -72,15 +73,16 @@ def test_stream_request_normalization_contract() -> None:
         {"upload_filename": "a.txt", "source_path": None, "monitor_folder": False},
     ]
     for values in invalid_cases:
-        with pytest.raises(usenet_stream.StreamError):
-            usenet_stream.normalize_stream_request(
+        with pytest.raises(stream_nntp.StreamError):
+            stream_repost.normalize_stream_request(
                 **values,
                 category=None,
                 submit_mode=None,
             )
 
 def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys) -> None:
-    from logic import services, usenet_stream
+    from logic import services
+    from logic.stream import monitors as stream_monitors
 
     captured: dict[str, object] = {}
 
@@ -99,7 +101,7 @@ def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys
             "test_mode": kwargs["test_mode"],
         }
 
-    monkeypatch.setattr(usenet_stream, "add_stream_monitor", fake_add_stream_monitor)
+    monkeypatch.setattr(stream_monitors, "add_stream_monitor", fake_add_stream_monitor)
 
     rc = cli_run.run_headless(
         [
@@ -130,11 +132,12 @@ def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys
     assert "active folder watching only runs in the long-lived app/WebUI process" in output
 
 def test_headless_stream_monitors_list_json(monkeypatch, capsys) -> None:
-    from logic import services, usenet_stream
+    from logic import services
+    from logic.stream import monitors as stream_monitors
 
     monkeypatch.setattr(services, "init_app", lambda: None)
     monkeypatch.setattr(
-        usenet_stream,
+        stream_monitors,
         "list_stream_monitors",
         lambda: [
             {
@@ -159,7 +162,7 @@ def test_headless_stream_monitors_list_json(monkeypatch, capsys) -> None:
     assert payload[0]["last_job"]["status"] == "completed"
 
 def test_untrusted_nzb_xml_rejects_entity_expansion(tmp_path) -> None:
-    from logic import usenet_stream
+    from logic.stream import nntp as stream_nntp, nzb as stream_nzb
 
     source = tmp_path / "unsafe.nzb"
     source.write_text(
@@ -167,8 +170,8 @@ def test_untrusted_nzb_xml_rejects_entity_expansion(tmp_path) -> None:
         encoding="utf-8",
     )
 
-    with pytest.raises(usenet_stream.StreamError, match="Invalid NZB XML"):
-        usenet_stream._read_nzb_xml_root(source)
+    with pytest.raises(stream_nntp.StreamError, match="Invalid NZB XML"):
+        stream_nzb._read_nzb_xml_root(source)
 
 def test_parse_nyuu_article_bytes_decimal_units():
     from logic.uploaders import _parse_nyuu_article_bytes
@@ -181,7 +184,7 @@ def test_parse_nyuu_article_bytes_decimal_units():
     assert _parse_nyuu_article_bytes("1 MiB") == 1024**2
 
 def test_upload_stream_manifest_does_not_override_nzb_subject(tmp_path, monkeypatch) -> None:
-    from logic import usenet_stream
+    from logic.stream import repost as stream_repost
 
     manifest_path = tmp_path / "manifest.json"
     manifest_path.write_text('{"files": [{"name": "sample.bin", "size": 10}]}', encoding="utf-8")
@@ -215,11 +218,11 @@ def test_upload_stream_manifest_does_not_override_nzb_subject(tmp_path, monkeypa
         _write_valid_test_nzb(nzb_path)
         return True, ["Finished uploading in 00:00:01"]
 
-    monkeypatch.setattr(usenet_stream, "get_config", lambda: conf)
-    monkeypatch.setattr(usenet_stream, "build_procjson_inputs", lambda *_args, **_kwargs: ["procjson://input"])
-    monkeypatch.setattr(usenet_stream, "run_command", fake_run_command)
+    monkeypatch.setattr(stream_repost, "get_config", lambda: conf)
+    monkeypatch.setattr(stream_repost, "build_procjson_inputs", lambda *_args, **_kwargs: ["procjson://input"])
+    monkeypatch.setattr(stream_repost, "run_command", fake_run_command)
 
-    result, generated_nzb = usenet_stream.upload_stream_manifest(
+    result, generated_nzb = stream_repost.upload_stream_manifest(
         manifest_path,
         "Release.Name",
         server,
@@ -325,7 +328,7 @@ def test_submit_to_indexer_rebuilds_streams_for_cloudflare_retry(tmp_path, monke
     assert all(handle.closed for handle in handles)
 
 def test_decode_yenc_article_round_trips_payload() -> None:
-    from logic.usenet_stream import decode_yenc_article
+    from logic.stream.nntp import decode_yenc_article
 
     def encode_yenc(payload: bytes) -> bytes:
         encoded = bytearray()
@@ -352,7 +355,7 @@ def test_decode_yenc_article_round_trips_payload() -> None:
     assert meta["size"] == "12"
 
 def test_prepare_stream_manifest_uses_probe_results(tmp_path, monkeypatch) -> None:
-    from logic import usenet_stream
+    from logic.stream import manifest as stream_manifest
 
     source = tmp_path / "release.nzb"
     source.write_text(
@@ -373,7 +376,7 @@ def test_prepare_stream_manifest_uses_probe_results(tmp_path, monkeypatch) -> No
         def close(self) -> None:
             return None
 
-    monkeypatch.setattr(usenet_stream, "UsenetReader", lambda: DummyReader())
+    monkeypatch.setattr(stream_manifest, "UsenetReader", lambda: DummyReader())
 
     seen: list[str] = []
 
@@ -383,9 +386,9 @@ def test_prepare_stream_manifest_uses_probe_results(tmp_path, monkeypatch) -> No
             return "one.bin", 111
         return "two.bin", 222
 
-    monkeypatch.setattr(usenet_stream, "probe_file_details", fake_probe)
+    monkeypatch.setattr(stream_manifest, "probe_file_details", fake_probe)
 
-    manifest = usenet_stream.prepare_stream_manifest(source, release_name="Custom.Release")
+    manifest = stream_manifest.prepare_stream_manifest(source, release_name="Custom.Release")
 
     assert seen == ["One yEnc", "Two yEnc"]
     assert manifest["release_name"] == "Custom.Release"
@@ -394,7 +397,7 @@ def test_prepare_stream_manifest_uses_probe_results(tmp_path, monkeypatch) -> No
     assert [entry["size"] for entry in manifest["files"]] == [111, 222]
 
 def test_stream_nzb_upload_respects_post_only_and_selected_server(tmp_path, monkeypatch) -> None:
-    from logic import usenet_stream
+    from logic.stream import repost as stream_repost
 
     source = tmp_path / "input.nzb"
     source.write_text("<nzb></nzb>", encoding="utf-8")
@@ -408,24 +411,24 @@ def test_stream_nzb_upload_respects_post_only_and_selected_server(tmp_path, monk
     uploaded: dict[str, str] = {}
     submit_called = {"value": False}
 
-    monkeypatch.setattr(usenet_stream, "_enabled_servers", lambda: [primary, backup])
+    monkeypatch.setattr(stream_repost, "_enabled_servers", lambda: [primary, backup])
     monkeypatch.setattr(
-        usenet_stream,
+        stream_repost,
         "prepare_stream_manifest",
         lambda _source, _release: {"files": [{"name": "one.bin", "size": 10}], "total_size": 10},
     )
-    monkeypatch.setattr(usenet_stream, "write_stream_manifest", lambda manifest, destination: destination)
+    monkeypatch.setattr(stream_repost, "write_stream_manifest", lambda manifest, destination: destination)
 
     def fake_upload(manifest_path, release_name, server, total_size, *, nzb_path=None):
         uploaded["server_name"] = server.name
         return ({"duration": 1.0, "speed_bps": 2.0, "server_name": server.name}, tmp_path / "out.nzb")
 
-    monkeypatch.setattr(usenet_stream, "upload_stream_manifest", fake_upload)
-    monkeypatch.setattr(usenet_stream, "record_nntp_success", lambda *args, **kwargs: None)
-    monkeypatch.setattr(usenet_stream, "update_db_destination", lambda *args, **kwargs: True)
-    monkeypatch.setattr(usenet_stream, "submit_api", lambda *args, **kwargs: submit_called.__setitem__("value", True))
+    monkeypatch.setattr(stream_repost, "upload_stream_manifest", fake_upload)
+    monkeypatch.setattr(stream_repost, "record_nntp_success", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stream_repost, "update_db_destination", lambda *args, **kwargs: True)
+    monkeypatch.setattr(stream_repost, "submit_api", lambda *args, **kwargs: submit_called.__setitem__("value", True))
 
-    result = usenet_stream.stream_nzb_upload(
+    result = stream_repost.stream_nzb_upload(
         source_path=source,
         category="misc",
         release_name="Custom.Release",
@@ -440,45 +443,45 @@ def test_stream_nzb_upload_respects_post_only_and_selected_server(tmp_path, monk
     assert submit_called["value"] is False
 
 def test_add_stream_monitor_persists_configuration(tmp_path, monkeypatch) -> None:
-    from logic import usenet_stream
+    from logic.stream import monitors as stream_monitors, repost as stream_repost
 
     watch_folder = tmp_path / "watch"
     watch_folder.mkdir()
     server = SimpleNamespace(name="Primary")
 
-    monkeypatch.setattr(usenet_stream, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
-    monkeypatch.setattr(usenet_stream, "_enabled_servers", lambda: [server])
+    monkeypatch.setattr(stream_monitors, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+    monkeypatch.setattr(stream_repost, "_enabled_servers", lambda: [server])
 
-    usenet_stream._stream_monitor_entries.clear()
-    usenet_stream._stream_monitor_pending.clear()
-    usenet_stream._stream_monitor_known.clear()
-    usenet_stream._stream_monitor_state_loaded = False
+    stream_monitors._stream_monitor_entries.clear()
+    stream_monitors._stream_monitor_pending.clear()
+    stream_monitors._stream_monitor_known.clear()
+    stream_monitors._stream_monitor_state_loaded = False
 
-    monitor = usenet_stream.add_stream_monitor(folder_path=str(watch_folder), category="misc")
-    listed = usenet_stream.list_stream_monitors()
+    monitor = stream_monitors.add_stream_monitor(folder_path=str(watch_folder), category="misc")
+    listed = stream_monitors.list_stream_monitors()
 
     assert monitor["folder_path"] == str(watch_folder.resolve())
     assert len(listed) == 1
     assert listed[0]["posting_server_name"] == "Primary"
-    assert usenet_stream.remove_stream_monitor(monitor["id"]) is True
+    assert stream_monitors.remove_stream_monitor(monitor["id"]) is True
 
 def test_stream_monitor_tracks_last_job_snapshot(tmp_path, monkeypatch) -> None:
-    from logic import usenet_stream
+    from logic.stream import monitors as stream_monitors, repost as stream_repost
 
     watch_folder = tmp_path / "watch"
     watch_folder.mkdir()
     server = SimpleNamespace(name="Primary")
 
-    monkeypatch.setattr(usenet_stream, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
-    monkeypatch.setattr(usenet_stream, "_enabled_servers", lambda: [server])
+    monkeypatch.setattr(stream_monitors, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+    monkeypatch.setattr(stream_repost, "_enabled_servers", lambda: [server])
 
-    usenet_stream._stream_monitor_entries.clear()
-    usenet_stream._stream_monitor_pending.clear()
-    usenet_stream._stream_monitor_known.clear()
-    usenet_stream._stream_monitor_state_loaded = False
+    stream_monitors._stream_monitor_entries.clear()
+    stream_monitors._stream_monitor_pending.clear()
+    stream_monitors._stream_monitor_known.clear()
+    stream_monitors._stream_monitor_state_loaded = False
 
-    monitor = usenet_stream.add_stream_monitor(folder_path=str(watch_folder), category="misc")
-    usenet_stream.record_stream_monitor_job(
+    monitor = stream_monitors.add_stream_monitor(folder_path=str(watch_folder), category="misc")
+    stream_monitors.record_stream_monitor_job(
         monitor["id"],
         {
             "job_id": "abcd1234",
@@ -491,7 +494,7 @@ def test_stream_monitor_tracks_last_job_snapshot(tmp_path, monkeypatch) -> None:
         },
     )
 
-    listed = usenet_stream.list_stream_monitors()
+    listed = stream_monitors.list_stream_monitors()
 
     assert listed[0]["last_job"]["job_id"] == "abcd1234"
     assert listed[0]["last_job"]["status"] == "completed"
