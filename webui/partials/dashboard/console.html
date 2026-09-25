@@ -1,0 +1,88 @@
+    <!-- Console Output (Collapsible, Resizable, default collapsed) -->
+    <section
+        v-if="shouldRenderCard('console')"
+        :class="[consoleSectionClass, cardDragClass('console'), dashboardCardStateClass('console')]"
+        class="transition-all duration-200"
+        :style="{ order: cardOrder('console') }"
+        data-card="console"
+        :draggable="editMode"
+        @dragstart="onCardDragStart($event, 'console')"
+        @dragover.prevent="onCardDragOver($event, 'console')"
+        @drop="onCardDrop($event, 'console')"
+        @dragend="onCardDragEnd()">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none console-header" @click="toggleSection('console')">
+            <div class="flex items-center gap-2 shrink-0">
+                <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded" @click.stop>
+                    <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <lucide-icon :name="isSectionExpanded('console') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="terminal" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Console Output</h2>
+            </div>
+            <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3" @click.stop>
+                <div class="flex flex-wrap items-center gap-2 sm:gap-3 console-controls-row" v-show="isSectionExpanded('console')">
+                    <!-- Activity indicator - shown when job is running -->
+                    <span v-show="isJobRunning" class="flex items-center gap-1.5">
+                        <span class="size-2 bg-notion-accent rounded-full animate-pulse"></span>
+                        <span class="text-xs text-notion-accent hidden xs:inline">Processing...</span>
+                    </span>
+                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer" title="Expand console width">
+                        <input type="checkbox" v-model="consoleConfig.wide" class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                        Wide
+                    </label>
+                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer" title="Wrap long console lines">
+                        <input type="checkbox" v-model="consoleConfig.wordWrap" class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                        Wrap
+                    </label>
+                    <label class="flex items-center gap-1.5 text-xs text-notion-text-tertiary cursor-pointer">
+                        <input type="checkbox" v-model="consoleConfig.autoScroll" checked class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                        Auto-scroll
+                    </label>
+                    <button @click="copyConsoleLogs()" class="flex items-center text-xs text-notion-text-tertiary hover:text-notion-accent transition-colors" title="Copy to clipboard">
+                        <lucide-icon name="copy" icon-class="size-3.5"></lucide-icon>
+                    </button>
+                    <button @click="clearConsoleLogs()" class="flex items-center text-xs text-notion-text-tertiary hover:text-notion-text-secondary transition-colors" title="Clear console">
+                        <lucide-icon name="x" icon-class="size-3.5"></lucide-icon>
+                    </button>
+                    <a href="/api/console/log-file" target="_blank" class="flex items-center text-xs text-notion-text-tertiary hover:text-notion-accent transition-colors" title="Open raw log file">
+                        <lucide-icon name="file-text" icon-class="size-3.5"></lucide-icon>
+                    </a>
+                </div>
+                <button
+                    v-show="editMode"
+                    @click="toggleDashboardCard('console')"
+                    :class="['dashboard-toggle-btn', isDashboardCardEnabled('console') ? 'is-enabled' : '']"
+                    :title="isDashboardCardEnabled('console') ? 'Disable card' : 'Enable card'"
+                    class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <lucide-icon :name="isDashboardCardEnabled('console') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                    <span>{{ isDashboardCardEnabled('console') ? 'Disable' : 'Enable' }}</span>
+                </button>
+            </div>
+        </div>
+        <div :class="sectionContentClass('console')">
+            <div class="console-inner">
+                <div ref="consoleScroller" :style="{ height: consoleConfig.height + 'px' }" :class="consoleInnerClass">
+                    <div v-if="consoleLogs.length === 0" class="text-notion-text-tertiary">Waiting for logs...</div>
+                    <div v-for="log in consoleLogs" :key="log.id" :class="logClass(log)">
+                        <span class="opacity-60 text-notion-text-tertiary">
+                            [
+                            <span v-if="log.ts_date" class="hidden sm:inline">{{ log.ts_date }}</span>
+                            {{ log.ts_time }} ]
+                        </span>
+                        <span>
+                            <template v-for="(seg, i) in log.segments" :key="i">
+                                <span :class="seg.cls" :style="seg.style">{{ seg.text }}</span>
+                            </template>
+                        </span>
+                    </div>
+                    <div ref="consoleTarget" class="console-scroll-target h-0"></div>
+                </div>
+                <!-- Resize handle -->
+                <div @mousedown="initResize" class="absolute bottom-0 right-0 size-4 cursor-se-resize flex items-center justify-center" title="Drag to resize">
+                    <svg class="size-3 text-notion-text-tertiary" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M22 22H20V20H22V22ZM22 18H20V16H22V18ZM18 22H16V20H18V22ZM22 14H20V12H22V14ZM18 18H16V16H18V18ZM14 22H12V20H14V22Z" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </section>

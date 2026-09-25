@@ -14,7 +14,8 @@ from api import system as system_api
 from core import config as config_mod
 from core.db import models as db_models
 from core.db import queue_items as db_queue_items
-from logic import queueing, updater, usenet_stream
+from logic import queueing, updater
+from logic.stream import monitors as stream_monitors
 from logic.pending import overrides as pending_overrides
 from logic.classify import anime as anime_cache
 from tests.support import _run_async
@@ -41,9 +42,9 @@ def test_job_queue_state_files(tmp_path, monkeypatch) -> None:
 
 
 def test_stream_monitor_state_file(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(usenet_stream, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+    monkeypatch.setattr(stream_monitors, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
 
-    assert _rel(usenet_stream._stream_monitor_state_path(), tmp_path) == "data/state/stream_monitors.json"
+    assert _rel(stream_monitors._stream_monitor_state_path(), tmp_path) == "data/state/stream_monitors.json"
 
 
 def test_app_root_state_files(monkeypatch) -> None:

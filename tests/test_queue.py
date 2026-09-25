@@ -4,7 +4,7 @@
 
 import psutil
 
-from logic import usenet_stream
+from logic.stream import monitors as stream_monitors
 from logic.jobs.models import ProcessingJobRequest
 from tests.support import *
 
@@ -316,7 +316,7 @@ def test_queue_lifecycle_stop_and_restart_restores_manual_resume_state(tmp_path,
     monkeypatch.setattr(db_queue_items, "db_load_queue", lambda: [])
     monkeypatch.setattr(db_queue_items, "db_clear_queue", lambda: 0)
     monkeypatch.setattr(db_job_history, "save_job_history", lambda *args, **kwargs: None)
-    monkeypatch.setattr(usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stream_monitors, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     class DummyQueueService(queueing.QueueServiceMixin):
         def __init__(self) -> None:
@@ -748,7 +748,7 @@ def test_finalize_stopping_job_keeps_partial_job_stopped(tmp_path, monkeypatch) 
         "save_job_history",
         lambda job_id, **kwargs: saved.append((job_id, kwargs)),
     )
-    monkeypatch.setattr(usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stream_monitors, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     job = {
         "job_id": "job-partial",
@@ -805,7 +805,7 @@ def test_clear_queued_jobs_marks_stopping_job_for_removal(tmp_path, monkeypatch)
     )
 
     monkeypatch.setattr(db_job_history, "save_job_history", lambda *args, **kwargs: None)
-    monkeypatch.setattr(usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(stream_monitors, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     assert service.clear_queued_jobs() == 1
     job = service._jobs["job-stop"]
