@@ -338,11 +338,11 @@ def _wait_for_slot() -> bool:
 
 
 def _jikan_short_title_hit(
-    entry: dict,
-    candidates: list,
+    entry: dict[str, Any],
+    candidates: list[str],
     title: str,
     q_norm: str,
-    q_cwords: set,
+    q_cwords: list[str],
     release_year: Optional[int],
 ) -> bool:
     """Evaluate the 2-content-word matching path for one Jikan search result.
