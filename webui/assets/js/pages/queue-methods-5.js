@@ -1,4 +1,6 @@
 // Auto-split from queue.js - verbatim methods bodies.
+import { categoryBadgeClass } from "../shared/categories.js";
+import { statusBadgeClass } from "../shared/status.js";
 export default {
 scheduleEpoch(runAfter) {
       if (!runAfter) return null;
@@ -340,19 +342,7 @@ async forceStartItem(item) {
     //  Queue Display Helpers
     // ============================================================
     categoryBadgeClass(cat) {
-      const map = {
-        tv: "bg-cyan-500/15 text-cyan-400",
-        movies: "bg-purple-500/15 text-purple-400",
-        anime: "bg-pink-500/15 text-pink-400",
-        disc: "bg-[#E0E0E0] text-[#2A2A2A] border-[#B9B9B9]",
-        books: "bg-emerald-500/15 text-emerald-400",
-        ebooks: "bg-emerald-500/15 text-emerald-400",
-        audiobooks: "bg-orange-500/15 text-orange-400",
-        music: "bg-blue-500/15 text-blue-400",
-        apps: "bg-red-500/15 text-red-400",
-        misc: "bg-orange-500/15 text-orange-400"
-      };
-      return map[cat] || "bg-notion-bg-hover text-notion-text-tertiary";
+      return categoryBadgeClass(cat);
     },
 
 categorySelectWidthClass(cat) {
@@ -516,18 +506,11 @@ async scheduleJobInline(job) {
     },
 
 finishedStatusBg(job) {
-      const cfg = this.getStatusConfig(job.status);
-      return `${cfg.bg}`;
+      return statusBadgeClass(job.status, "finishedBg");
     },
 
 finishedStatusBadge(job) {
-      const map = {
-        completed: "bg-green-500/15 text-notion-success",
-        failed: "bg-red-500/15 text-notion-error",
-        stopped: "bg-yellow-500/15 text-notion-warning",
-        cancelled: "bg-yellow-500/15 text-notion-warning"
-      };
-      return map[job.status] || "bg-notion-bg-hover text-notion-text-tertiary";
+      return statusBadgeClass(job.status, "finished");
     },
 
 recentJobEvents(job, limit = 3) {

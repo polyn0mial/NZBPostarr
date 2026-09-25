@@ -2,6 +2,7 @@ import { createVuePage, formatUtils, colorClassMap, isMovieType, statusConfig, c
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 import debounce from 'lodash.debounce';
+import { statusBadgeClass } from '../shared/status.js';
 
 dayjs.extend(utc);
 
@@ -525,8 +526,7 @@ const vm = createVuePage({
         },
 
         jobStatusBadgeClass(status) {
-            const config = this.getJobStatusConfig(status);
-            return `inline-flex items-center gap-1 px-2 rounded uppercase font-bold tracking-tight py-0.5 text-[10px] ${config.bg} ${config.text || config.color}`;
+            return statusBadgeClass(status);
         },
 
         toggleSelectAllJobs() {

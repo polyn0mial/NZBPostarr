@@ -7,6 +7,7 @@ import {
     mapHistorySeries,
     sumNumericFields,
 } from 'page-base';
+import { statusBadgeClass } from '../shared/status.js';
 
 const SPARKLINE_MAX_POINTS = 90;
 const CONSOLE_MAX_LINES = 300;
@@ -795,8 +796,7 @@ const dashboard = createVuePage({
             return `${success.toLocaleString()} / ${failed.toLocaleString()}`;
         },
         jobStatusBgClass(job) {
-            const cfg = this.getStatusConfig(job.status);
-            return `size-8 rounded-lg flex items-center justify-center ${cfg.bg}`;
+            return statusBadgeClass(job.status, 'tile');
         },
         jobSpeedBadgeClass() {
             return 'badge flex items-center gap-1.5 bg-notion-accent/10 font-medium text-notion-accent whitespace-nowrap';
