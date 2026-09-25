@@ -9,13 +9,6 @@ from typing import Iterator, Tuple
 
 ROOT = Path(__file__).resolve().parents[2]
 
-# Known upward imports still to be removed by the batch that owns the module; each entry is
-# (importing file, imported module). Shrink this list, never grow it.
-KNOWN_UPWARD = {
-    ("core/utils.py", "logic.services"),  # run_command reaches UploadService for stop checks
-}
-
-
 def _imports(path: Path, top_level_only: bool = False) -> Iterator[Tuple[int, str]]:
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     nodes = tree.body if top_level_only else ast.walk(tree)
@@ -36,7 +29,7 @@ def _violations(package: str, forbidden: set[str]) -> list[str]:
     for path in sorted((ROOT / package).rglob("*.py")):
         rel = path.relative_to(ROOT).as_posix()
         for lineno, module in _imports(path):
-            if _top(module) in forbidden and (rel, module) not in KNOWN_UPWARD:
+            if _top(module) in forbidden:
                 found.append(f"{rel}:{lineno} imports {module}")
     return found
 
