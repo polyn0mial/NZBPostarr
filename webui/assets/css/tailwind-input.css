@@ -1,5 +1,4 @@
 @import 'tailwindcss' source(none);
-@import './pages/docs.css';
 
 @source '../../*.html';
 @source '../../partials/**/*.html';

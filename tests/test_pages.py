@@ -21,7 +21,10 @@ def client(monkeypatch) -> TestClient:
 
 def _nav_links() -> list[str]:
     nav = re.findall(r"href: '(/[a-z-]*)'", _read_repo_text("webui", "assets", "js", "page-base.js"))
-    shell = re.findall(r'href="(/(?:docs|indexer-guides))"', _read_repo_text("webui", "base.html"))
+    shell_html = _read_repo_text("webui", "base.html") + "".join(
+        _read_repo_text("webui", "partials", "shell", name) for name in ("nav_drawer.html", "footer.html")
+    )
+    shell = re.findall(r'href="(/(?:docs|indexer-guides))"', shell_html)
     links = sorted(set(nav) | set(shell))
     assert {"/", "/queue", "/history", "/stats", "/settings", "/docs", "/indexer-guides"} <= set(links)
     return links

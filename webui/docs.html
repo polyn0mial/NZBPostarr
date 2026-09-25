@@ -24,6 +24,251 @@
     <lucide-icon name="download" icon-class="size-3.5"></lucide-icon>
     .md
 </button>
+{% endblock %} {% block extra_head %}
+<style>
+    /* ── Docs page-scoped styles ── */
+    .doc-sidebar a {
+        font-size: 0.75rem;
+        color: var(--notion-text-secondary);
+        transition: all 0.15s;
+        padding: 5px 10px;
+        display: block;
+        border-radius: 4px;
+    }
+    .doc-sidebar a:hover {
+        color: var(--notion-text-primary);
+        background: var(--notion-bg-hover);
+    }
+    .doc-sidebar a.active {
+        color: var(--notion-accent);
+        background: color-mix(in srgb, var(--notion-accent) 8%, transparent);
+        font-weight: 500;
+    }
+    .doc-sidebar .sidebar-group {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        color: var(--notion-text-tertiary);
+        padding: 8px 10px 4px;
+        margin-top: 8px;
+    }
+    .doc-sidebar .sidebar-group:first-child {
+        margin-top: 0;
+    }
+
+    .doc-section {
+        scroll-margin-top: 80px;
+    }
+
+    .doc-code {
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 12px;
+        background: var(--notion-bg);
+        border: 1px solid var(--notion-border);
+        border-radius: 4px;
+        padding: 1px 6px;
+        color: #fbbf24;
+    }
+    .doc-pre {
+        background: var(--notion-bg);
+        border: 1px solid var(--notion-border);
+        border-radius: 8px;
+        padding: 14px 16px;
+        overflow-x: auto;
+        font-size: 12px;
+        line-height: 1.6;
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        color: var(--notion-text-secondary);
+        margin: 10px 0;
+    }
+    .doc-table {
+        width: 100%;
+        font-size: 0.75rem;
+        border-collapse: collapse;
+    }
+    .doc-table th {
+        text-align: left;
+        padding: 8px 12px;
+        background: var(--notion-bg-hover);
+        border: 1px solid var(--notion-border);
+        color: var(--notion-accent);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 10px;
+    }
+    .doc-table td {
+        padding: 8px 12px;
+        border: 1px solid var(--notion-border);
+        color: var(--notion-text-secondary);
+    }
+    .doc-table tr:hover td {
+        background: color-mix(in srgb, var(--notion-bg-hover) 50%, transparent);
+    }
+
+    .doc-badge {
+        display: inline-block;
+        font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+        font-size: 10px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+    .badge-get {
+        background: rgba(34, 197, 94, 0.15);
+        color: #4ade80;
+        border: 1px solid rgba(34, 197, 94, 0.3);
+    }
+    .badge-post {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .badge-put {
+        background: rgba(59, 130, 246, 0.15);
+        color: #60a5fa;
+        border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    .badge-delete {
+        background: rgba(239, 68, 68, 0.15);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+
+    .doc-callout {
+        border: 1px solid;
+        border-radius: 8px;
+        padding: 12px;
+        margin: 10px 0;
+        font-size: 0.75rem;
+        line-height: 1.6;
+    }
+    .doc-callout-warn {
+        background: rgba(245, 158, 11, 0.05);
+        border-color: rgba(245, 158, 11, 0.2);
+        color: #fde68a;
+    }
+    .doc-callout-ok {
+        background: rgba(34, 197, 94, 0.05);
+        border-color: rgba(34, 197, 94, 0.2);
+        color: #86efac;
+    }
+    .doc-callout-err {
+        background: rgba(239, 68, 68, 0.05);
+        border-color: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
+    }
+    .doc-callout strong {
+        color: var(--notion-text-primary);
+    }
+
+    .doc-h2 {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--notion-text-primary);
+        margin: 1.5rem 0 0.75rem;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--notion-divider);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .doc-h2:first-child {
+        margin-top: 0;
+    }
+    .doc-h3 {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--notion-text-primary);
+        margin: 1rem 0 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .endpoint-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 6px;
+        transition: background 0.15s;
+        font-size: 0.75rem;
+        border-bottom: 1px solid color-mix(in srgb, var(--notion-border) 50%, transparent);
+    }
+    .endpoint-row:last-child {
+        border-bottom: none;
+    }
+    .endpoint-row:hover {
+        background: color-mix(in srgb, var(--notion-bg-hover) 50%, transparent);
+    }
+
+    /* Tab bar */
+    .doc-tab {
+        padding: 8px 16px;
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--notion-text-secondary);
+        border-bottom: 2px solid transparent;
+        transition: all 0.15s;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+    .doc-tab:hover {
+        color: var(--notion-text-primary);
+    }
+    .doc-tab.active {
+        color: var(--notion-accent);
+        border-bottom-color: var(--notion-accent);
+    }
+
+    /* Prev/next footer */
+    .doc-nav-btn {
+        display: flex;
+        flex-direction: column;
+        padding: 12px 16px;
+        border: 1px solid var(--notion-border);
+        border-radius: 8px;
+        transition: all 0.15s;
+        min-width: 0;
+        flex: 1;
+    }
+    .doc-nav-btn:hover {
+        background: var(--notion-bg-hover);
+        border-color: var(--notion-accent);
+    }
+    .doc-nav-label {
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--notion-text-tertiary);
+        margin-bottom: 2px;
+    }
+    .doc-nav-title {
+        font-size: 0.8125rem;
+        font-weight: 500;
+        color: var(--notion-text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    /* Step badge */
+    .step-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        flex-shrink: 0;
+    }
+</style>
 {% endblock %} {% block content %}
 
 <!-- Mobile search (sm:hidden) -->
@@ -1603,44 +1848,228 @@ apt install rar   # or your OS equivalent</pre
 </div>
 
 {% endblock %} {% block scripts %}
-<script type="application/json" id="doc-browser-tabs">
-[
-    {
-        "id": "guide",
-        "label": "User Guide",
-        "icon": "book-open",
-        "sections": [
-            {"id": "guide-overview", "title": "What is NZBPostarr?", "group": "Getting Started", "keywords": "nzbpostarr overview what is usenet upload indexer nyuu parpar rar nzb automated"},
-            {"id": "guide-requirements", "title": "System Requirements", "group": "Getting Started", "keywords": "requirements dependencies python node npm nyuu parpar rar system prerequisites"},
-            {"id": "guide-installation", "title": "Installation", "group": "Getting Started", "keywords": "installation install setup venv pip deploy server mkdir clone"},
-            {"id": "guide-configuration", "title": "Configuration", "group": "Configuration", "keywords": "configuration config yaml settings folder paths categories movies tv misc poster rar"},
-            {"id": "guide-nntp", "title": "NNTP Servers", "group": "Configuration", "keywords": "nntp server usenet ssl connections backbone provider upload"},
-            {"id": "guide-indexer-system", "title": "Indexer Plugin System", "group": "Configuration", "keywords": "indexer plugin yaml registry api key category mapping template custom"},
-            {"id": "guide-running", "title": "Running", "group": "Usage", "keywords": "running launch start tmux direct mode session server port"},
-            {"id": "guide-webui", "title": "Web Interface", "group": "Usage", "keywords": "webui web interface dashboard jobs uploads pending stats pages vue"},
-            {"id": "guide-headless", "title": "Headless CLI", "group": "Usage", "keywords": "headless cli command line upload status pending history batch"},
-            {"id": "guide-pipeline", "title": "Upload Pipeline", "group": "Internals", "keywords": "upload pipeline processing rar par2 nyuu nzb nntp submit orchestrator"},
-            {"id": "guide-foldermonitor", "title": "Folder Monitor", "group": "Internals", "keywords": "folder monitor watchdog auto trigger upload settle daemon"},
-            {"id": "guide-architecture", "title": "Architecture", "group": "Internals", "keywords": "architecture structure directory modules core logic database services scheduler"},
-            {"id": "guide-env", "title": "Environment Variables", "group": "Reference", "keywords": "environment variables env NZBP prefix override secrets dotenv"},
-            {"id": "guide-troubleshooting", "title": "Troubleshooting", "group": "Reference", "keywords": "troubleshooting error fix debug database locked permission denied missing tools"}
-        ]
-    },
-    {
-        "id": "api",
-        "label": "API Reference",
-        "icon": "code",
-        "sections": [
-            {"id": "api-overview", "title": "API Overview", "group": "General", "keywords": "api overview rest endpoints base url openapi"},
-            {"id": "api-uploads", "title": "Uploads", "group": "Endpoints", "keywords": "uploads jobs start stop delete recent grouped history bulk"},
-            {"id": "api-dashboard", "title": "Dashboard", "group": "Endpoints", "keywords": "dashboard summary system stats health database"},
-            {"id": "api-settings", "title": "Settings", "group": "Endpoints", "keywords": "settings config browse reset raw preview update"},
-            {"id": "api-console", "title": "Console", "group": "Endpoints", "keywords": "console logs"},
-            {"id": "api-stats", "title": "Stats", "group": "Endpoints", "keywords": "stats summary full mini top directories history record"},
-            {"id": "api-indexers", "title": "Indexers", "group": "Endpoints", "keywords": "indexers list details"}
-        ]
-    }
-]
+<script type="module">
+    import { createVuePage } from 'page-base';
+
+    createVuePage({
+        data() {
+            return {
+                activeTab: 'guide',
+                activeSection: 'guide-overview',
+                searchQuery: '',
+                searchFocused: false,
+                tabs: [
+                    {
+                        id: 'guide',
+                        label: 'User Guide',
+                        icon: 'book-open',
+                        sections: [
+                            { id: 'guide-overview', title: 'What is NZBPostarr?', group: 'Getting Started', keywords: 'nzbpostarr overview what is usenet upload indexer nyuu parpar rar nzb automated' },
+                            { id: 'guide-requirements', title: 'System Requirements', group: 'Getting Started', keywords: 'requirements dependencies python node npm nyuu parpar rar system prerequisites' },
+                            { id: 'guide-installation', title: 'Installation', group: 'Getting Started', keywords: 'installation install setup venv pip deploy server mkdir clone' },
+                            { id: 'guide-configuration', title: 'Configuration', group: 'Configuration', keywords: 'configuration config yaml settings folder paths categories movies tv misc poster rar' },
+                            { id: 'guide-nntp', title: 'NNTP Servers', group: 'Configuration', keywords: 'nntp server usenet ssl connections backbone provider upload' },
+                            { id: 'guide-indexer-system', title: 'Indexer Plugin System', group: 'Configuration', keywords: 'indexer plugin yaml registry api key category mapping template custom' },
+                            { id: 'guide-running', title: 'Running', group: 'Usage', keywords: 'running launch start tmux direct mode session server port' },
+                            { id: 'guide-webui', title: 'Web Interface', group: 'Usage', keywords: 'webui web interface dashboard jobs uploads pending stats pages vue' },
+                            { id: 'guide-headless', title: 'Headless CLI', group: 'Usage', keywords: 'headless cli command line upload status pending history batch' },
+                            { id: 'guide-pipeline', title: 'Upload Pipeline', group: 'Internals', keywords: 'upload pipeline processing rar par2 nyuu nzb nntp submit orchestrator' },
+                            { id: 'guide-foldermonitor', title: 'Folder Monitor', group: 'Internals', keywords: 'folder monitor watchdog auto trigger upload settle daemon' },
+                            { id: 'guide-architecture', title: 'Architecture', group: 'Internals', keywords: 'architecture structure directory modules core logic database services scheduler' },
+                            { id: 'guide-env', title: 'Environment Variables', group: 'Reference', keywords: 'environment variables env NZBP prefix override secrets dotenv' },
+                            { id: 'guide-troubleshooting', title: 'Troubleshooting', group: 'Reference', keywords: 'troubleshooting error fix debug database locked permission denied missing tools' },
+                        ],
+                    },
+                    {
+                        id: 'api',
+                        label: 'API Reference',
+                        icon: 'code',
+                        sections: [
+                            { id: 'api-overview', title: 'API Overview', group: 'General', keywords: 'api overview rest endpoints base url openapi' },
+                            { id: 'api-uploads', title: 'Uploads', group: 'Endpoints', keywords: 'uploads jobs start stop delete recent grouped history bulk' },
+                            { id: 'api-dashboard', title: 'Dashboard', group: 'Endpoints', keywords: 'dashboard summary system stats health database' },
+                            { id: 'api-settings', title: 'Settings', group: 'Endpoints', keywords: 'settings config browse reset raw preview update' },
+                            { id: 'api-console', title: 'Console', group: 'Endpoints', keywords: 'console logs' },
+                            { id: 'api-stats', title: 'Stats', group: 'Endpoints', keywords: 'stats summary full mini top directories history record' },
+                            { id: 'api-indexers', title: 'Indexers', group: 'Endpoints', keywords: 'indexers list details' },
+                        ],
+                    },
+                ],
+            };
+        },
+        watch: {
+            activeSection(val) {
+                if (window.location.hash !== '#' + val) {
+                    window.history.pushState(null, '', '#' + val);
+                }
+            },
+        },
+        computed: {
+            currentTab() {
+                return this.tabs.find((t) => t.id === this.activeTab);
+            },
+            currentTabSections() {
+                return this.currentTab ? this.currentTab.sections : [];
+            },
+            currentTabGroups() {
+                const groups = [];
+                const seen = {};
+                for (const s of this.currentTabSections) {
+                    if (!seen[s.group]) {
+                        seen[s.group] = { label: s.group, items: [] };
+                        groups.push(seen[s.group]);
+                    }
+                    seen[s.group].items.push(s);
+                }
+                return groups;
+            },
+            flatSections() {
+                return this.currentTab ? this.currentTab.sections : [];
+            },
+            currentIndex() {
+                return this.flatSections.findIndex((s) => s.id === this.activeSection);
+            },
+            prevSection() {
+                return this.currentIndex > 0 ? this.flatSections[this.currentIndex - 1] : null;
+            },
+            nextSection() {
+                return this.currentIndex < this.flatSections.length - 1 ? this.flatSections[this.currentIndex + 1] : null;
+            },
+            searchResults() {
+                if (!this.searchQuery || this.searchQuery.length < 2) return [];
+                const q = this.searchQuery.toLowerCase();
+                const results = [];
+                for (const tab of this.tabs) {
+                    for (const s of tab.sections) {
+                        if (s.title.toLowerCase().includes(q) || s.keywords.toLowerCase().includes(q)) {
+                            results.push({ id: s.id, title: s.title, tab: tab.id, tabLabel: tab.label });
+                        }
+                    }
+                }
+                return results.slice(0, 10);
+            },
+        },
+        methods: {
+            goToSection(tabId, sectionId) {
+                this.activeTab = tabId;
+                this.activeSection = sectionId;
+                this.searchQuery = '';
+                this.searchFocused = false;
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            },
+            async downloadMarkdown() {
+                const origSection = this.activeSection;
+                const tabSections = this.currentTab.sections;
+                let md = `# NZBPostarr - ${this.currentTab.label}\n\n`;
+
+                for (const s of tabSections) {
+                    this.activeSection = s.id;
+                    await this.$nextTick();
+
+                    const sec = document.querySelector('.doc-section');
+                    if (!sec) continue;
+
+                    const clone = sec.cloneNode(true);
+                    clone.querySelectorAll('lucide-icon').forEach((i) => i.remove());
+                    clone.querySelectorAll('.idx-badge, .doc-badge').forEach((b) => {
+                        b.textContent = b.textContent.trim();
+                    });
+
+                    // Convert tables
+                    clone.querySelectorAll('table').forEach((t) => {
+                        const rows = [...t.querySelectorAll('tr')];
+                        if (!rows.length) return;
+                        const header = [...rows[0].querySelectorAll('th,td')].map((c) => c.textContent.trim());
+                        let tbl = '| ' + header.join(' | ') + ' |\n';
+                        tbl += '| ' + header.map(() => '---').join(' | ') + ' |\n';
+                        for (const row of rows.slice(1)) {
+                            const cells = [...row.querySelectorAll('td,th')].map((c) => c.textContent.trim());
+                            tbl += '| ' + cells.join(' | ') + ' |\n';
+                        }
+                        const pre = document.createElement('pre');
+                        pre.textContent = tbl;
+                        t.replaceWith(pre);
+                    });
+
+                    // Convert code blocks
+                    clone.querySelectorAll('.doc-pre, pre').forEach((p) => {
+                        if (p.tagName === 'PRE' && !p.querySelector('code') && !p.classList.contains('doc-pre')) return;
+                        p.textContent = '```\n' + p.textContent.trim() + '\n```';
+                    });
+
+                    // Convert inline code
+                    clone.querySelectorAll('.doc-code, code').forEach((c) => {
+                        if (c.closest('.doc-pre, pre')) return;
+                        c.textContent = '`' + c.textContent.trim() + '`';
+                    });
+
+                    // Walk & build markdown
+                    let text = '';
+                    for (const el of clone.children) {
+                        const tag = el.tagName?.toLowerCase();
+                        const cls = el.className || '';
+                        if (cls.includes('doc-h2')) text += '\n## ' + el.textContent.trim() + '\n\n';
+                        else if (cls.includes('doc-h3')) text += '\n### ' + el.textContent.trim() + '\n\n';
+                        else if (cls.includes('doc-pre') || tag === 'pre') text += '\n```\n' + el.textContent.trim() + '\n```\n\n';
+                        else if (cls.includes('doc-callout')) text += '\n> ' + el.textContent.trim().replace(/\n/g, '\n> ') + '\n\n';
+                        else text += el.textContent.trim() + '\n\n';
+                    }
+                    md += text;
+                }
+
+                // Restore original section
+                this.activeSection = origSection;
+                await this.$nextTick();
+
+                const blob = new Blob([md], { type: 'text/markdown' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = `nzbpostarr-${this.activeTab}.md`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+            },
+        },
+        mounted() {
+            // Priority 1: Check URL search params (legacy support)
+            const params = new URLSearchParams(window.location.search);
+            const tabParam = params.get('tab');
+            if (tabParam) {
+                const found = this.tabs.find((t) => t.id === tabParam);
+                if (found) {
+                    this.activeTab = tabParam;
+                    this.activeSection = found.sections[0].id;
+                }
+                // Clean search params but keep hash if present
+                window.history.replaceState({}, '', window.location.pathname + window.location.hash);
+            }
+
+            // Priority 2: Check URL hash for direct section linking
+            const checkHash = () => {
+                const hash = window.location.hash.substring(1);
+                if (hash) {
+                    for (const t of this.tabs) {
+                        const sec = t.sections.find((s) => s.id === hash);
+                        if (sec) {
+                            this.activeTab = t.id;
+                            this.activeSection = hash;
+                            // Ensure page scrolls to top when switching sections via direct link
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            };
+
+            // Run on load and whenever hash changes
+            if (!checkHash() && !tabParam) {
+                // Default if no hash or param
+                this.activeTab = 'guide';
+                this.activeSection = 'guide-overview';
+            }
+
+            window.addEventListener('hashchange', checkHash);
+        },
+    });
 </script>
-<script type="module" crossorigin src="/assets/js/dist/pages/docs/index.js?t=[[ cache_bust ]]"></script>
 {% endblock %}
