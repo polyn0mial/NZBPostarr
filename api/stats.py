@@ -5,10 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Response
 
-from api.deps import _dashboard_server_stats_enabled, _stats_history_enabled, _stats_page_enabled
-from core import database
+from api.deps import check_feature
+from core.db import stats as db_stats
 from logic.jobs.engine import JobEngine
 from logic.runtime import ensure_engine_started
 from logic.stats.collector import get_dashboard_summary, get_statistics
@@ -18,23 +18,12 @@ dashboard_router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
 router = APIRouter(prefix="/api/stats", tags=["stats"])
 
-def _require_stats_page_enabled() -> None:
-    if not _stats_page_enabled():
-        raise HTTPException(status_code=404, detail="Stats page is disabled")
-
-def _require_dashboard_server_stats_enabled() -> None:
-    if not _dashboard_server_stats_enabled():
-        raise HTTPException(status_code=404, detail="Dashboard server stats are disabled")
-
-def _require_stats_history_enabled() -> None:
-    if not _stats_history_enabled():
-        raise HTTPException(status_code=404, detail="Stats history is disabled")
-
 @dashboard_router.get("/system-stats")
 def get_system_stats() -> Dict[str, Any]:
     """Retrieve live system resource usage."""
-    _require_dashboard_server_stats_enabled()
-    from logic.stats_engine import get_full_system_info, mark_ui_active
+    check_feature("dashboard")
+    from logic.stats.collector import mark_ui_active
+    from logic.stats.system_info import get_full_system_info
 
     mark_ui_active(mode="mini")
     info = get_full_system_info()
@@ -69,14 +58,15 @@ async def get_stats_summary(
     _engine: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Retrieve summarized historical statistics."""
-    _require_stats_page_enabled()
+    check_feature("stats_page")
     return await asyncio.to_thread(get_statistics)
 
 @router.get("/full")
 async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
     """Retrieve comprehensive system statistics from the engine."""
-    _require_stats_page_enabled()
-    from logic.stats_engine import get_full_system_info, mark_ui_active
+    check_feature("stats_page")
+    from logic.stats.collector import mark_ui_active
+    from logic.stats.system_info import get_full_system_info
 
     # Convert comma-separated string to list
     collapsed_list = [c.strip() for c in collapsed.split(",") if c.strip()]
@@ -87,8 +77,9 @@ async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
 @router.get("/mini")
 async def get_mini_stats() -> Dict[str, Any]:
     """Lightweight stats endpoint for dashboard polling."""
-    _require_stats_history_enabled()
-    from logic.stats_engine import get_full_system_info, mark_ui_active
+    check_feature("history")
+    from logic.stats.collector import mark_ui_active
+    from logic.stats.system_info import get_full_system_info
 
     mark_ui_active(mode="mini")
     info = await asyncio.to_thread(get_full_system_info)
@@ -116,8 +107,8 @@ async def get_mini_stats() -> Dict[str, Any]:
 @router.get("/top-directories")
 async def get_top_directories(limit: int = 25) -> Dict[str, Any]:
     """Retrieve top-level storage usage data based on processed items."""
-    _require_stats_page_enabled()
-    return await asyncio.to_thread(database.get_top_directories, limit=limit)
+    check_feature("stats_page")
+    return await asyncio.to_thread(db_stats.get_top_directories, limit=limit)
 
 @router.get("/history")
 def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
@@ -125,11 +116,11 @@ def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
 
     Reads from the in-memory ring buffer - zero DB hits.
     """
-    _require_stats_history_enabled()
-    from logic.stats_engine import (
+    check_feature("history")
+    from logic.stats.collector import (
         get_iface_history,
     )
-    from logic.stats_engine import (
+    from logic.stats.collector import (
         get_stats_history as _mem_hist,
     )
 
@@ -157,8 +148,8 @@ async def record_stats(
     drops_out: int = 0,
 ) -> Dict[str, Any]:
     """Record current performance stats to the database."""
-    _require_stats_page_enabled()
-    database.record_system_stats(
+    check_feature("stats_page")
+    db_stats.record_system_stats(
         cpu=cpu,
         mem=memory,
         up=upload_mbps,

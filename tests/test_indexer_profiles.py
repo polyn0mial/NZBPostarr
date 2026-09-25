@@ -67,8 +67,8 @@ def test_profile_newznab_matches_url_suffix_auto_detection(tmp_path, monkeypatch
     common_kwargs = dict(
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
         name_param="name",
-        categories=registry_mod.CategoryMapping(tv="5040", movie="2040", misc="5000", default="5000"),
-        success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+        categories=models_mod.CategoryMapping(tv="5040", movie="2040", misc="5000", default="5000"),
+        success=models_mod.SuccessPatterns(text_patterns=["OK"]),
     )
 
     explicit_profile_indexer = IndexerDefinition(
@@ -89,13 +89,14 @@ def test_profile_newznab_matches_url_suffix_auto_detection(tmp_path, monkeypatch
         seen = _capture_submit_request(monkeypatch, text="OK")
         nzb_file = _make_sample_nzb(tmp_path / indexer.id)
 
-        ok, status, _reason = submit_to_indexer(
+        result = submit_to_indexer(
             indexer=indexer,
             rls_name="Show.Name.S01E01.1080p.WEB-DL",
             nzb_path=nzb_file,
             config=_DummySubmitConfig(),
             cat="tv",
         )
+        ok, status, _reason = result.success, result.status, result.reason
 
         assert ok is True, indexer.id
         assert status == "success", indexer.id

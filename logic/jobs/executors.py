@@ -7,10 +7,13 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
-from core.utils import reset_thread_job, set_thread_job
-from logic import processing, usenet_stream
+from logic.jobs.context import reset_thread_job, set_thread_job
 from logic.jobs.models import ProcessingJobRequest, StreamJobRequest, normalize_paths
 from logic.jobs.requests import resolve_force_flag
+from logic.pipeline import runner
+from logic.stream import manifest as stream_manifest
+from logic.stream import monitors as stream_monitors
+from logic.stream import repost as stream_repost
 
 if TYPE_CHECKING:
     from logic.jobs.engine import JobEngine
@@ -75,7 +78,7 @@ def execute_job(engine: JobEngine, job: dict[str, Any], request: Any) -> None:
 
 
 def execute_processing_job(engine: JobEngine, job: dict[str, Any], request: ProcessingJobRequest) -> None:
-    """Execute processing.run_job with shared force/error semantics.
+    """Execute runner.run_job with shared force/error semantics.
 
     The thread-job binding is restored on exit so callers that run this
     synchronously (CLI, tests with ``ImmediateThread``) don't leak the
@@ -104,7 +107,7 @@ def execute_processing_job(engine: JobEngine, job: dict[str, Any], request: Proc
             test_mode=test_v,
         )
 
-        processing.run_job(
+        runner.run_job(
             request.category,
             limit=request.limit,
             skip_packs=request.skip_packs,
@@ -142,7 +145,7 @@ def execute_usenet_stream_job(engine: JobEngine, job: dict[str, Any], request: S
         if not request.source_path:
             raise RuntimeError("Stream source path is missing")
 
-        manifest_path = usenet_stream.build_stream_manifest_path(
+        manifest_path = stream_manifest.build_stream_manifest_path(
             request.release_name or Path(str(request.source_path)).stem
         )
         with engine._lock:
@@ -151,7 +154,7 @@ def execute_usenet_stream_job(engine: JobEngine, job: dict[str, Any], request: S
             job["cleanup_paths"] = list(dict.fromkeys(cleanup_paths))
             engine._persist_jobs_locked()
 
-        usenet_stream.stream_nzb_upload(
+        stream_repost.stream_nzb_upload(
             source_path=Path(str(request.source_path)),
             category=request.category,
             release_name=request.release_name,
@@ -165,6 +168,6 @@ def execute_usenet_stream_job(engine: JobEngine, job: dict[str, Any], request: S
     except Exception as e:  # pylint: disable=broad-exception-caught
         mark_job_failed(engine, job, e, log_prefix="STREAM JOB CRASHED")
         if job.get("source_monitor_id"):
-            usenet_stream.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
+            stream_monitors.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
     finally:
         reset_thread_job(token)

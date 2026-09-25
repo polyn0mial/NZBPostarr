@@ -134,9 +134,9 @@ def _queue_job(args: argparse.Namespace) -> int:
 
 
 def _stream(args: argparse.Namespace) -> int:
-    from logic import usenet_stream
+    from logic.stream import repost as stream_repost
 
-    submit_mode = usenet_stream.normalize_submit_mode(args.submit_mode)
+    submit_mode = stream_repost.normalize_submit_mode(args.submit_mode)
     source = str(args.source).strip()
     form = {
         "source_path": source,

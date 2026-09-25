@@ -24,7 +24,7 @@ async function pageEntries() {
     return entries.sort();
 }
 
-const entryPoints = [path.join(jsDir, 'page-base.js'), ...(await pageEntries())];
+const entryPoints = await pageEntries();
 
 await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });

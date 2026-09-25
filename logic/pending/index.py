@@ -11,7 +11,7 @@ from loguru import logger
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 
 from core import config as config_mod
-from core.utils import start_watchdog_observer, stop_watchdog_observer
+from core.fs import start_watchdog_observer, stop_watchdog_observer
 from logic.classify.anime import cached_lookup
 
 

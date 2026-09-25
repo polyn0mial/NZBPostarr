@@ -1,0 +1,79 @@
+<!-- TV Pack Ignore Rules -->
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="tv-pack-ignore" v-show="sectionVisible('tv-pack-ignore')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('tv-pack-ignore')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections['tv-pack-ignore'] ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="list-filter" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">TV Pack Ignore Rules</h2>
+        </div>
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] text-notion-text-tertiary">Season pack file filtering</span>
+            <button @click.stop="toggleTvPackIgnore('enabled')" :class="toggleBtnClassDirect(tvPackIgnoreOn('enabled'))" title="Master switch for TV/anime season-pack ignore rules">
+                <span :class="toggleKnobClassDirect(tvPackIgnoreOn('enabled'))"></span>
+            </button>
+        </div>
+    </div>
+    <div :class="sectionContentClass('tv-pack-ignore')" id="content-tv-pack-ignore">
+        <div class="p-4 space-y-4">
+            <div class="rounded-md border border-notion-border bg-notion-bg px-3 py-2">
+                <p class="text-xs text-notion-text-secondary leading-relaxed">
+                    These rules apply inside TV/anime season packs before upload prep. Enabled rules mark matching files as ignored/completed and keep them out of the filtered pack upload.
+                </p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div
+                    v-for="rule in tvPackIgnoreRules"
+                    :key="rule.key"
+                    class="rounded-md border border-notion-border bg-notion-bg p-3"
+                    :class="tvPackIgnoreOn('enabled') ? '' : 'opacity-50'"
+                    :title="rule.description">
+                    <div class="flex items-start justify-between gap-3">
+                        <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                                <lucide-icon :name="rule.icon" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                                <span class="text-[13px] font-medium text-notion-text-primary">{{ rule.label }}</span>
+                            </div>
+                            <p class="mt-1 text-[11px] text-notion-text-tertiary leading-relaxed">{{ rule.description }}</p>
+                        </div>
+                        <button
+                            @click="toggleTvPackIgnore(rule.key)"
+                            :disabled="!tvPackIgnoreOn('enabled')"
+                            :class="toggleBtnClassDirect(tvPackIgnoreOn(rule.key))"
+                            :title="rule.description">
+                            <span :class="toggleKnobClassDirect(tvPackIgnoreOn(rule.key))"></span>
+                        </button>
+                    </div>
+                    <div class="mt-2 text-[11px] text-notion-text-secondary font-mono wrap-break-word">
+                        {{ rule.examples }}
+                    </div>
+                    <button
+                        v-if="rule.examplesMore"
+                        @click="toggleTvPackRuleExpanded(rule.key)"
+                        class="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-notion-accent hover:text-notion-accent/80 transition-colors">
+                        <lucide-icon :name="isTvPackRuleExpanded(rule.key) ? 'chevron-up' : 'chevron-down'" icon-class="size-3"></lucide-icon>
+                        {{ isTvPackRuleExpanded(rule.key) ? 'Show less' : 'Show more' }}
+                    </button>
+                    <div v-if="rule.examplesMore && isTvPackRuleExpanded(rule.key)" class="mt-2 text-[11px] text-notion-text-tertiary font-mono wrap-break-word">
+                        {{ rule.examplesMore }}
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div class="rounded-md border border-notion-border bg-notion-bg px-3 py-2">
+                    <div class="text-[11px] font-semibold uppercase tracking-wide text-notion-text-tertiary mb-1">Ignored File Types</div>
+                    <p class="text-[11px] text-notion-text-secondary font-mono leading-relaxed">
+                        .nfo, .txt, .srt, .ass, .ssa, .sub, .idx, .sup, .jpg, .jpeg, .png, .webp, .gif, .sfv, .md5, .par2, .url
+                    </p>
+                </div>
+                <div class="rounded-md border border-notion-border bg-notion-bg px-3 py-2">
+                    <div class="text-[11px] font-semibold uppercase tracking-wide text-notion-text-tertiary mb-1">Ignored Names / Non-file Content</div>
+                    <p class="text-[11px] text-notion-text-secondary leading-relaxed">
+                        sample, samples, NFO, proof, screens, subtitles, extras, featurettes, trailers, teaser, preview, PV, special, specials, OP, ED, OVA, OAD, NCOP, NCED, and folders or sidecar content that are not valid episode media files.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

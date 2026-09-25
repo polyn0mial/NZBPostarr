@@ -18,23 +18,30 @@ def _block(source: str, start: str, end: str) -> str:
 
 
 def test_split_queue_modules_import_the_page_helpers_they_use() -> None:
-    # esbuild minifies each module's top-level names, so a helper that queue.js
-    # defines but a methods module only references by name is a ReferenceError
-    # at runtime. Every module must import what it uses.
-    queue_js = (PAGES / "queue.js").read_text(encoding="utf-8")
-    exported = re.search(r"export \{([^}]*)\};", queue_js)
-    assert exported is not None
-    helpers = [name.strip() for name in exported.group(1).split(",") if name.strip()]
+    # esbuild minifies each module's top-level names, so a helper that one queue module
+    # defines but another only references by name is a ReferenceError at runtime.
+    # Every module must import what it uses.
+    modules = sorted((PAGES / "queue").glob("*.js"))
+    assert (PAGES / "queue" / "index.js") in modules
+    assert not list(PAGES.glob("queue*.js")), "the old queue.js / queue-*.js split files are gone"
+    helpers = []
+    for module in modules:
+        for exported in re.findall(r"^export \{([^}]*)\};", module.read_text(encoding="utf-8"), re.M):
+            helpers += [name.strip() for name in exported.split(",") if name.strip()]
+    assert "deepFreezePendingTree" in helpers
     shared = ["categoryMeta", "categoryLabel", "categoryToItype", "sharedItypeToCategory", "Sortable"]
 
-    for module in sorted(PAGES.glob("queue-*.js")):
+    for module in modules:
         text = module.read_text(encoding="utf-8")
+        own = set(re.findall(r"^(?:async )?(?:function|const|var|let) ([A-Za-z_$][\w$]*)", text, re.M))
         imports = "\n".join(line for line in text.splitlines() if line.startswith("import "))
         body = "\n".join(line for line in text.splitlines() if not line.startswith("import "))
         for name in helpers + shared:
+            if name in own:
+                continue
             if re.search(rf"(?<![\w.$]){name}\b", body):
                 assert re.search(rf"\b{name}\b", imports), f"{module.name} uses {name} without importing it"
-    assert "normalizeExtChild" not in queue_js
+    assert "normalizeExtChild" not in "".join(m.read_text(encoding="utf-8") for m in modules)
 
 
 def test_lazy_children_are_grafted_into_the_tree_and_rehydrated_after_refresh() -> None:
@@ -119,10 +126,15 @@ def test_queue_template_uses_server_layout() -> None:
     scripts = html.split("{% block scripts %}", 1)[1]
 
     # Storage sanitiser and error overlay run before the page bundle, without hard-coded revisions.
-    assert scripts.index("nzbpostarr_queue_bootstrap_reset_v20260805_r3") < scripts.index("/assets/js/dist/pages/queue.js")
-    assert "window.__queueShowOverlay = showOverlay;" in scripts
-    assert "/queue-error-beacon?title=" in scripts
+    bundle = scripts.index("/assets/js/dist/pages/queue/index.js")
+    assert scripts.index("nzbpostarr_queue_bootstrap_reset_v20260805_r3") < bundle
+    assert scripts.index('<script src="/assets/js/components/error-overlay.js') < bundle
+    assert 'data-build="[[ cache_bust ]]"' in scripts
     assert "20260804" not in scripts
+    overlay = _read_repo_text("webui", "assets", "js", "components", "error-overlay.js")
+    assert "window.__queueShowOverlay = showOverlay;" in overlay
+    assert "/queue-error-beacon?title=" in overlay
+    assert "20260804" not in overlay
 
     # Action bar stays on screen; buttons disable at zero.
     assert html.count(':disabled="selectedCount === 0"') == 4

@@ -13,7 +13,7 @@ from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import ROUTERS
-from api.assets import ASSETS_DIR, _asset_cache_bust, add_cache_control_header
+from api.assets import ASSETS_DIR, add_cache_control_header
 from api.auth import session_auth_middleware
 from api.mcp import mount_mcp_endpoint
 from api.pages import not_found_exception_handler, server_error_exception_handler
@@ -28,7 +28,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     start = time.time()
     logger.info("🚀 WebUI Initializing...")
 
-    _asset_cache_bust.start()
     await runtime.start(pending_scan=_scan_pending_all, pending_watch_folders=_pending_watch_folders)
 
     logger.info(f"✨ Startup complete in {time.time() - start:.3f}s")
@@ -41,7 +40,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             await _mcp_stack.enter_async_context(_MCP_ASGI_APP.router.lifespan_context(_MCP_ASGI_APP))
         yield
 
-    _asset_cache_bust.stop()
     await runtime.stop()
 
 

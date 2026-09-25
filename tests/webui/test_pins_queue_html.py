@@ -1,13 +1,19 @@
-"""Source-text pins on the queue page template (webui/queue.html)."""
+"""Source-text pins on the queue page template (webui/queue.html and its partials)."""
 
-from tests.webui._source import _read_repo_text
+from tests.webui._source import REPO_ROOT, _read_repo_text
+
+
+def _queue_template_source() -> str:
+    """queue.html plus webui/partials/queue/**, the files the page now includes."""
+    partials = sorted((REPO_ROOT / "webui" / "partials" / "queue").rglob("*.html"))
+    return "\n".join([_read_repo_text("webui", "queue.html")] + [p.read_text(encoding="utf-8") for p in partials])
 
 
 def test_webui_queue_html_includes_expected_selection_logic() -> None:
     cases = [
         (
             "queue-html",
-            ("webui", "queue.html"),
+            _queue_template_source(),
             [
                 '@click.stop="forceUploadExtChild(child, $event)"',
                 '@click.stop="forceUploadExtChild(gc, $event)"',
@@ -20,21 +26,20 @@ def test_webui_queue_html_includes_expected_selection_logic() -> None:
         ),
     ]
 
-    for case_name, path_parts, required_substrings in cases:
-        text = _read_repo_text(*path_parts)
+    for case_name, text, required_substrings in cases:
         for needle in required_substrings:
             assert needle in text, f"{case_name}: {needle}"
 
 
 def test_webui_queue_html_performance_guards_are_present() -> None:
-    queue_html = _read_repo_text("webui", "queue.html")
+    queue_html = _queue_template_source()
 
     assert "pending-virtual-row" in queue_html
     assert "Completed Job Items Modal" in queue_html
 
 
 def test_queue_job_count_is_below_progress_and_describes_remaining_items() -> None:
-    queue_html = _read_repo_text("webui", "queue.html")
+    queue_html = _queue_template_source()
 
     progress_bar = queue_html.index('class="h-1.5 bg-notion-bg-secondary')
     remaining_count = queue_html.index("{{ jobItemCount(job) }}", progress_bar)
@@ -45,7 +50,7 @@ def test_queue_job_count_is_below_progress_and_describes_remaining_items() -> No
 
 
 def test_pending_rows_restore_compact_category_and_status_badges() -> None:
-    queue_html = _read_repo_text("webui", "queue.html")
+    queue_html = _queue_template_source()
 
     # Consolidation decision: the server's status capsules sit before an 88px capsule select.
     assert queue_html.count('title="Completed">') >= 4

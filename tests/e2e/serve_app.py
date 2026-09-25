@@ -26,10 +26,11 @@ def _state_path(root: Path, *parts: str, is_dir: bool = True) -> property:
 
 
 def _seed_history() -> None:
-    from core import database as db
+    from core.db import schema as db_schema
+    from core.db import uploads as db_uploads
 
-    db.init_database()
-    db.record_nntp_success("/media/TV/Example.Show.S01E01.1080p.WEB-DL.x264-GRP", 734003200, "TV Episode")
+    db_schema.init_database()
+    db_uploads.record_nntp_success("/media/TV/Example.Show.S01E01.1080p.WEB-DL.x264-GRP", 734003200, "TV Episode")
 
 
 def main() -> None:
@@ -43,13 +44,15 @@ def main() -> None:
     config_mod.Config.nzb_sub = _state_path(root, "nzbs")  # type: ignore[method-assign]
     config_mod.Config.mediainfo_sub = _state_path(root, "mediainfo")  # type: ignore[method-assign]
 
-    from logic import updater
+    from logic.system import updater
     from logic.pending import overrides as pending_overrides
     from logic.classify import anime as anime_cache
 
-    updater.STATE_DIR = root / "updater"
-    updater.STATE_FILE = updater.STATE_DIR / "state.json"
-    updater.BACKUP_DIR = updater.STATE_DIR / "backups"
+    from logic.system import backup as system_backup
+
+    system_backup.STATE_DIR = root / "updater"
+    system_backup.BACKUP_DIR = system_backup.STATE_DIR / "backups"
+    updater.STATE_FILE = system_backup.STATE_DIR / "state.json"
     anime_cache._cache_path = root / "cache" / "anime.json"
     pending_overrides._path = root / "category_overrides.json"
 

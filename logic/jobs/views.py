@@ -9,7 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterable, Optional, Protocol
 
-from core import database
+from core.db import history as db_history
+from core.db import job_history as db_job_history
 from logic.jobs.models import job_target_paths, normalize_paths
 from logic.jobs.store import is_resumable_stopped, preserve_stopped_processing_job
 
@@ -181,7 +182,7 @@ def get_recent_errors(limit: int = 25) -> list[dict[str, Any]]:
     capped = max(1, min(int(limit), 200))
     errors: list[dict[str, Any]] = []
 
-    for job in database.get_job_history(limit=capped):
+    for job in db_job_history.get_job_history(limit=capped):
         message = job.get("error_message")
         if not message:
             continue
@@ -197,7 +198,7 @@ def get_recent_errors(limit: int = 25) -> list[dict[str, Any]]:
 
     # get_recent_uploads returns a paginated envelope; each item carries one
     # "destinations" entry per indexer, and that is where a failure is recorded.
-    page = database.get_recent_uploads(limit=capped)
+    page = db_history.get_recent_uploads(limit=capped)
     for row in page.get("items", []) if isinstance(page, dict) else []:
         for destination in row.get("destinations", []) or []:
             if str(destination.get("status", "")).lower() not in {"failed", "error"}:

@@ -1,0 +1,45 @@
+<!-- Login Settings (shown when enable_password is on) -->
+<Transition>
+    <div v-if="settings.auth.enable_password" class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6">
+        <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('auth')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="expandedSections.auth ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+                <lucide-icon name="lock" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Login Settings</h2>
+            </div>
+            <a v-if="expandedSections.auth" href="/logout" @click.stop title="Log out" class="flex items-center gap-1.5 text-xs text-notion-text-tertiary hover:text-notion-error transition-colors px-2 py-1 rounded-md hover:bg-notion-bg-hover">
+                <lucide-icon name="log-out" icon-class="size-3.5"></lucide-icon>
+                Log out
+            </a>
+        </div>
+        <div :class="sectionContentClass('auth')">
+            <div class="p-4 space-y-3">
+                <p class="text-xs text-notion-text-tertiary">
+                    Protect NZBPostarr with a login page. All pages and API endpoints require authentication. Credentials are stored in
+                    <code class="bg-notion-bg px-1 py-0.5 rounded text-[11px]">config.yaml</code>
+                    .
+                </p>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-lg">
+                    <div class="space-y-1.5">
+                        <label class="text-[10px] uppercase tracking-wider font-semibold text-notion-text-tertiary">Username</label>
+                        <input
+                            type="text"
+                            v-model="settings.auth.web_username"
+                            class="w-full bg-notion-bg text-notion-text-primary px-3 py-2 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent text-xs font-mono"
+                            placeholder="admin"
+                            autocomplete="username" />
+                    </div>
+                    <div class="space-y-1.5">
+                        <label class="text-[10px] uppercase tracking-wider font-semibold text-notion-text-tertiary">New Password</label>
+                        <input
+                            type="password"
+                            v-model="settings.auth.new_password"
+                            class="w-full bg-notion-bg text-notion-text-primary px-3 py-2 rounded-md border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent text-xs"
+                            placeholder="Leave blank to keep existing"
+                            autocomplete="new-password" />
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</Transition>

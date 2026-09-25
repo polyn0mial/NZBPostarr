@@ -168,7 +168,7 @@ def test_headless_version_flag_exits_zero(capsys) -> None:
 
 
 def test_cmd_upload_invalid_category_json(monkeypatch, capsys) -> None:
-    monkeypatch.setattr(registry_mod, "get_available_categories", lambda: [{"id": "tv"}])
+    monkeypatch.setattr(categories_mod, "get_available_categories", lambda: [{"id": "tv"}])
 
     rc = cli_upload.cmd_upload(
         SimpleNamespace(
@@ -193,7 +193,7 @@ def test_cmd_upload_invalid_category_json(monkeypatch, capsys) -> None:
 def test_cmd_upload_json_success(monkeypatch, capsys) -> None:
     from logic import runtime
 
-    monkeypatch.setattr(registry_mod, "get_available_categories", lambda: [{"id": "tv"}])
+    monkeypatch.setattr(categories_mod, "get_available_categories", lambda: [{"id": "tv"}])
 
     class _FakeJobEngine:
         def run_job_sync(self, **_kwargs):
@@ -245,7 +245,7 @@ def test_cmd_status_json_all_tools_present(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: _FakeRegistry())
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
 
     rc = cli_status.cmd_status(SimpleNamespace(json=True))
@@ -262,7 +262,7 @@ def test_cmd_status_missing_required_tool_sets_exit_code(monkeypatch, capsys) ->
 
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: [], all=lambda: []))
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
 
     def fake_which(name):
         return None if name == "parpar" else f"/usr/bin/{name}"
@@ -281,7 +281,7 @@ def test_cmd_status_missing_mediainfo_only_does_not_fail(monkeypatch, capsys) ->
 
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: [], all=lambda: []))
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
 
     def fake_which(name):
         return None if name == "mediainfo" else f"/usr/bin/{name}"
@@ -305,7 +305,7 @@ def test_cmd_pending_json_output(monkeypatch, capsys, tmp_path) -> None:
     conf = SimpleNamespace(folder_paths=[])
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: [SimpleNamespace(id="geek")]))
-    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
+    monkeypatch.setattr(db_ledger, "completion_index", lambda _ids: (set(), {}, {}, {}))
 
     tv_folder = tmp_path / "tv"
     movie_folder = tmp_path / "movies"
@@ -333,7 +333,7 @@ def test_cmd_pending_json_empty(monkeypatch, capsys) -> None:
     conf = SimpleNamespace(folder_paths=[])
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: []))
-    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
+    monkeypatch.setattr(db_ledger, "completion_index", lambda _ids: (set(), {}, {}, {}))
     monkeypatch.setattr(pending_roots, "collect_configured_scan_items", lambda _conf: [])
 
     rc = cli_pending.cmd_pending(SimpleNamespace(category=None, verbose=False, json=True))
@@ -347,7 +347,7 @@ def test_cmd_pending_filters_folder_and_limits_verbose_items(monkeypatch, capsys
     conf = SimpleNamespace(folder_paths=[])
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: []))
-    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
+    monkeypatch.setattr(db_ledger, "completion_index", lambda _ids: (set(), {}, {}, {}))
     tv_folder = tmp_path / "tv"
     other_folder = tmp_path / "other"
     monkeypatch.setattr(
@@ -624,7 +624,7 @@ def test_cmd_system_normalizes_operational_exception(monkeypatch, capsys) -> Non
 
 def test_cmd_history_json_output(monkeypatch, capsys) -> None:
     jobs = [{"job_id": "abc", "category": "tv", "status": "completed"}]
-    monkeypatch.setattr(db, "get_job_history", lambda limit=20: jobs)
+    monkeypatch.setattr(db_job_history, "get_job_history", lambda limit=20: jobs)
 
     rc = cli_history.cmd_history(SimpleNamespace(limit=20, json=True))
 
@@ -662,7 +662,7 @@ def test_cmd_issues_json_output_passes_args_through(monkeypatch, capsys) -> None
         seen["since_days"] = since_days
         return issues_result
 
-    monkeypatch.setattr(db, "get_grouped_upload_errors", _fake)
+    monkeypatch.setattr(db_issues, "get_grouped_upload_errors", _fake)
 
     rc = cli_history.cmd_issues(SimpleNamespace(destination="geek", limit=10, since_days=7, json=True))
 
@@ -674,7 +674,7 @@ def test_cmd_issues_json_output_passes_args_through(monkeypatch, capsys) -> None
 
 def test_cmd_issues_table_output_and_empty_case(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
-        db,
+        db_issues,
         "get_grouped_upload_errors",
         lambda **_kw: {
             "issues": [
@@ -696,7 +696,7 @@ def test_cmd_issues_table_output_and_empty_case(monkeypatch, capsys) -> None:
     assert "geek" in out
     assert "Auth failed" in out
 
-    monkeypatch.setattr(db, "get_grouped_upload_errors", lambda **_kw: {"issues": [], "total_issues": 0})
+    monkeypatch.setattr(db_issues, "get_grouped_upload_errors", lambda **_kw: {"issues": [], "total_issues": 0})
     rc = cli_history.cmd_issues(SimpleNamespace(destination="all", limit=50, since_days=None, json=False))
     assert rc == 0
     assert "No known upload issues found." in capsys.readouterr().out
@@ -710,13 +710,13 @@ def test_cmd_issues_table_output_and_empty_case(monkeypatch, capsys) -> None:
 def test_cmd_indexers_json_and_exit_code(monkeypatch, capsys) -> None:
     conf = SimpleNamespace()
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
-    monkeypatch.setattr(db, "get_detailed_stats", lambda: {"uploads": {"by_destination": {"geek": {"success": 3, "failed": 1}}}})
+    monkeypatch.setattr(db_stats, "get_detailed_stats", lambda: {"uploads": {"by_destination": {"geek": {"success": 3, "failed": 1}}}})
 
     idx_enabled = SimpleNamespace(id="geek", name="NZBGeek", enabled=True, website="https://geek", submit_url="https://geek/api", categories=None)
     idx_disabled = SimpleNamespace(id="omg", name="OMG", enabled=False, website=None, submit_url=None, categories=None)
 
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(all=lambda: [idx_enabled, idx_disabled]))
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda idx, _conf: idx.enabled)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda idx, _conf: idx.enabled)
 
     rc = cli_history.cmd_indexers(SimpleNamespace(json=True))
 
@@ -725,7 +725,7 @@ def test_cmd_indexers_json_and_exit_code(monkeypatch, capsys) -> None:
     assert payload["enabled_count"] == 1
     assert payload["indexers"][0]["success"] == 3
 
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: False)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda _idx, _conf: False)
 
     rc = cli_history.cmd_indexers(SimpleNamespace(json=True))
 

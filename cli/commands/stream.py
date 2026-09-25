@@ -10,15 +10,15 @@ from cli.output import _print_stream_jobs_queued, _print_stream_monitor_saved
 
 def cmd_stream(args: argparse.Namespace) -> int:
     """Queue one-shot NZB stream/repost jobs or save a stream monitor definition."""
-    from logic import usenet_stream
+    from logic.stream import monitors as stream_monitors, nntp as stream_nntp, repost as stream_repost
     from logic.runtime import ensure_engine_started
 
-    submit_mode = usenet_stream.normalize_submit_mode(args.submit_mode)
+    submit_mode = stream_repost.normalize_submit_mode(args.submit_mode)
     source = str(args.source).strip()
 
     try:
         if args.monitor:
-            monitor = usenet_stream.add_stream_monitor(
+            monitor = stream_monitors.add_stream_monitor(
                 folder_path=source,
                 category=args.category,
                 posting_server_name=args.posting_server,
@@ -36,7 +36,7 @@ def cmd_stream(args: argparse.Namespace) -> int:
             _print_stream_monitor_saved(args, payload)
             return 0
 
-        paths = usenet_stream.resolve_source_nzb_paths(source)
+        paths = stream_repost.resolve_source_nzb_paths(source)
         service = ensure_engine_started()
         job_ids: list[str] = []
 
@@ -68,26 +68,26 @@ def cmd_stream(args: argparse.Namespace) -> int:
         }
         _print_stream_jobs_queued(args, payload, source, submit_mode)
         return 0
-    except usenet_stream.StreamError as exc:
+    except stream_nntp.StreamError as exc:
         print(f"Error: {exc}")
         return 1
 
 
 def cmd_stream_monitors(args: argparse.Namespace) -> int:
     """List or remove saved stream monitor definitions."""
-    from logic import usenet_stream
+    from logic.stream import monitors as stream_monitors
 
     action = getattr(args, "monitor_command", None) or "list"
 
     if action == "remove":
-        if not usenet_stream.remove_stream_monitor(args.monitor_id):
+        if not stream_monitors.remove_stream_monitor(args.monitor_id):
             print(f"Error: stream monitor '{args.monitor_id}' was not found.")
             return 1
         print(f"Removed stream monitor {args.monitor_id}.")
         print("Changes apply to the next long-lived app/WebUI run, or after that process is restarted.")
         return 0
 
-    monitors = usenet_stream.list_stream_monitors()
+    monitors = stream_monitors.list_stream_monitors()
     if getattr(args, "json", False):
         print(json.dumps(monitors, indent=2, default=str))
         return 0

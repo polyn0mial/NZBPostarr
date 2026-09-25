@@ -19,10 +19,10 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from core import database
 from core.config import get_config
-from core.utils import log_info, log_success, reset_thread_job, set_thread_job
-from logic import usenet_stream
+from core.db import job_history as db_job_history
+from core.db import queue_items as db_queue_items
+from core.logging import log_info, log_success
 from logic.jobs import executors
 from logic.jobs import requests as job_requests
 from logic.jobs import store as job_store
@@ -38,11 +38,13 @@ from logic.jobs.models import (
     parse_iso_datetime_utc,
     set_job_target_paths,
 )
+from logic.jobs.context import reset_thread_job, set_thread_job
 from logic.jobs.processes import ProcessRegistry
 from logic.jobs.requests import build_retry_request
 from logic.jobs.revalidate import revalidated_plan, revalidation_candidates, revalidation_targets
 from logic.jobs.staging import StagingQueue, prepare_start_items, queue_item_label, raise_no_runnable
 from logic.jobs.views import job_snapshots, queue_control_state
+from logic.stream import monitors as stream_monitors
 
 _SCHEDULER_INTERVAL_S = 15
 
@@ -57,7 +59,7 @@ class JobEngine:
         self._queue_processing_paused = False
         self._queue_scheduler_stop = threading.Event()
         self._queue_scheduler_thread: Optional[threading.Thread] = None
-        self.staging = StagingQueue(self._lock, database.db_load_queue())
+        self.staging = StagingQueue(self._lock, db_queue_items.db_load_queue())
 
         self._jobs_state_path, self._jobs_state_backup_path = job_store.state_paths(get_config().script_dir)
         self._jobs_state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -308,7 +310,7 @@ class JobEngine:
         clear_active_fields: bool,
         remove_from_active: bool,
     ) -> None:
-        from logic.stats_engine import format_seconds
+        from logic.stats.collector import format_seconds
 
         job_id = str(job.get("job_id", ""))
         duration_str = format_seconds(duration_sec)
@@ -354,7 +356,7 @@ class JobEngine:
         if snapshot:
             job["_completed_paths"] = snapshot
 
-        database.save_job_history(
+        db_job_history.save_job_history(
             job_id,
             category=job.get("category"),
             status=job.get("status"),
@@ -384,7 +386,7 @@ class JobEngine:
         job_store.preserve_stopped_processing_job(job)
 
         if job.get("source_monitor_id"):
-            usenet_stream.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
+            stream_monitors.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
 
         if remove_from_active or clear_after_stop:
             self._jobs.pop(job_id, None)
@@ -724,7 +726,7 @@ class JobEngine:
                 self._record_job_event(job, "cancelled", str(job["progress"]))
                 self._cleanup_job_artifacts_locked(job)
                 if job.get("source_monitor_id"):
-                    usenet_stream.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
+                    stream_monitors.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
                 job.pop("_kwargs", None)
                 job.pop("_paths", None)
                 if clear_after_stop:
@@ -904,7 +906,7 @@ class JobEngine:
             self._persist_jobs_locked()
 
         if source_monitor_id:
-            usenet_stream.record_stream_monitor_job(source_monitor_id, job)
+            stream_monitors.record_stream_monitor_job(source_monitor_id, job)
 
         category = str(job.get("category") or "misc")
         source = normalize_job_source(job.get("source"))
@@ -1184,7 +1186,7 @@ class JobEngine:
                     del self._processes[job_id]
                 self._persist_jobs_locked()
 
-                from logic.process_reaper import get_scheduler
+                from core.scheduler import get_scheduler
 
                 get_scheduler().add_job(
                     self._try_start_queued,

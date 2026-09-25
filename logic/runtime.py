@@ -15,7 +15,8 @@ from typing import Any, Callable, Optional
 
 from loguru import logger
 
-from core.config import get_config
+from core import proc
+from core.config import StatsFeatures, get_config
 from core.logging import console
 from logic.jobs.engine import JobEngine
 
@@ -41,16 +42,20 @@ def ensure_engine_started() -> JobEngine:
     return engine
 
 
+# core.proc records each job's tool processes in the engine so stop/clear can terminate them.
+proc.set_process_registry(lambda: get_engine().process_registry())
+
+
 def init_core() -> None:
     """Shared initialization for both WebUI and headless modes.
 
     Installs the web-terminal log buffer, initializes the database and the indexer
     registry, and schedules a one-shot cleanup of stale tmp data.
     """
-    from core.database import init_database
-    from core.registry import get_registry
-    from core.utils import run_global_purge
-    from logic.process_reaper import get_scheduler
+    from core.db.schema import init_database
+    from core.indexers.registry import get_registry
+    from core.scheduler import get_scheduler
+    from logic.pipeline.cleanup import run_global_purge
 
     console.install()
 
@@ -67,10 +72,9 @@ def init_core() -> None:
 
 async def sync_stats_collector(conf: Optional[Any] = None) -> bool:
     """Start or stop the stats history collector to match the config; True when it runs."""
-    from logic.stats_engine import history_tracking_enabled, start_collector, stop_collector, sync_collector_schedule
+    from logic.stats.collector import start_collector, stop_collector, sync_collector_schedule
 
-    current = conf or get_config()
-    required = bool(history_tracking_enabled(current))
+    required = bool(StatsFeatures.from_config(conf or get_config()).history)
     if required:
         await start_collector()
     else:
@@ -85,11 +89,12 @@ async def start(
     pending_watch_folders: Callable[[Any], list[Path]],
 ) -> None:
     """Start the WebUI's services in order: core, stats collector, folder and stream monitors,
-    the pending index, then the process reaper."""
-    from logic import usenet_stream
+    the pending index, the process reaper, then the dropped-file cleanup."""
     from logic.autoupload import start_folder_monitor
     from logic.pending.completion import prewarm_pending_indexer_context
     from logic.pending.index import get_pending_index_manager
+    from logic.stream import monitors as stream_monitors
+    from logic.system.updater import cleanup_removed_paths
 
     begin = time.time()
     init_core()
@@ -106,7 +111,7 @@ async def start(
     await start_folder_monitor()
     logger.debug(f"  [3/3] Folder Monitor checked ({time.time() - begin:.3f}s)")
 
-    await usenet_stream.start_stream_monitors()
+    await stream_monitors.start_stream_monitors()
     logger.debug(f"  [3.25/4] Stream Monitor checked ({time.time() - begin:.3f}s)")
 
     # Pending index manager (request-path offload): watcher invalidation + periodic reconcile.
@@ -122,19 +127,22 @@ async def start(
     _arm_process_reaper()
     logger.debug(f"  [4/4] Process Reaper armed ({time.time() - begin:.3f}s)")
 
+    # Delete files dropped by earlier releases (an older updater never deletes).
+    await asyncio.to_thread(cleanup_removed_paths)
+
 
 async def stop() -> None:
     """Stop what start() started, in reverse, then flush the database WAL."""
-    from core.database import checkpoint_wal
-    from logic import usenet_stream
+    from core.db.engine import checkpoint_wal
+    from core.scheduler import shutdown_scheduler
     from logic.autoupload import stop_folder_monitor
     from logic.pending.index import get_pending_index_manager
-    from logic.process_reaper import shutdown_scheduler
-    from logic.stats_engine import stop_collector
+    from logic.stats.collector import stop_collector
+    from logic.stream import monitors as stream_monitors
 
     await _stop_startup_reaper()
     get_pending_index_manager().stop()
-    await usenet_stream.stop_stream_monitors()
+    await stream_monitors.stop_stream_monitors()
     await stop_folder_monitor()
     await stop_collector()
     if _engine is not None:
@@ -147,7 +155,7 @@ def _arm_process_reaper() -> None:
     """Start periodic cleanup immediately and offload the boot scan to the background."""
     global _boot_reaper_task
 
-    from logic.process_reaper import schedule_reaper, schedule_wal_checkpoint
+    from logic.system.reaper import schedule_reaper, schedule_wal_checkpoint
 
     schedule_reaper()
     schedule_wal_checkpoint()
@@ -180,7 +188,7 @@ async def _stop_startup_reaper() -> None:
 
 async def _run_startup_reaper() -> None:
     """Run the initial orphan-process scan without blocking app startup."""
-    from logic.process_reaper import reap_orphans
+    from logic.system.reaper import reap_orphans
 
     try:
         result = await asyncio.to_thread(reap_orphans, force=True)

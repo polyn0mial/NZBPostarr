@@ -10,8 +10,9 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from core import database
-from core.utils import VIDEO_EXTENSIONS, log_info, normalize_submission_category
+from core.db import queue_items as db_queue_items
+from core.logging import log_info
+from core.media import VIDEO_EXTENSIONS, normalize_category
 from logic.classify.tv_packs import has_season_pack_name, is_season_pack_folder
 from logic.jobs import requests as job_requests
 from logic.jobs.models import INVALID_CATEGORY_VALUES, QueueStartSummary, normalize_job_path_identity
@@ -30,7 +31,7 @@ class StagingQueue:
 
     def add(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         with self._lock:
-            added = database.db_add_queue_items(items)
+            added = db_queue_items.db_add_queue_items(items)
             if not added:
                 return []
 
@@ -57,14 +58,14 @@ class StagingQueue:
 
     def remove(self, item_id: int) -> bool:
         with self._lock:
-            removed = database.db_remove_queue_item(item_id)
+            removed = db_queue_items.db_remove_queue_item(item_id)
             if removed:
                 self.items = [queue_item for queue_item in self.items if queue_item["id"] != item_id]
         return removed
 
     def clear(self) -> int:
         with self._lock:
-            count = database.db_clear_queue()
+            count = db_queue_items.db_clear_queue()
             self.items.clear()
         return count
 
@@ -73,7 +74,7 @@ class StagingQueue:
             id_map = {queue_item["id"]: queue_item for queue_item in self.items}
             if set(item_ids) != set(id_map.keys()):
                 return False
-            ok = database.db_reorder_queue(item_ids)
+            ok = db_queue_items.db_reorder_queue(item_ids)
             if ok:
                 self.items = [id_map[item_id] for item_id in item_ids]
         return ok
@@ -81,7 +82,7 @@ class StagingQueue:
     def remove_started(self, runnable_ids: set[int], job_id: str) -> None:
         """Drop the staged rows a queue start turned into job ``job_id``."""
         try:
-            removed_count = database.db_remove_queue_items(sorted(runnable_ids))
+            removed_count = db_queue_items.db_remove_queue_items(sorted(runnable_ids))
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.warning(f"[QUEUE-START] Job {job_id} started but staged-item cleanup failed: {exc}")
             return
@@ -112,7 +113,7 @@ def queue_item_label(item: dict[str, Any], fallback_index: int) -> str:
 
 
 def derive_queue_item_category(item: dict[str, Any]) -> tuple[str, str]:
-    manual_category = normalize_submission_category(item.get("manual_category"))
+    manual_category = normalize_category(item.get("manual_category"))
     path_text = str(item.get("path") or "").strip()
     if path_text:
         try:
@@ -124,7 +125,7 @@ def derive_queue_item_category(item: dict[str, Any]) -> tuple[str, str]:
                 itype_hint=str(item.get("itype") or "") if manual_category else "",
                 respect_explicit_hint=bool(manual_category),
             )
-            resolved_category = normalize_submission_category(resolved.category)
+            resolved_category = normalize_category(resolved.category)
             if resolved_category and resolved_category not in INVALID_CATEGORY_VALUES:
                 source = "manual_category" if manual_category else f"path:{resolved.detection_method}"
                 return resolved_category, source
@@ -132,9 +133,9 @@ def derive_queue_item_category(item: dict[str, Any]) -> tuple[str, str]:
             logger.debug(f"Queue item category recovery failed for {path_text}: {exc}")
         return "", ""
 
-    detected_category = normalize_submission_category(item.get("detected_category"))
-    itype_category = normalize_submission_category(item.get("itype"))
-    explicit_category = normalize_submission_category(item.get("category"))
+    detected_category = normalize_category(item.get("detected_category"))
+    itype_category = normalize_category(item.get("itype"))
+    explicit_category = normalize_category(item.get("category"))
     for candidate, source in (
         (manual_category, "manual_category"),
         (detected_category, "detected_category"),

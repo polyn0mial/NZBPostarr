@@ -10,8 +10,8 @@ from tests.support import *
 from logic.pending import completion as pending_completion
 from logic.pending import rules as pending_rules
 from logic.pending import tree as pending_tree
-from logic import processing
-from logic.processing_g2 import _iter_work_items
+from tests.support import pipeline_facade as processing
+from logic.pipeline.plan import _iter_work_items
 from logic.jobs import models as job_models
 from logic.jobs import requests as job_requests
 from logic.jobs import staging as job_staging
@@ -153,11 +153,11 @@ def test_shared_server_posts_once_with_submission_groups() -> None:
 
 def test_consecutive_failures_warn_and_reset(monkeypatch) -> None:
     # processing-11: warn from the fifth failure in a row, reset on success; the job continues.
-    from logic import processing_g2
+    from logic.pipeline import runner
 
     warnings: list[str] = []
-    monkeypatch.setattr(processing_g2, "log_info", lambda msg, level="INFO": warnings.append(f"{level}:{msg}"))
-    state = processing_g2._JobRunState(total=10, effective_limit=None, test_mode=True)
+    monkeypatch.setattr(runner, "log_info", lambda msg, level="INFO": warnings.append(f"{level}:{msg}"))
+    state = runner._JobRunState(total=10, effective_limit=None, test_mode=True)
 
     for _ in range(4):
         state.note_failure()
@@ -202,7 +202,7 @@ def test_stop_during_path_resolution_ends_the_job(tmp_path, monkeypatch) -> None
 
 def test_run_command_does_not_kill_a_running_tool_while_paused() -> None:
     # queue-backend-07: pause lets the current tool finish.
-    from core import utils as utils_mod
+    from core import proc
 
     process = subprocess.Popen(
         [sys.executable, "-c", "print('one'); print('two')"],
@@ -213,7 +213,7 @@ def test_run_command_does_not_kill_a_running_tool_while_paused() -> None:
     job = {"pause_requested": True, "status": "paused"}
     lines: deque = deque(maxlen=10)
 
-    reader, stopped = utils_mod._run_command_stream_output(process, job, lines, "test", None, True)
+    reader, stopped = proc._run_command_stream_output(process, job, lines, "test", None, True)
     process.wait(timeout=10)
     if reader is not None:
         reader.join(timeout=5)
@@ -350,7 +350,7 @@ def test_force_upload_request_skips_pack_expansion(tmp_path, monkeypatch) -> Non
     def refuse(*_a, **_kw):
         raise AssertionError("force upload must not walk packs")
 
-    monkeypatch.setattr(type(service), "_expand_explicit_pack_request_paths", classmethod(refuse))
+    monkeypatch.setattr(job_requests, "expand_explicit_pack_request_paths", refuse)
     request = ProcessingJobRequest(category="tv", paths=(str(season),), skip_pack_expansion=True)
 
     assert service.start_processing_job_request(request) == "job"

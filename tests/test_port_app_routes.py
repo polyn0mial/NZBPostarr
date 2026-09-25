@@ -126,7 +126,7 @@ def test_create_full_backup_can_include_tmp_contents(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(config_mod, "APP_ROOT", root)
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
 
-    result = system_api._create_full_backup_archive(skip_tmp_contents=False)
+    result = system_backup.create_full_backup_archive(skip_tmp_contents=False)
 
     with tarfile.open(result["archive_path"], "r:gz") as tar:
         assert "nzbpostarr/data/tmp/work.part01.rar" in tar.getnames()
@@ -136,7 +136,7 @@ def test_create_full_backup_failure_is_a_readable_500(monkeypatch) -> None:
     def _boom(**_kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(system_api, "_create_full_backup_archive", _boom)
+    monkeypatch.setattr(system_backup, "create_full_backup_archive", _boom)
 
     with pytest.raises(HTTPException) as exc:
         _run_async(system_api.create_full_backup(system_api.CreateBackupRequest(skip_tmp_contents=False)))
@@ -316,18 +316,18 @@ def test_history_routes_report_database_errors_as_503(monkeypatch) -> None:
     def _down(*_args, **_kwargs):
         raise DatabaseOperationalError("database is locked")
 
-    for name in (
-        "get_recent_uploads",
-        "get_grouped_uploads",
-        "get_group_upload_items",
-        "get_grouped_upload_errors",
-        "get_job_history",
-        "get_uploads_for_job",
-        "delete_job_history",
-        "delete_upload_item",
-        "bulk_delete_upload_items",
+    for module, name in (
+        (db_history, "get_recent_uploads"),
+        (db_history, "get_grouped_uploads"),
+        (db_history, "get_group_upload_items"),
+        (db_issues, "get_grouped_upload_errors"),
+        (db_job_history, "get_job_history"),
+        (db_history, "get_uploads_for_job"),
+        (db_job_history, "delete_job_history"),
+        (db_uploads, "delete_upload_item"),
+        (db_uploads, "bulk_delete_upload_items"),
     ):
-        monkeypatch.setattr(db, name, _down)
+        monkeypatch.setattr(module, name, _down)
 
     class _Request:
         async def json(self):

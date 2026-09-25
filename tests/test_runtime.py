@@ -30,7 +30,7 @@ def _refuse(*_args, **_kwargs):
 def test_building_the_engine_starts_no_thread_and_first_use_starts_it_once(monkeypatch, tmp_path) -> None:
     _RecordingThread.created = []
     monkeypatch.setattr(engine_mod, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
-    monkeypatch.setattr(engine_mod.database, "db_load_queue", lambda: [])
+    monkeypatch.setattr(db_queue_items, "db_load_queue", lambda: [])
     monkeypatch.setattr(engine_mod.threading, "Thread", _RecordingThread)
     monkeypatch.setattr(runtime, "_engine", None)
 

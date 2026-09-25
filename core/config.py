@@ -6,8 +6,10 @@ Simplified configuration management with Pydantic
 """
 
 import os
+import re
 import sys
 import threading
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,7 +17,9 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.utils import atomic_write_text, normalize_submission_category
+from core import logging as _logging  # noqa: F401  (registers the custom log levels and the log file sink)
+from core.fs import atomic_write_text
+from core.media import normalize_category
 
 # core/ lives directly under the project root.
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -68,7 +72,7 @@ def _normalize_folder_entry_category(raw: Any) -> str:
     cleaned = str(raw or "").strip().lower()
     if cleaned in {"", "auto", "external"}:
         return _AUTO_ROOT_CATEGORY
-    return normalize_submission_category(cleaned)
+    return normalize_category(cleaned)
 
 
 def _is_auto_root_category(raw: Any) -> bool:
@@ -143,6 +147,40 @@ def _normalize_folder_paths_payload(data: Any) -> Any:
     return data
 
 
+@dataclass(frozen=True)
+class StatsFeatures:
+    """Which stats surfaces are on. The one owner of the stats feature-flag rules."""
+
+    stats_page: bool
+    dashboard_modules: tuple[str, ...]
+    dashboard_enabled: bool
+
+    @classmethod
+    def from_config(cls, conf: Any) -> "StatsFeatures":
+        modules = getattr(conf, "dashboard_stats_modules", []) or []
+        cleaned = tuple(str(module).strip() for module in modules if str(module).strip())[:6]
+        return cls(
+            stats_page=bool(getattr(conf, "stats_page_enabled", True)),
+            dashboard_modules=cleaned,
+            dashboard_enabled=bool(getattr(conf, "dashboard_stats_enabled", True)),
+        )
+
+    @property
+    def dashboard(self) -> bool:
+        """Dashboard server stats: enabled and at least one module chosen."""
+        return self.dashboard_enabled and bool(self.dashboard_modules)
+
+    @property
+    def history(self) -> bool:
+        """Stats history and its collector serve either stats surface."""
+        return self.stats_page or self.dashboard
+
+    @property
+    def connections(self) -> bool:
+        """Connection tracking feeds the stats page and the connection dashboard modules."""
+        return self.stats_page or bool({"connections", "net_errors"} & set(self.dashboard_modules))
+
+
 class NNTPServer(BaseModel):
     """NNTP Server configuration model."""
 
@@ -196,10 +234,16 @@ class Config(BaseSettings):
 
     @model_validator(mode="before")
     @classmethod
-    def migrate_poster(cls, data: Any) -> Any:
-        if isinstance(data, dict) and "poster" in data:
-            import re
+    def _migrate_legacy_config(cls, data: Any) -> Any:
+        """Map every legacy config spelling onto the current fields, in one place.
 
+        - ``poster: "Name <email>"`` -> ``poster_name`` / ``poster_email``
+        - ``movies_folder`` / ``tv_folder`` / ``misc_folder`` / ``external_folder(s)`` -> ``folder_paths``
+        - ``tv_pack_ignore`` legacy rule keys -> ``ignore_non_episode`` / ``require_episode``
+        """
+        if not isinstance(data, dict):
+            return data
+        if "poster" in data:
             poster = data.pop("poster")
             if poster and isinstance(poster, str):
                 match = re.search(r"(.*)\s+<(.*)>", poster)
@@ -208,7 +252,8 @@ class Config(BaseSettings):
                     data["poster_email"] = match.group(2).strip()
                 else:
                     data["poster_name"] = poster
-
+        if "tv_pack_ignore" in data:
+            data["tv_pack_ignore"] = _normalize_tv_pack_ignore(data["tv_pack_ignore"])
         return _normalize_folder_paths_payload(data)
 
     @field_validator("backup_folder", mode="before")
@@ -218,11 +263,6 @@ class Config(BaseSettings):
             return APP_ROOT / "backups"
         path = Path(str(value).strip()).expanduser()
         return path if path.is_absolute() else APP_ROOT / path
-
-    @field_validator("tv_pack_ignore", mode="before")
-    @classmethod
-    def migrate_tv_pack_ignore(cls, value: Any) -> Any:
-        return _normalize_tv_pack_ignore(value)
 
     rar_path: str = "rar"
     nyuu_path: str
@@ -294,6 +334,11 @@ class Config(BaseSettings):
     dashboard_stats_modules: List[str]
     stats_page_enabled: bool = True
     category_appearance_profiles: Dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def stats_features(self) -> "StatsFeatures":
+        """The stats feature flags derived from this config."""
+        return StatsFeatures.from_config(self)
 
     def get_api_key(self, field_name: str) -> Optional[str]:
         """Get an API key by name from config fields, api_keys mapping, or model_extra."""

@@ -1,4 +1,4 @@
-"""Source-text pins on the queue page scripts (webui/assets/js/pages/queue*.js)."""
+"""Source-text pins on the queue page scripts (webui/assets/js/pages/queue/*.js)."""
 
 from tests.webui._source import _queue_source
 
@@ -7,7 +7,7 @@ def test_webui_queue_assets_include_expected_selection_logic() -> None:
     cases = [
         (
             "queue-js",
-            ("webui", "assets", "js", "pages", "queue.js"),
+            ("webui", "assets", "js", "pages", "queue"),
             [
                 "const cat = this.getCategoryForItem(child);",
                 "nextCategories[item.key] = manualCategory || this.serverCategoryForItem(item);",

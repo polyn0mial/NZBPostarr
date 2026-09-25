@@ -17,17 +17,18 @@ def cmd_status(args: argparse.Namespace) -> int:
     does not affect the exit code.
     """
     from core.config import get_config
-    from core.registry import get_registry, resolve_indexer_enabled
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_enabled
 
     conf = get_config()
     registry = get_registry()
     enabled = registry.enabled(conf)
     all_idx = registry.all()
 
-    import shutil
+    from core.tools import PROCESSING_TOOLS, check_tools
 
-    required_tools = ["rar", "parpar", "nyuu"]
-    tool_paths = {tool: shutil.which(tool) for tool in required_tools + ["mediainfo"]}
+    required_tools = list(PROCESSING_TOOLS)
+    tool_paths = check_tools(conf, (*PROCESSING_TOOLS, "mediainfo"))
     missing_required = [tool for tool in required_tools if not tool_paths[tool]]
 
     if args.json:

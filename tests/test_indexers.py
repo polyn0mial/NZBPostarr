@@ -3,6 +3,7 @@
 """NZBPostarr indexers tests."""
 
 from tests.support import *
+from logic import settings as settings_service
 
 def test_indexer_secret_resolution() -> None:
     idx = IndexerDefinition(
@@ -46,7 +47,7 @@ def test_ordinary_api_secret_masking_and_save_merge() -> None:
         nntp_servers=[current_server],
         web_password="private-web-password",
     )
-    masked = settings_api._mask_config_secrets(
+    masked = settings_service.mask_config_secrets(
         {
             "enable_password": True,
             "api_keys": conf.api_keys,
@@ -61,7 +62,7 @@ def test_ordinary_api_secret_masking_and_save_merge() -> None:
     assert masked["nntp_servers"][0]["user"] == SECRET_MASK
     assert masked["nntp_servers"][0]["password"] == SECRET_MASK
 
-    merged = settings_api._merge_masked_secret_updates(
+    merged = settings_service.merge_masked_secret_updates(
         {
             "api_keys": {"geek": SECRET_MASK},
             "usernames": {"omg": SECRET_MASK},
@@ -127,7 +128,7 @@ def test_indexer_ui_metadata_never_returns_configured_credentials() -> None:
     assert payload["username"] == ""
 
 def test_estimate_nyuu_post_percent_uses_read_as_lower_bound():
-    from logic.uploaders import _estimate_nyuu_post_percent
+    from logic.pipeline.posting import _estimate_nyuu_post_percent
 
     # If our estimate is too small, the read counter should prevent us from
     # hitting 99% early for a long time.
@@ -137,7 +138,7 @@ def test_estimate_nyuu_post_percent_uses_read_as_lower_bound():
     assert _estimate_nyuu_post_percent(10_000, 10_000, 10_000) == 99
 
 def test_upload_item_does_not_override_nzb_subject(tmp_path, monkeypatch) -> None:
-    from logic import uploaders
+    from logic.pipeline import posting as uploaders
 
     tmp_sub = tmp_path / "tmp"
     item_dir = tmp_sub / "Release.Name"
@@ -192,12 +193,13 @@ def test_submit_to_indexer_flags_missing_api_key_as_misconfigured() -> None:
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
     )
 
-    ok, status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=indexer,
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=Path("unused.nzb"),
         config=_DummySubmitConfig(api_key=""),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert ok is False
     assert status == "misconfigured"
@@ -211,17 +213,18 @@ def test_submit_to_indexer_rejects_unknown_category_without_default_fallback(tmp
         name="Movies Only",
         submit_url="https://example.invalid/api",
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
-        categories=registry_mod.CategoryMapping(tv="", movie="2040", misc="5000", default="5000"),
-        success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+        categories=models_mod.CategoryMapping(tv="", movie="2040", misc="5000", default="5000"),
+        success=models_mod.SuccessPatterns(text_patterns=["OK"]),
     )
 
-    ok, status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=indexer,
         rls_name="Show.Name.S01.1080p.WEB-DL",
         nzb_path=nzb_file,
         config=_DummySubmitConfig(),
         cat="tv",
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert ok is False
     assert status == "misconfigured"
@@ -229,14 +232,14 @@ def test_submit_to_indexer_rejects_unknown_category_without_default_fallback(tmp
 
 
 def test_audiobook_category_mapping_prefers_direct_code_then_books_fallback() -> None:
-    from core.utils import normalize_submission_category
+    from core.media import normalize_category
 
-    direct = registry_mod.CategoryMapping(audiobooks="3030", books="7020")
-    fallback = registry_mod.CategoryMapping(books="7020")
-    missing = registry_mod.CategoryMapping(movie="2040")
+    direct = models_mod.CategoryMapping(audiobooks="3030", books="7020")
+    fallback = models_mod.CategoryMapping(books="7020")
+    missing = models_mod.CategoryMapping(movie="2040")
 
-    assert normalize_submission_category("audiobook") == "audiobooks"
-    assert normalize_submission_category("audiobooks") == "audiobooks"
+    assert normalize_category("audiobook") == "audiobooks"
+    assert normalize_category("audiobooks") == "audiobooks"
     assert direct.resolve_code("audiobooks") == ("3030", "audiobooks", True)
     assert fallback.resolve_code("audiobooks") == ("7020", "books", False)
     assert missing.resolve_code("audiobooks") == (None, None, False)
@@ -247,7 +250,7 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
         id="audio-check",
         name="Audio Check",
         submit_url="https://example.invalid/api",
-        categories=registry_mod.CategoryMapping(audiobooks="3030"),
+        categories=models_mod.CategoryMapping(audiobooks="3030"),
     )
     monkeypatch.setattr(
         registry_mod,
@@ -255,13 +258,12 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
         lambda: SimpleNamespace(all=lambda: [indexer]),
     )
 
-    assert registry_mod.get_available_categories() == [
+    assert categories_mod.get_available_categories() == [
         {
             "id": "audiobooks",
             "key": "audiobooks",
             "label": "Audiobooks",
-            "icon": "headphones",
-            "color": "teal-400",
+            "order": 0,
             "indexers": [
                 {
                     "id": "audio-check",
@@ -275,13 +277,13 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
 
 
 def test_books_mapping_advertises_only_books_for_all_jobs(monkeypatch) -> None:
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     indexer = IndexerDefinition(
         id="books-check",
         name="Books Check",
         submit_url="https://example.invalid/api",
-        categories=registry_mod.CategoryMapping(books="7020"),
+        categories=models_mod.CategoryMapping(books="7020"),
     )
     monkeypatch.setattr(
         registry_mod,
@@ -289,7 +291,7 @@ def test_books_mapping_advertises_only_books_for_all_jobs(monkeypatch) -> None:
         lambda: SimpleNamespace(all=lambda: [indexer]),
     )
 
-    categories = registry_mod.get_available_categories()
+    categories = categories_mod.get_available_categories()
     # D03: a books-only mapping no longer mirrors an Audiobooks category.
     assert [category["id"] for category in categories] == ["books"]
     assert processing._resolve_job_categories("all") == ["books"]
@@ -305,8 +307,8 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="NZBGeek",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(tv="5040", movie="2040", misc="5000", default="5000"),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                categories=models_mod.CategoryMapping(tv="5040", movie="2040", misc="5000", default="5000"),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Show.Name.S01.1080p.WEB-DL",
             "tv_pack",
@@ -324,10 +326,10 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="TV Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     tv="5040", movie="2040", anime="5070", misc="5000", default="5000"
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Show.Name.S00E01.1080p.WEB-DL",
             "tv",
@@ -345,10 +347,10 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="Anime Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     tv="5040", movie="2040", anime="5070", misc="5000", default="5000"
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Anime.Name.S01E01.1080p.WEB-DL",
             "anime",
@@ -366,10 +368,10 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="NZBGeek",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     movie="2040", movie_sd="2030", movie_hd="2040", misc="5000", default="5000"
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Movie.Name.1999.DVD.REMUX.NTSC",
             "movies",
@@ -390,7 +392,7 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 curl_template="https://example.invalid/api-upload.php?user={username}&api={api_key}",
                 auth=AuthConfig(method="curl_url"),
                 category_param="catid",
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     movie="movie",
                     movie_sd="15",
                     movie_hd="16",
@@ -398,7 +400,7 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                     misc="29",
                     default="video",
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Movie.Name.2001.DVD.REMUX.PAL",
             "movies",
@@ -428,12 +430,12 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="Audio Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     audiobooks="3030",
                     books="7020",
                     misc="5000",
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Author.Name.Novel.Unabridged.MP3",
             "audiobooks",
@@ -451,8 +453,8 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="Books Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(books="7020", misc="5000"),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                categories=models_mod.CategoryMapping(books="7020", misc="5000"),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Author.Name.Novel.Unabridged.MP3",
             "audiobooks",
@@ -492,13 +494,14 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
         seen = _capture_submit_request(monkeypatch, text=response_text, json_payload=response_json)
         nzb_file = _make_sample_nzb(tmp_path / case_name)
 
-        ok, status, _reason = submit_to_indexer(
+        result = submit_to_indexer(
             indexer=indexer,
             rls_name=release_name,
             nzb_path=nzb_file,
             config=config,
             cat=category,
         )
+        ok, status, _reason = result.success, result.status, result.reason
 
         assert ok is True, case_name
         assert status == "success", case_name
@@ -666,7 +669,7 @@ def test_force_upload_items_keeps_mixed_categories_in_one_request(tmp_path):
     assert captured["kwargs"] == {"source": "pending-force-upload", "reuse_running": False}
 
 def test_submit_api_batch_isolates_indexer_exceptions(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     nzb_file = tmp_path / "sample.nzb"
     nzb_file.write_bytes(b"x")
@@ -693,3 +696,116 @@ def test_submit_api_batch_isolates_indexer_exceptions(tmp_path, monkeypatch) -> 
         ("bad", False, "Unhandled submission exception for indexer 'bad': boom", "error"),
         ("good", True, "ok", "success"),
     ]
+
+
+def test_submit_and_record_records_each_destination(tmp_path, monkeypatch) -> None:
+    # One call covers success, duplicate (counts as posted, processing-08), rejection and an
+    # indexer that raises: every destination gets its own history row, none stops the others.
+    from logic.pipeline import submit as submit_mod
+
+    nzb_file = tmp_path / "sample.nzb"
+    nzb_file.write_bytes(b"x")
+    submitted: list[str] = []
+
+    def fake_submit_api(name, dest_id, _conf, **_kwargs):
+        submitted.append(f"{dest_id}:{name}")
+        if dest_id == "boom":
+            raise RuntimeError("down")
+        return {
+            "ok": SubmitResult(True, "success", "ok"),
+            "dupe": SubmitResult(False, "duplicate", "already there"),
+            "nope": SubmitResult(False, "failed", "rejected"),
+        }[dest_id]
+
+    rows: list[tuple[str, str]] = []
+    refreshed: list[bool] = []
+    monkeypatch.setattr(submit_mod, "submit_api", fake_submit_api)
+    monkeypatch.setattr(
+        submit_mod,
+        "update_db_destination",
+        lambda dest_id, *_args, **kwargs: rows.append((dest_id, kwargs.get("status", "success"))) or True,
+    )
+    monkeypatch.setattr(submit_mod, "_record_folder_hierarchy_rows", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(submit_mod, "refresh_pending_after_upload", lambda: refreshed.append(True))
+
+    results, any_success = submit_mod.submit_and_record(
+        [{"dests": ["ok", "dupe"], "priority": False}, {"dests": ["nope", "boom"], "priority": True}],
+        conf=SimpleNamespace(),
+        name="Show.Name.S01E01",
+        nzb_path=nzb_file,
+        submission_category="tv",
+        item_size=10,
+        key="Show.Name.S01E01",
+        itype="TV Episode",
+        item_path=tmp_path / "Show.Name.S01E01.mkv",
+        base_folder=None,
+        category="tv",
+        test_mode=False,
+        upload_result={},
+    )
+
+    assert any_success is True
+    assert [(dest, ok, status) for dest, ok, _reason, status in results] == [
+        ("ok", True, "success"),
+        ("dupe", False, "duplicate"),
+        ("nope", False, "failed"),
+        ("boom", False, "error"),
+    ]
+    assert sorted(submitted) == [
+        "boom:Priority Show.Name.S01E01",
+        "dupe:Show.Name.S01E01",
+        "nope:Priority Show.Name.S01E01",
+        "ok:Show.Name.S01E01",
+    ]
+    assert sorted(rows) == [("boom", "failed"), ("dupe", "success"), ("nope", "failed"), ("ok", "success")]
+    assert refreshed == [True]
+
+
+def _shipped_indexer_yamls() -> list:
+    return [path for path in sorted((REPO_ROOT / "indexers").glob("*.yaml")) if not path.name.startswith("_") and ".example." not in path.name]
+
+
+def test_every_shipped_indexer_yaml_loads_strictly() -> None:
+    import yaml
+
+    loaded = [IndexerDefinition(**yaml.safe_load(path.read_text(encoding="utf-8"))) for path in _shipped_indexer_yamls()]
+    assert {indexer.id for indexer in loaded} == {"geek", "in", "omg", "planet", "slug", "su"}
+    with pytest.raises(ValueError, match="extra"):
+        IndexerDefinition(id="typo", name="Typo", submit_url="https://example.invalid/api", submit_urll="x")
+
+
+def test_available_categories_payload_keys_carry_no_presentation(monkeypatch) -> None:
+    indexer = IndexerDefinition(
+        id="keys-check",
+        name="Keys Check",
+        submit_url="https://example.invalid/api",
+        categories=models_mod.CategoryMapping(movie="2000", tv="5000", misc="7000"),
+    )
+    monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(all=lambda: [indexer]))
+
+    categories = categories_mod.get_available_categories()
+    assert [(cat["id"], cat["label"], cat["order"]) for cat in categories] == [
+        ("movies", "Movies", 0),
+        ("tv", "TV Shows", 1),
+        ("misc", "Misc", 2),
+    ]
+    assert all(sorted(cat) == ["id", "indexers", "key", "label", "order"] for cat in categories)
+
+
+def test_setup_indexer_list_matches_shipped_yamls() -> None:
+    import ast
+
+    import yaml
+
+    tree = ast.parse((REPO_ROOT / "setup.py").read_text(encoding="utf-8"))
+    setup_list = next(
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "SETUP_INDEXERS" for t in node.targets)
+    )
+    shipped = {}
+    for path in _shipped_indexer_yamls():
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        shipped[data["id"]] = (data["id"], data["name"], data["website"])
+    assert sorted(setup_list) == sorted(shipped.values())
+    assert shipped["su"][1] == "NZB.Life"

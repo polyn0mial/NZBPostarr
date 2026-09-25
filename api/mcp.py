@@ -74,7 +74,7 @@ def _service() -> Any:
 def _safe_indexer_list() -> list[dict[str, Any]]:
     """Indexer metadata with credentials stripped."""
     from core.config import get_config
-    from core.registry import get_all_indexers
+    from core.indexers.registry import get_all_indexers
 
     conf = get_config()
     # to_ui_dict is the same credential-free projection the WebUI receives.
@@ -144,7 +144,7 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
 
     def get_history(limit: int = 25) -> dict[str, Any]:
         """Recent job history, newest first."""
-        from core.database import get_job_history
+        from core.db.job_history import get_job_history
 
         rows = get_job_history(limit=max(1, min(int(limit), 200)))
         return {"history": [redact_mapping(dict(row)) if isinstance(row, dict) else row for row in rows]}

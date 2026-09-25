@@ -12,7 +12,7 @@ from typing import Any
 
 def cmd_upload(args: argparse.Namespace) -> int:
     """Run an upload job synchronously via the JobEngine (blocking until complete)."""
-    from core.registry import get_available_categories
+    from core.indexers.categories import get_available_categories
     from logic.runtime import ensure_engine_started
 
     category = args.category.lower()
@@ -65,7 +65,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
         print("\nStop requested - finishing current item...")
         stop_event.set()
         # Signal the job via the thread-local job dict
-        from core.utils import get_thread_job
+        from logic.jobs.context import get_thread_job
 
         job = get_thread_job()
         if job:

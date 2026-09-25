@@ -30,7 +30,7 @@ def test_stats_engine_parsing_and_formatting() -> None:
 
 
 def test_process_stats_collector_ranks_rows_and_honors_collapsed_sections(monkeypatch) -> None:
-    from logic import process_stats
+    from logic.stats import process_stats
 
     class FakeProcess:
         def __init__(self, info):
@@ -78,7 +78,7 @@ def test_process_stats_collector_ranks_rows_and_honors_collapsed_sections(monkey
 
 
 def test_process_stats_collector_skips_idle_quiet_ui(monkeypatch) -> None:
-    from logic import process_stats
+    from logic.stats import process_stats
 
     monkeypatch.setattr(
         process_stats.psutil,
@@ -99,7 +99,8 @@ def test_process_stats_collector_skips_idle_quiet_ui(monkeypatch) -> None:
 
 
 def test_headless_stats_command_outputs_json_without_starting_collector(monkeypatch, capsys) -> None:
-    from logic import runtime, stats_engine
+    from logic import runtime
+    from logic.stats import collector as stats_engine, system_info
 
     sample = {
         "hostname": "test-host",
@@ -120,7 +121,7 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
     }
 
     monkeypatch.setattr(runtime, "init_core", lambda: None)
-    monkeypatch.setattr(stats_engine, "collect_instant_system_info", lambda interval_seconds=0.25: sample)
+    monkeypatch.setattr(system_info, "collect_instant_system_info", lambda interval_seconds=0.25: sample)
 
     def fail_start_collector(*_args, **_kwargs):
         raise AssertionError("headless stats should not start the background collector")
@@ -135,10 +136,10 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
     assert payload["network"]["connections"] == 7
 
 def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
-    from logic import stats_engine
+    from logic.stats import system_info
 
     monkeypatch.setattr(
-        stats_engine,
+        system_info,
         "collect_instant_system_info",
         lambda interval_seconds=0.25: {"hostname": "test-host", "platform": "TestOS", "uptime_seconds": 0},
     )
@@ -164,7 +165,8 @@ def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
     assert "Stopped." in output
 
 def test_arm_process_reaper_schedules_boot_scan_in_background(monkeypatch) -> None:
-    from logic import process_reaper, runtime
+    from logic import runtime
+    from logic.system import reaper as process_reaper
 
     calls: list[str] = []
 
@@ -265,7 +267,7 @@ def test_console_buffer_operations() -> None:
 def test_oversized_folder_still_processes_inner_files(tmp_path, monkeypatch):
     from unittest.mock import patch
 
-    from logic import processing
+    from tests.support import pipeline_facade as processing
     from logic.pending.roots import PendingScanItem
 
     monkeypatch.setenv("NZBPOSTARR_VALIDATE_ISOLATE", "0")
@@ -335,7 +337,7 @@ def test_oversized_folder_still_processes_inner_files(tmp_path, monkeypatch):
 def test_check_tools_honors_configured_commands(tmp_path) -> None:
     from types import SimpleNamespace
 
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     rar = tmp_path / "rar.exe"
     parpar = tmp_path / "parpar.exe"
@@ -348,7 +350,7 @@ def test_check_tools_honors_configured_commands(tmp_path) -> None:
     assert processing.check_tools(conf) is True
 
 def test_run_command_handles_carriage_return_progress() -> None:
-    from core.utils import run_command
+    from core.proc import run_command
 
     parsed: list[str] = []
     script = (
@@ -370,7 +372,7 @@ def test_run_command_handles_carriage_return_progress() -> None:
     assert parsed == ["10%", "20%", "Done"]
 
 def test_runtime_checkpoint_keeps_uploading_item_when_prefetch_finishes(tmp_path) -> None:
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     uploading_path = tmp_path / "Uploading.Movie.mkv"
     prefetched_path = tmp_path / "Prefetched.Movie.mkv"
@@ -388,7 +390,7 @@ def test_runtime_checkpoint_keeps_uploading_item_when_prefetch_finishes(tmp_path
     assert persisted == [True]
 
 def test_generate_mediainfo_uses_one_cli_pass(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     source = tmp_path / "Movie.Name.2026.mkv"
     source.write_bytes(b"video")
@@ -410,7 +412,7 @@ def test_generate_mediainfo_uses_one_cli_pass(tmp_path, monkeypatch) -> None:
     assert calls == [["mediainfo", "--Full", str(source)]]
 
 def test_generate_mediainfo_reuses_current_sidecar(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     source = tmp_path / "Movie.Name.2026.mkv"
     source.write_bytes(b"video")
@@ -492,7 +494,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
             ),
         )
         assert deps_api._stats_collector_required() is expect_collector, case_name
-        assert deps_api._stats_history_enabled() is expect_history, case_name
+        assert deps_api.feature_enabled("history") is expect_history, case_name
 
     patch_hit(
         monkeypatch,
@@ -510,7 +512,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
     assert "disabled" in str(exc_info.value.detail).lower()
 
 def test_scan_item_support_assets_prefers_largest_video_and_primary_nfo(tmp_path) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     release_dir = tmp_path / "Release.Dir"
     large_video = _touch(release_dir / "CD1" / "movie.part01.mkv", b"b" * 25)
@@ -523,7 +525,7 @@ def test_scan_item_support_assets_prefers_largest_video_and_primary_nfo(tmp_path
     assert scan.mediainfo_source_path == large_video
 
 def test_start_watchdog_observer_starts_only_existing_directories(tmp_path) -> None:
-    from core import utils as utils_mod
+    from core import fs
 
     watched = tmp_path / "watched"
     watched.mkdir()
@@ -549,7 +551,7 @@ def test_start_watchdog_observer_starts_only_existing_directories(tmp_path) -> N
             _ = timeout
             self.joined = True
 
-    observer, scheduled = utils_mod.start_watchdog_observer(
+    observer, scheduled = fs.start_watchdog_observer(
         [(object(), watched, True), (object(), missing, True)],
         observer_factory=_FakeObserver,
     )
@@ -559,57 +561,32 @@ def test_start_watchdog_observer_starts_only_existing_directories(tmp_path) -> N
     assert observer.started is True
     assert observer.scheduled == [(str(watched), True)]
 
-    utils_mod.stop_watchdog_observer(observer)
+    fs.stop_watchdog_observer(observer)
 
     assert observer.stopped is True
     assert observer.joined is True
 
-def test_dynamic_cache_bust_updates_from_watchdog_events(tmp_path, monkeypatch) -> None:
-    assets_dir = tmp_path / "assets"
-    assets_dir.mkdir()
-    asset_file = assets_dir / "app.js"
-    asset_file.write_text("console.log('a');", encoding="utf-8")
+def test_asset_cache_token_changes_when_a_dist_file_changes(tmp_path) -> None:
+    dist = tmp_path / "js" / "dist" / "pages"
+    dist.mkdir(parents=True)
+    (tmp_path / "css").mkdir()
+    bundle = dist / "queue.js"
+    bundle.write_text("console.log('a');", encoding="utf-8")
+    (tmp_path / "css" / "core.css").write_text("body{}", encoding="utf-8")
+    (tmp_path / "js" / "notes.txt").write_text("outside the bundle", encoding="utf-8")
 
-    class _FakeObserver:
-        def __init__(self) -> None:
-            self.handler = None
-            self.started = False
-            self.stopped = False
+    initial = assets_api.compute_asset_token(tmp_path)
+    assert assets_api.compute_asset_token(tmp_path) == initial
 
-        def schedule(self, handler, _path: str, recursive: bool) -> None:
-            _ = recursive
-            self.handler = handler
+    (tmp_path / "js" / "notes.txt").write_text("still outside", encoding="utf-8")
+    assert assets_api.compute_asset_token(tmp_path) == initial
 
-        def start(self) -> None:
-            self.started = True
+    bundle.write_text("console.log('bb');", encoding="utf-8")
+    assert assets_api.compute_asset_token(tmp_path) != initial
 
-        def stop(self) -> None:
-            self.stopped = True
-
-        def join(self, timeout: float = 5.0) -> None:
-            _ = timeout
-
-    monkeypatch.setattr(assets_api, "ASSETS_DIR", assets_dir)
-    monkeypatch.setattr(assets_api, "Observer", _FakeObserver)
-
-    token = assets_api._DynamicCacheBust(ttl_seconds=0.1, reconcile_interval_s=60.0)
-    token.start()
-    initial = str(token)
-
-    observer = token._observer
-    assert observer is not None
-    assert observer.started is True
-    assert observer.handler is not None
-
-    asset_file.write_text("console.log('b');", encoding="utf-8")
-    observer.handler.on_modified(SimpleNamespace(is_directory=False, src_path=str(asset_file)))
-
-    monkeypatch.setattr(token, "_compute_value", lambda: (_ for _ in ()).throw(AssertionError("unexpected rescan")))
-
-    assert str(token) != initial
-
-    token.stop()
-    assert observer.stopped is True
+def test_asset_cache_token_is_a_template_global() -> None:
+    assert assets_api.templates.env.globals["cache_bust"] == assets_api.asset_cache_bust
+    assert assets_api.asset_cache_bust
 
 def test_update_settings_reports_partial_success_when_monitor_restart_fails(monkeypatch) -> None:
     monkeypatch.setattr(config_mod, "save_config", lambda _updates: True)
@@ -824,8 +801,8 @@ def test_get_current_settings_preserves_folder_path_categories(monkeypatch) -> N
     )
 
     patch_hit(monkeypatch, settings_api, "get_config", lambda: conf)
-    monkeypatch.setattr("core.registry.get_all_indexers", lambda: [])
-    monkeypatch.setattr("core.registry.get_available_categories", lambda: [])
+    monkeypatch.setattr("core.indexers.registry.get_all_indexers", lambda: [])
+    monkeypatch.setattr("core.indexers.categories.get_available_categories", lambda: [])
 
     result = _run_async(settings_api.get_current_settings())
 
@@ -963,7 +940,7 @@ def test_log_pack_completion_state_uses_verbose_level(monkeypatch) -> None:
     ]
 
 def test_parse_nzb_structure_collects_files_and_segments(tmp_path) -> None:
-    from logic.usenet_stream import parse_nzb_structure
+    from logic.stream.nzb import parse_nzb_structure
 
     source = tmp_path / "sample.nzb"
     source.write_text(
@@ -993,7 +970,7 @@ def test_parse_nzb_structure_collects_files_and_segments(tmp_path) -> None:
     assert file_entry["segments"][1]["message_id"] == "<part2@example>"
 
 def test_build_procjson_inputs_points_back_to_helper(tmp_path) -> None:
-    from logic.usenet_stream import build_procjson_inputs
+    from logic.stream.manifest import build_procjson_inputs
 
     manifest_path = tmp_path / "release.stream.json"
     manifest = {
@@ -1010,10 +987,27 @@ def test_build_procjson_inputs_points_back_to_helper(tmp_path) -> None:
     first = json.loads(inputs[0][len("procjson://") :])
     assert first[0] == "one.bin"
     assert first[1] == 111
-    assert "logic.usenet_stream" in first[2]
+    assert "logic.stream.manifest" in first[2]
+    assert "-m logic.stream.manifest emit --manifest" in first[2]
+
+
+def test_stream_manifest_module_is_runnable_helper() -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "logic.stream.manifest", "emit", "--help"],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "python -m logic.stream.manifest emit" in result.stdout
 
 def test_resolve_source_nzb_paths_supports_file_and_directory(tmp_path) -> None:
-    from logic.usenet_stream import resolve_source_nzb_paths
+    from logic.stream.repost import resolve_source_nzb_paths
 
     single = tmp_path / "single.nzb"
     single.write_text("<nzb></nzb>", encoding="utf-8")
@@ -1052,7 +1046,7 @@ def test_resolve_force_flag(monkeypatch) -> None:
         assert resolve_force_flag(**kwargs) is expected, case_name
 
 def test_check_success_word_boundary() -> None:
-    from core.registry import _check_success
+    from core.indexers.http_submit import _check_success
 
     cases = [
         ("short-pattern-standalone-match", ["OK"], "OK", True),
@@ -1068,10 +1062,10 @@ def test_check_success_word_boundary() -> None:
         assert ok is expected_ok, case_name
 
 def test_should_skip_completed_item_respects_force(monkeypatch) -> None:
-    from logic.processing import _should_skip_completed_item
+    from logic.pipeline.validate import _should_skip_completed_item
 
     monkeypatch.setattr(
-        "core.registry.resolve_indexer_enabled",
+        "core.indexers.models.resolve_indexer_enabled",
         lambda _idx, _conf: True,
     )
 
@@ -1086,7 +1080,7 @@ def test_should_skip_completed_item_respects_force(monkeypatch) -> None:
         assert _should_skip_completed_item(indexers, None, dest_status, force=force, name="test") is expected, case_name
 
 def test_plan_upload_runs_respects_force() -> None:
-    from logic.processing import _plan_upload_runs
+    from logic.pipeline.posting import _plan_upload_runs
 
     upload_sets = [{"id": "omg", "dests": ["omg"], "backbone": "NetNews", "priority": False}]
     indexer_map = {"omg": _make_force_test_indexer_map("omg")}

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from logic.classify.anime import cached_lookup
-from logic.classify.content import EXTENSION_FIRST_VIDEO
+from core.media import EXTENSION_FIRST_VIDEO
 from logic.classify.names import classify_video_name_result
 from logic.classify.patterns import ANIME_BONUS_RE
 

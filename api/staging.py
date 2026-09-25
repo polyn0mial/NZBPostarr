@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from api.deps import _filter_bulk_selectable_items, _log_selected_payload, _normalize_request_strings
 from core.config import get_config
-from logic import processing
+from logic.pipeline import runner
 from logic.jobs.models import ProcessingJobRequest
 from logic.jobs.engine import JobEngine
 from logic.runtime import ensure_engine_started
@@ -160,7 +160,7 @@ async def _preview_selected_items(
 ) -> Dict[str, Any]:
     normalized_indexer_ids = _normalize_request_strings(indexer_ids or ([indexer_id] if indexer_id else []))
     return await asyncio.to_thread(
-        processing.preview_processing_items,
+        runner.preview_processing_items,
         items,
         target_indexer_id=normalized_indexer_ids[0] if len(normalized_indexer_ids) == 1 else None,
         target_indexer_ids=normalized_indexer_ids,
