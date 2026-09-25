@@ -1,0 +1,108 @@
+<!-- Queued Job Editor Modal -->
+<modal
+    :open="showQueuedJobModal"
+    :title="`Edit Queued Job ${queuedJobModalJob ? queuedJobModalJob.job_id : ''}`"
+    icon="list-ordered"
+    :badge="`${queuedJobModalItems.length} items`"
+    max-width="max-w-4xl"
+    @close="closeQueuedJobModal()">
+    <div class="px-4 py-2 border-b border-notion-divider bg-notion-bg">
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary shrink-0">Job Name</div>
+            <div class="flex items-center gap-1.5 flex-1 min-w-0">
+                <input
+                    type="text"
+                    v-model="queuedJobModalName"
+                    @keydown.enter.prevent="saveQueuedJobName"
+                    placeholder="Optional custom name (e.g. Weekend TV batch)"
+                    class="px-2.5 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+                <button
+                    @click="saveQueuedJobName"
+                    :disabled="!queuedJobModalNameDirty || queuedJobModalRenaming"
+                    class="btn-primary px-2.5 py-1.5 rounded-md text-xs font-medium whitespace-nowrap">
+                    {{ queuedJobModalRenaming ? 'Saving...' : 'Save' }}
+                </button>
+                <button
+                    v-if="queuedJobModalName"
+                    @click="clearQueuedJobName"
+                    :disabled="queuedJobModalRenaming"
+                    class="px-2 py-1.5 rounded-md text-xs text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover disabled:opacity-50 transition-colors whitespace-nowrap">
+                    Clear
+                </button>
+            </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row sm:items-center gap-2 mb-2">
+            <div class="text-[10px] uppercase tracking-wider text-notion-text-tertiary shrink-0">Deferred Start</div>
+            <div class="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                <input type="date" v-model="queuedJobModalDate" class="px-2.5 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none" />
+                <label class="inline-flex items-center gap-1.5 px-2 py-1.5 rounded-md border border-notion-border bg-notion-bg-secondary text-xs text-notion-text-secondary cursor-pointer">
+                    <input type="checkbox" v-model="queuedJobModalHasTime" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-primary text-notion-accent" />
+                    Set time
+                </label>
+                <input type="time" v-model="queuedJobModalTime" :disabled="!queuedJobModalHasTime" class="px-2.5 py-1.5 bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary focus:border-notion-accent focus:outline-none disabled:opacity-50" />
+                <button
+                    @click="saveQueuedJobSchedule"
+                    :disabled="!queuedJobModalScheduleDirty || queuedJobModalScheduling"
+                    class="px-2.5 py-1.5 rounded-md text-xs font-medium bg-notion-warning/20 text-notion-warning hover:bg-notion-warning/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap">
+                    {{ queuedJobModalScheduling ? 'Saving...' : 'Save Date' }}
+                </button>
+                <button
+                    v-if="queuedJobModalJob && queuedJobModalJob.run_after"
+                    @click="clearQueuedJobSchedule"
+                    :disabled="queuedJobModalScheduling"
+                    class="px-2 py-1.5 rounded-md text-xs text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover disabled:opacity-50 transition-colors whitespace-nowrap">
+                    Immediate
+                </button>
+                <span class="text-[10px] text-notion-text-tertiary">If no time is set, default is 12:00 PM.</span>
+            </div>
+        </div>
+
+        <div v-if="queuedJobModalJob && recentJobEvents(queuedJobModalJob).length" class="flex flex-wrap gap-x-3 gap-y-1 mb-2 text-[10px] text-notion-text-tertiary">
+            <span class="uppercase tracking-wider">Activity</span>
+            <span v-for="event in recentJobEvents(queuedJobModalJob)" :key="event.at + ':' + event.type" :title="event.message">
+                {{ formatDate(event.at) }} &middot; {{ event.message }}
+            </span>
+        </div>
+
+        <div class="relative max-w-md">
+            <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+            <input
+                type="text"
+                v-model="queuedJobModalSearch"
+                placeholder="Search queued paths..."
+                class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+        </div>
+        <p class="text-[10px] text-notion-text-tertiary mt-1">
+            <template v-if="!queuedJobModalSearch">Drag rows by the grip icon to reorder.</template>
+            <template v-else>Drag reorder is disabled while search filtering is active.</template>
+        </p>
+    </div>
+
+    <div class="overflow-y-auto">
+        <div v-if="queuedJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-2" icon-class="w-5 h-5 animate-spin mx-auto mb-2"></lucide-icon>
+            Loading queued items...
+        </div>
+        <div v-else-if="queuedJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
+            <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
+            <span v-if="queuedJobModalItems.length === 0">No items left in this queued job.</span>
+            <span v-else>No queued items match this search.</span>
+        </div>
+        <div v-else ref="queuedJobModalSortableContainer" class="divide-y divide-notion-divider">
+            <div v-for="(item, idx) in queuedJobModalFilteredItems" :key="item.path" class="queued-job-row flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors" :data-path="item.path">
+                <span class="queued-job-drag-handle p-1 rounded text-notion-text-tertiary hover:text-notion-accent cursor-grab active:cursor-grabbing" :class="(queuedJobModalSaving || queuedJobModalSearch) ? 'opacity-40 pointer-events-none' : ''" title="Drag to reorder">
+                    <lucide-icon name="grip-vertical" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </span>
+                <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary shrink-0">#{{ item.index || (idx + 1) }}</span>
+                <div class="flex-1 min-w-0">
+                    <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
+                    <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
+                </div>
+                <button @click.stop="removeQueuedJobModalItem(item.path)" :disabled="queuedJobModalSaving" class="p-1 rounded hover:bg-notion-error/10 text-notion-text-tertiary hover:text-notion-error transition-colors disabled:opacity-40" title="Remove from queued job">
+                    <lucide-icon name="trash-2" icon-class="w-3.5 h-3.5"></lucide-icon>
+                </button>
+            </div>
+        </div>
+    </div>
+</modal>

@@ -11,7 +11,12 @@ files = [
   "logic/stats/process_stats.py",
   "logic/queue_metrics.py",
   "logic/uploaders.py",
-  "logic/usenet_stream.py",
+  "logic/stream/__init__.py",
+  "logic/stream/manifest.py",
+  "logic/stream/monitors.py",
+  "logic/stream/nntp.py",
+  "logic/stream/nzb.py",
+  "logic/stream/repost.py",
   ".github/release.py",
 ]
 follow_imports = "skip"
