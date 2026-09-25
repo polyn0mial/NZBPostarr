@@ -9,7 +9,7 @@ documentation remains in `README.md`.
 NZBPostarr is a Python 3.12+ FastAPI application that prepares authorized
 content with `rar` and `parpar`, posts it through `nyuu`, creates NZBs, and
 submits them to configured indexers. The browser UI is rendered with Jinja
-templates and uses bundled JavaScript and Tailwind CSS assets.
+templates with Vue 3 page controllers and Tailwind CSS, built with npm.
 
 The repository intentionally uses a flat application layout. Do not recreate a
 self-titled `nzbpostarr/` source directory.
@@ -17,14 +17,29 @@ self-titled `nzbpostarr/` source directory.
 ## Repository Map
 
 - `main.py`: bootstrapper and command-line entry point.
-- `app.py`: FastAPI application, routes, and runtime orchestration.
+- `app.py`: FastAPI composition root; it wires the routers and the runtime and
+  holds no route or business logic of its own.
 - `setup.py`: interactive setup and optional Linux systemd installation.
 - `version.py`: canonical application version.
-- `core/`: configuration, database, registry, redaction, and shared utilities.
-- `logic/`: queue, processing, posting, monitoring, statistics, and updater logic.
-- `logic/mcp_server.py`: optional Model Context Protocol endpoint mounted at
-  `/mcp`. Requires the optional `mcp` package, which is deliberately NOT in
-  `requirements.lock`; the endpoint stays unmounted without it.
+- `api/`: one FastAPI router per surface (jobs, pending, staging, history,
+  settings, indexers, stats, stream, system, auth, pages, assets). `api/mcp.py`
+  is the optional Model Context Protocol endpoint mounted at `/mcp`; it needs
+  the optional `mcp` package, which is deliberately NOT in `requirements.lock`,
+  and stays unmounted without it.
+- `cli/`: headless CLI (`cli/commands/`), the launcher and daemon lifecycle
+  (`cli/launcher/`), and the daemon client.
+- `core/`: configuration and its validated writer (`core/config.py`), the
+  database package (`core/db/`), the indexer registry (`core/indexers/`), auth,
+  redaction, filesystem, process, path, and formatting helpers.
+- `logic/jobs/`: the upload queue, job engine, executors, and the job store.
+- `logic/pipeline/`: preparation, packing, posting, submission, and cleanup.
+- `logic/pending/`: the pending tree, index, completion, rules, and bulk
+  selection.
+- `logic/classify/`: media classification and the per-scan filesystem cache.
+- `logic/stream/`: Usenet-to-Usenet reposting and stream monitors.
+- `logic/stats/`, `logic/system/`: statistics collection; backup, updater,
+  lifecycle, and process reaper. `logic/system/removed_paths.txt` lists files a
+  release deleted so the updater removes them at startup.
 - `indexers/`: public YAML indexer definitions, the extension template, and the
   generic `newznab.example.yaml` profile. Files named `*.example.yaml`,
   `*.template.yaml`, or starting with `_` are never loaded as live indexers.
@@ -144,9 +159,9 @@ python main.py --headless pending
 Run the same core checks enforced by CI:
 
 ```bash
-python -m compileall -q app.py main.py setup.py version.py core logic
+python -m compileall -q app.py main.py setup.py version.py api cli core logic
 python .github/release.py check
-ruff check app.py main.py setup.py version.py core logic .github/*.py tests
+ruff check app.py main.py setup.py version.py api cli core logic .github/*.py tests
 mypy
 pytest tests -q
 python -m pip_audit -r requirements.lock
@@ -188,7 +203,10 @@ weakening an assertion unless the product contract intentionally changed.
 
 ## Durable Architecture Decisions
 
-- `logic/classify/` owns media classification. Snapshot code may add
+- One owner per fact: every piece of state or policy has exactly one module that
+  writes it; everything else reads through that owner.
+- `logic/classify/` owns media classification (the per-scan filesystem cache
+  token lives in `logic/classify/walk.py`). Snapshot code may add
   filesystem evidence, but the browser must display the server verdict rather
   than run a second filename classifier. Only an explicit `manual_category`
   supplied by the user may override the server result.
@@ -206,14 +224,15 @@ weakening an assertion unless the product contract intentionally changed.
   duplicate pages, services, or a self-titled source package.
 - Treat files under `webui/assets/js/pages/` as authored source and the matching
   `dist/` files as build output. Never replace the source with one giant bundle.
-- Enforce bulk-selection exclusions on the server. Manual selection remains a
+- Enforce bulk-selection exclusions on the server (`logic/pending/selection.py`). Manual selection remains a
   separate, explicit action.
 - Preserve per-destination completion history. A folder is not complete merely
   because one destination accepted it.
 - Do not interpret a database error as "not uploaded", automatically resume a
   paused queue after deployment, or drop nested search/classification data to
   reduce a payload. Shape large nested data lazily instead.
-- Configuration writes must use the validated atomic writer. Do not overwrite
+- Configuration writes must use the validated atomic writer (`core/config.py`
+  `save_config`). Do not overwrite
   the active YAML file in place.
 - Do not add an indexer YAML from the software name or a guessed URL. Verify the
   actual submission endpoint, authorization, fields, categories, and success

@@ -18,6 +18,37 @@ def test_public_release_tree_has_no_private_runtime_files() -> None:
     assert release.find_violations() == []
 
 
+def test_removed_paths_list_only_names_files_gone_from_the_tree() -> None:
+    assert release.removed_path_violations() == []
+
+
+def test_removed_paths_check_rejects_live_and_escaping_entries(tmp_path) -> None:
+    listing = tmp_path / "removed_paths.txt"
+    listing.write_text("# header\n\napp.py\n../outside.py\n/abs.py\nlogic/gone.py\n", encoding="utf-8")
+
+    violations = release.removed_path_violations(listing)
+
+    assert len(violations) == 3
+    assert "still exists: app.py" in violations[0]
+    assert all("logic/gone.py" not in violation for violation in violations)
+
+
+def test_release_manifest_lists_archive_files(tmp_path) -> None:
+    import json
+    import zipfile
+
+    archive = tmp_path / "rel.zip"
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("p/app.py", "")
+        zf.writestr("p/core/", "")
+        zf.writestr("p/core/fs.py", "")
+    release._append_release_manifest(archive, "p/")
+
+    with zipfile.ZipFile(archive) as zf:
+        manifest = json.loads(zf.read(f"p/{release.RELEASE_MANIFEST_NAME}"))
+    assert manifest == {"files": ["app.py", "core/fs.py"]}
+
+
 def test_source_layout_stays_flat() -> None:
     assert not (REPO_ROOT / "nzbpostarr").exists()
     for expected in ("app.py", "main.py", "api", "cli", "core", "logic", "indexers", "webui"):

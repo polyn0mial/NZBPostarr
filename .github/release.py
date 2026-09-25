@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RELEASE_MANIFEST_NAME = "release-manifest.json"
+REMOVED_PATHS_FILE = REPO_ROOT / "logic" / "system" / "removed_paths.txt"
 
 _FORBIDDEN_BASENAMES = {
     ".env",
@@ -131,9 +132,24 @@ def find_violations() -> list[str]:
     return violations
 
 
+def removed_path_violations(listing: Path = REMOVED_PATHS_FILE) -> list[str]:
+    """Return removed_paths.txt entries the updater would wrongly delete or cannot resolve."""
+    violations: list[str] = []
+    for line_number, line in enumerate(listing.read_text(encoding="utf-8").splitlines(), 1):
+        name = line.strip()
+        if not name or name.startswith("#"):
+            continue
+        entry = PurePosixPath(name)
+        if entry.is_absolute() or "\\" in name or ".." in entry.parts:
+            violations.append(f"{listing.name}:{line_number}: not an app-relative path: {name}")
+        elif (REPO_ROOT / entry).exists():
+            violations.append(f"{listing.name}:{line_number}: lists a file that still exists: {name}")
+    return violations
+
+
 def check_public_tree() -> None:
     """Raise when the prospective public tree contains private/runtime data."""
-    violations = find_violations()
+    violations = find_violations() + removed_path_violations()
     if violations:
         detail = "\n".join(f"  - {violation}" for violation in violations)
         raise RuntimeError(f"Public release safety check failed:\n{detail}")
@@ -155,8 +171,7 @@ def _append_release_manifest(archive_path: Path, prefix: str) -> None:
             for name in zf.namelist()
             if name.startswith(prefix) and not name.endswith("/")
         )
-        payload = json.dumps({"files": files}, indent=2) + "
-"
+        payload = json.dumps({"files": files}, indent=2) + "\n"
         info = zipfile.ZipInfo(f"{prefix}{RELEASE_MANIFEST_NAME}", date_time=(1980, 1, 1, 0, 0, 0))
         info.compress_type = zipfile.ZIP_DEFLATED
         info.external_attr = 0o644 << 16

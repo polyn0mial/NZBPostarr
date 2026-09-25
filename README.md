@@ -356,7 +356,7 @@ deployment procedure, and public-release checklist. Before opening a pull
 request, run:
 
 ```bash
-ruff check app.py main.py setup.py version.py core logic .github/*.py tests
+ruff check app.py main.py setup.py version.py api cli core logic .github/*.py tests
 mypy
 pytest tests -q
 python .github/release.py check
