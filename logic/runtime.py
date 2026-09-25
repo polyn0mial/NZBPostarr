@@ -182,8 +182,8 @@ async def _stop_startup_reaper() -> None:
         await task
     except asyncio.CancelledError:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Boot reaper task ended with an error during shutdown: {e}")
 
 
 async def _run_startup_reaper() -> None:
