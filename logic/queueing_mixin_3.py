@@ -5,7 +5,7 @@
 from logic.jobs.processes import ProcessRegistry
 from logic.jobs.requests import build_retry_request
 from logic.queueing_base import (
-    Any, JobState, Optional, Path, datetime, log_info, logger, shutil, time, timedelta, timezone, usenet_stream, uuid,
+    Any, JobState, Optional, Path, datetime, log_info, logger, shutil, time, timedelta, timezone, stream_monitors, uuid,
 )
 
 class _QueueServiceMixinPart3:
@@ -372,7 +372,7 @@ class _QueueServiceMixinPart3:
                 self._record_job_event(job, "cancelled", str(job["progress"]))
                 self._cleanup_job_artifacts_locked(job)
                 if job.get("source_monitor_id"):
-                    usenet_stream.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
+                    stream_monitors.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
                 job.pop("_kwargs", None)
                 job.pop("_paths", None)
                 if clear_after_stop:

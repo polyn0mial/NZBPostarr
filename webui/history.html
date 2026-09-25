@@ -76,59 +76,7 @@
     </div>
 </div>
 
-<!-- Known Issues Panel: grouped failed-submission signatures with a mute/unmute action -->
-<div class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-colors duration-200">
-    <div class="px-3 py-2 flex items-center justify-between gap-2 cursor-pointer select-none" @click="toggleKnownIssuesPanel">
-        <div class="flex items-center gap-2">
-            <lucide-icon name="alert-octagon" icon-class="size-4 text-notion-warning"></lucide-icon>
-            <span class="text-xs font-semibold text-notion-text-primary">Known Issues</span>
-            <span v-if="knownIssues.length" class="px-1.5 py-0.5 bg-notion-warning/15 text-notion-warning rounded text-[10px] font-semibold">{{ knownIssues.length }}</span>
-        </div>
-        <div class="flex items-center gap-3">
-            <label class="flex items-center gap-1.5 text-[10px] text-notion-text-tertiary cursor-pointer" @click.stop title="Include issues you've muted in the list below">
-                <input type="checkbox" v-model="knownIssuesShowMuted" @change="loadKnownIssues" class="size-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
-                Show muted
-            </label>
-            <button @click.stop="loadKnownIssues" class="p-1 text-notion-text-tertiary hover:text-notion-text-primary hover:bg-notion-bg-hover rounded transition-colors" title="Refresh">
-                <lucide-icon name="refresh-cw" :icon-class="['size-3.5', knownIssuesLoading ? 'animate-spin' : '']"></lucide-icon>
-            </button>
-            <lucide-icon :name="knownIssuesOpen ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
-        </div>
-    </div>
-    <div v-if="knownIssuesOpen" class="border-t border-notion-divider">
-        <div v-if="knownIssuesLoading && knownIssues.length === 0" class="px-4 py-4 text-center text-xs text-notion-text-tertiary">
-            <lucide-icon name="loader-2" icon-class="size-4 animate-spin inline-block mr-1"></lucide-icon>
-            Loading known issues...
-        </div>
-        <div v-else-if="knownIssues.length === 0" class="empty-state py-4">
-            <lucide-icon name="check-circle-2" icon-class="empty-state-icon size-5 opacity-50"></lucide-icon>
-            <p class="empty-state-title">No known upload issues</p>
-        </div>
-        <div v-else class="divide-y divide-notion-divider max-h-80 overflow-y-auto">
-            <div
-                v-for="issue in knownIssues"
-                :key="issue.indexer_id + '::' + issue.signature"
-                class="px-3 py-2 flex items-start justify-between gap-3 transition-opacity"
-                :class="issue.muted ? 'opacity-50' : ''">
-                <div class="min-w-0 flex-1">
-                    <div class="flex items-center gap-1.5 flex-wrap">
-                        <span class="px-1.5 py-0.5 bg-notion-bg-hover rounded text-[10px] font-mono text-notion-text-secondary shrink-0">{{ issue.indexer_id }}</span>
-                        <span class="text-[10px] font-semibold text-notion-error bg-notion-error/10 rounded px-1.5 py-0.5 shrink-0">{{ issue.count }}x</span>
-                        <span class="text-[10px] text-notion-text-tertiary shrink-0">{{ issue.affected_item_count }} item{{ issue.affected_item_count !== 1 ? 's' : '' }}</span>
-                        <span v-if="issue.muted" class="text-[10px] font-semibold text-notion-text-tertiary bg-notion-bg-hover rounded px-1.5 py-0.5 shrink-0">Muted</span>
-                    </div>
-                    <div class="text-xs text-notion-text-primary mt-1 truncate" :title="issue.sample_error">{{ issue.sample_error || '(no message)' }}</div>
-                    <div class="text-[10px] text-notion-text-tertiary mt-0.5">First seen {{ formatWhenAge(issue.first_seen) }} &middot; Last seen {{ formatWhenAge(issue.last_seen) }}</div>
-                </div>
-                <button
-                    @click="toggleIssueMute(issue)"
-                    class="action-btn px-2 py-1 text-[10px] shrink-0"
-                    :class="issue.muted ? 'action-btn--default' : 'action-btn--warning'">
-                    {{ issue.muted ? 'Unmute' : 'Mute' }}
-                </button>
-            </div>
-        </div>
-    </div>
+{% include "partials/history/known_issues.html" %}
 </div>
 
 <div class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-colors duration-200">
@@ -570,157 +518,14 @@
     </div>
 </div>
 
-<!-- Upload Item Details Modal -->
-<modal
-    :open="uploadDetailModalOpen"
-    title="Upload Details"
-    icon="info"
-    max-width="max-w-3xl"
-    panel-class="bg-notion-bg max-h-[90vh] sm:max-h-[85vh]"
-    @close="closeUploadDetails()">
-    <div v-if="uploadDetailItem" class="p-5 overflow-y-auto flex-1 space-y-4">
-        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg p-4 space-y-2">
-            <div class="text-sm font-semibold text-notion-text-primary break-all">{{ uploadDetailItem.item_name }}</div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                <div class="text-notion-text-tertiary">
-                    Category:
-                    <span class="text-notion-text-primary">{{ getCategoryLabel(uploadDetailItem.media_type) }}</span>
-                </div>
-                <div class="text-notion-text-tertiary">
-                    Size:
-                    <span class="text-notion-text-primary">{{ formatSize(uploadDetailItem.filesize) }}</span>
-                </div>
-                <div class="text-notion-text-tertiary">
-                    Updated:
-                    <span class="text-notion-text-primary">{{ formatDateFull(uploadDetailItem.updated_at) || '-' }}</span>
-                </div>
-                <div class="text-notion-text-tertiary">
-                    Created:
-                    <span class="text-notion-text-primary">{{ formatDateFull(uploadDetailItem.created_at) || '-' }}</span>
-                </div>
-            </div>
-        </div>
-
-        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden">
-            <div class="px-4 py-2 border-b border-notion-divider text-xs font-semibold uppercase tracking-wider text-notion-text-tertiary">Destinations</div>
-            <div v-if="getUploadDetailDestinations(uploadDetailItem).length === 0" class="px-4 py-4 text-xs text-notion-text-tertiary">No destination metadata recorded.</div>
-            <div v-else class="divide-y divide-notion-divider">
-                <div v-for="dest in getUploadDetailDestinations(uploadDetailItem)" :key="dest.id + '-' + dest.name" class="px-4 py-2 text-xs">
-                    <div class="flex items-center justify-between gap-3">
-                        <div class="flex items-center gap-2 min-w-0">
-                            <img v-if="dest.favicon" :src="dest.favicon" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="size-3.5 object-contain rounded-sm" />
-                            <lucide-icon v-else :name="dest.icon || 'database'" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
-                            <span class="text-notion-text-primary truncate">{{ dest.name }}</span>
-                        </div>
-                        <span :class="dest.status === 'failed' ? 'text-notion-error bg-notion-error/10' : 'text-notion-success bg-notion-success/10'" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase">{{ dest.status || 'success' }}</span>
-                    </div>
-                    <div class="mt-1 grid grid-cols-1 sm:grid-cols-3 gap-1 text-[11px] text-notion-text-tertiary">
-                        <div>
-                            Duration:
-                            <span class="text-notion-text-secondary">{{ formatDuration(dest.duration) }}</span>
-                        </div>
-                        <div>
-                            Speed:
-                            <span class="text-notion-text-secondary">{{ formatSpeed(dest.speed) }}</span>
-                        </div>
-                        <div>
-                            Server:
-                            <span class="text-notion-text-secondary">{{ dest.server || '-' }}</span>
-                        </div>
-                    </div>
-                    <div v-if="dest.error" class="mt-1 text-[11px] text-notion-error wrap-break-word">Error: {{ dest.error }}</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden">
-            <div class="px-4 py-2 border-b border-notion-divider text-xs font-semibold uppercase tracking-wider text-notion-text-tertiary">Raw Data</div>
-            <pre class="p-4 text-[11px] leading-4 overflow-auto text-notion-text-secondary">{{ prettyJson(uploadDetailItem) }}</pre>
-        </div>
-    </div>
+{% include "partials/history/upload_details_modal.html" %}
 </modal>
 
-<!-- Job Uploads Modal (for jobs view) -->
-<modal
-    :open="jobModalOpen"
-    :title="jobModalTitle"
-    icon="list"
-    max-width="max-w-2xl"
-    panel-class="bg-notion-bg max-h-[90vh] sm:max-h-[80vh]"
-    @close="jobModalOpen = false">
-    <div class="p-5 overflow-y-auto flex-1">
-        <div v-if="jobModalLoading" class="flex items-center justify-center py-8">
-            <lucide-icon name="loader-2" icon-class="size-6 animate-spin text-notion-text-tertiary"></lucide-icon>
-            <span class="ml-2 text-notion-text-tertiary">Loading uploads...</span>
-        </div>
-        <div v-else-if="jobModalUploads.length === 0" class="text-center py-8 text-notion-text-tertiary">
-            <lucide-icon name="inbox" icon-class="size-8 mx-auto mb-2 opacity-50"></lucide-icon>
-            <p>No uploads recorded for this job</p>
-        </div>
-        <template v-else>
-            <div class="divide-y divide-notion-divider">
-                <div v-for="upload in jobModalUploads" :key="upload.item_name" class="flex items-center gap-3 px-3 py-1.5 hover:bg-notion-bg-hover/30 transition-colors">
-                    <div :title="getCategoryLabel(upload.media_type)" :class="getCategoryIconBg(upload.media_type)" class="size-4 rounded flex items-center justify-center shrink-0">
-                        <lucide-icon :name="getCategoryIconName(upload.media_type)" :icon-class="'size-2.5 ' + getCategoryIconColor(upload.media_type)"></lucide-icon>
-                    </div>
-                    <span :title="upload.item_name" class="text-notion-text-primary truncate flex-1 text-[13px]">{{ upload.item_name }}</span>
-                    <span class="text-notion-text-tertiary font-mono whitespace-nowrap tabular-nums text-[11px]">{{ formatSize(upload.filesize) }}</span>
-                    <div class="flex items-center shrink-0 justify-end gap-0.5 min-w-15" style="overflow: visible; z-index: 10">
-                        <div v-for="dest in getDestinationDots(upload)" :key="dest.name" class="infotip-trigger relative flex items-center justify-center">
-                            <span :class="destDotClass(dest)"></span>
-                            <div class="infotip-content text-[10px] text-notion-text-primary">
-                                <div class="infotip-header">{{ dest.name }}</div>
-                                <div class="infotip-footer">Successful Upload</div>
-                                <div class="infotip-arrow"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="mt-4 pt-4 border-t border-notion-divider text-notion-text-tertiary text-center uppercase tracking-widest font-semibold text-[10px]">{{ jobModalUploads.length }} item{{ jobModalUploads.length !== 1 ? 's' : '' }} uploaded</div>
-        </template>
-    </div>
+{% include "partials/history/job_uploads_modal.html" %}
 </modal>
 
-<!-- Pagination -->
-<div v-if="viewMode !== 'jobs'" class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
-    <div class="text-notion-text-tertiary text-center sm:text-left">
-        Showing {{ showingStart }}-{{ showingEnd }} of {{ totalCount }}
-        <template v-if="viewMode === 'grouped'">groups</template>
-    </div>
-    <div class="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-4">
-        <!-- Pagination Controls -->
-        <div class="flex items-center gap-1">
-            <button @click="goToPage(1)" :disabled="isFirstPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="First page">
-                <lucide-icon name="chevrons-left" icon-class="size-3.5"></lucide-icon>
-            </button>
-            <button @click="prevPage" :disabled="isFirstPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Previous page">
-                <lucide-icon name="chevron-left" icon-class="size-3.5"></lucide-icon>
-            </button>
-            <span class="px-2 text-xs text-notion-text-secondary">
-                Page
-                <span class="font-medium text-notion-text-primary">{{ currentPage }}</span>
-                of {{ totalPages }}
-            </span>
-            <button @click="nextPage" :disabled="isLastPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Next page">
-                <lucide-icon name="chevron-right" icon-class="size-3.5"></lucide-icon>
-            </button>
-            <button @click="goToPage(totalPages)" :disabled="isLastPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Last page">
-                <lucide-icon name="chevrons-right" icon-class="size-3.5"></lucide-icon>
-            </button>
-        </div>
-        <!-- Page Size -->
-        <div class="flex items-center gap-2">
-            <select v-model.number="pageSize" class="px-2 py-1 bg-notion-bg-secondary border border-notion-border rounded text-xs text-notion-text-primary">
-                <option value="25">25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="200">200</option>
-            </select>
-        </div>
-    </div>
-</div>
+{% include "partials/history/pagination.html" %}
 <div v-if="viewMode === 'jobs'" class="text-sm text-notion-text-tertiary text-center sm:text-left">Showing {{ jobsList.length }} jobs</div>
 {% endblock %} {% block scripts %}
-<script type="module" crossorigin src="/assets/js/dist/pages/history.js?t=[[ cache_bust ]]"></script>
+<script type="module" crossorigin src="/assets/js/dist/pages/history/index.js?t=[[ cache_bust ]]"></script>
 {% endblock %}
