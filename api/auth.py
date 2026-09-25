@@ -9,8 +9,10 @@ from typing import Any, Callable
 from fastapi import APIRouter, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
+from api import deps
 from api.assets import templates
 from api.mcp import MCP_PATH
+from api.pages import PAGE_ALIASES, _page_paths
 from core.auth import AUTH_COOKIE, AUTH_COOKIE_MAX_AGE, sign_auth_cookie, verify_auth_cookie
 from core.config import get_config
 
@@ -19,7 +21,8 @@ router = APIRouter()
 
 _AUTH_PUBLIC_PREFIXES = ("/login", "/assets/", "/favicon", "/robots.txt")
 
-_AUTH_PUBLIC_PATHS = {"/api/system/revision"}
+# Legacy page aliases only answer a permanent redirect; the page they point at stays gated.
+_AUTH_PUBLIC_PATHS = {"/api/system/revision"} | {path for alias in PAGE_ALIASES for path in _page_paths(alias)}
 
 def _verify_mcp_token(request: Request) -> bool:
     """Constant-time bearer-token check for the MCP endpoint."""
@@ -49,7 +52,8 @@ async def session_auth_middleware(request: Request, call_next: Callable[[Request
             return JSONResponse({"detail": "Unauthorized"}, status_code=401)
         return await call_next(request)
 
-    conf = get_config()
+    # Read through api.deps, the one config seam the page and stats routes share.
+    conf = deps.get_config()
     if getattr(conf, "enable_password", False) and getattr(conf, "web_password", None):
         token = request.cookies.get(AUTH_COOKIE, "")
         if not verify_auth_cookie(token):
