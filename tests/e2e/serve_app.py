@@ -43,13 +43,15 @@ def main() -> None:
     config_mod.Config.nzb_sub = _state_path(root, "nzbs")  # type: ignore[method-assign]
     config_mod.Config.mediainfo_sub = _state_path(root, "mediainfo")  # type: ignore[method-assign]
 
-    from logic import updater
+    from logic.system import updater
     from logic.pending import overrides as pending_overrides
     from logic.classify import anime as anime_cache
 
-    updater.STATE_DIR = root / "updater"
-    updater.STATE_FILE = updater.STATE_DIR / "state.json"
-    updater.BACKUP_DIR = updater.STATE_DIR / "backups"
+    from logic.system import backup as system_backup
+
+    system_backup.STATE_DIR = root / "updater"
+    system_backup.BACKUP_DIR = system_backup.STATE_DIR / "backups"
+    updater.STATE_FILE = system_backup.STATE_DIR / "state.json"
     anime_cache._cache_path = root / "cache" / "anime.json"
     pending_overrides._path = root / "category_overrides.json"
 

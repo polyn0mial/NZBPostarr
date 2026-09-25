@@ -31,7 +31,7 @@ def _selected_indexers(
     conf: Any, target_indexer_id: Optional[str], target_indexer_ids: Optional[List[str]]
 ) -> list[Any]:
     """Return the enabled indexers selected for this item run."""
-    from core.registry import get_enabled_indexers
+    from core.indexers.registry import get_enabled_indexers
 
     indexers = get_enabled_indexers(conf)
     if target_indexer_ids:
@@ -144,7 +144,7 @@ def _resolve_target_indexers_for_single(
 
 
 def _resolve_job_categories(category: str) -> list[str]:
-    from core.registry import get_available_categories
+    from core.indexers.categories import get_available_categories
 
     category_lower = category.lower()
     active_categories = [item["id"] for item in get_available_categories()]

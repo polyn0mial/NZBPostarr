@@ -44,7 +44,7 @@ def _restart_managed_daemon(delay_seconds: float = 0.0) -> tuple[bool, str]:
 
 def cmd_system(args: argparse.Namespace) -> int:
     """Run deployment controls through the same updater and queue services as the API."""
-    from logic import updater
+    from logic.system import updater
     from logic.services import get_upload_service
 
     command = getattr(args, "system_command", None)

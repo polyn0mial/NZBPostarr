@@ -1,0 +1,195 @@
+<!-- Settings Sections -->
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="global" v-show="sectionVisible('global')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('global')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.global ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="settings" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Global Controls</h2>
+        </div>
+    </div>
+    <div :class="sectionContentClass('global')" id="content-global">
+        <div class="p-4">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <!-- Left Column -->
+                <div class="space-y-1">
+                    <!-- Verbose Logging -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('verbose logging debug logs')"
+                        title="Enable detailed debug logs for troubleshooting (increases disk usage)"
+                        data-search="verbose logging debug logs">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="file-text" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Verbose Logging</span>
+                        </div>
+                        <button @click="toggleSetting('verbose', 'processing')" :class="toggleBtnClass('verbose', 'processing')">
+                            <span :class="toggleKnobClass('verbose', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <!-- Dynamic Packs -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('dynamic packs virtual season auto generate unsorted')"
+                        title="Auto-generate virtual season packs from loose unsorted episodes"
+                        data-search="dynamic packs virtual season auto generate unsorted">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="boxes" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Dynamic Packs</span>
+                        </div>
+                        <button @click="toggleSetting('dynamic_packs', 'processing')" :class="toggleBtnClass('dynamic_packs', 'processing')">
+                            <span :class="toggleKnobClass('dynamic_packs', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('folder size limit pack skip tv season')"
+                        title="Reject folders larger than this size in GB. Individual files inside the folder are still processed."
+                        data-search="folder size limit pack skip tv season">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="folder-archive" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Folder Size Limit (GB)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input
+                                v-show="settings.processing.folder_size_limit_enabled"
+                                type="number"
+                                v-model.number="settings.processing.folder_size_limit_gb"
+                                placeholder="99"
+                                class="w-16 bg-notion-bg text-notion-text-primary px-2 py-1 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-xs" />
+                            <button @click="toggleSetting('folder_size_limit_enabled', 'processing')" :class="toggleBtnClass('folder_size_limit_enabled', 'processing')" title="Enable folder size checking">
+                                <span :class="toggleKnobClass('folder_size_limit_enabled', 'processing')"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('file size limit movie skip individual')"
+                        title="Reject individual files larger than this size in GB. 0 means unlimited."
+                        data-search="file size limit movie skip individual">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="file-x" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">File Size Limit (GB)</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <input
+                                v-show="settings.processing.file_size_limit_enabled"
+                                type="number"
+                                v-model.number="settings.processing.file_size_limit_gb"
+                                placeholder="∞"
+                                class="w-16 bg-notion-bg text-notion-text-primary px-2 py-1 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-xs" />
+                            <button @click="toggleSetting('file_size_limit_enabled', 'processing')" :class="toggleBtnClass('file_size_limit_enabled', 'processing')" title="Enable file size checking">
+                                <span :class="toggleKnobClass('file_size_limit_enabled', 'processing')"></span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Enable Password -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('enable password web access login protect basic auth')"
+                        title="Require a username and password to access NZBPostarr (HTTP Basic Auth)"
+                        data-search="enable password web access login protect basic auth">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="lock" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Enable Password</span>
+                        </div>
+                        <button @click="toggleSetting('enable_password', 'auth')" :class="toggleBtnClass('enable_password', 'auth')">
+                            <span :class="toggleKnobClass('enable_password', 'auth')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Right Column -->
+                <div class="space-y-1 md:border-l md:border-notion-divider md:pl-8">
+                    <!-- Duplicate Checking -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('duplicate checking fast processing')"
+                        title="Verify if a release was already uploaded before starting processing"
+                        data-search="duplicate checking fast processing">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="shield-check" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Duplicate Checking</span>
+                        </div>
+                        <button @click="toggleSetting('enable_duplicate_checking', 'processing')" :class="toggleBtnClass('enable_duplicate_checking', 'processing')">
+                            <span :class="toggleKnobClass('enable_duplicate_checking', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <!-- Enable Anime Checking (Jikan) -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('enable anime checking jikan myanimelist identification')"
+                        title="Use Jikan (MyAnimeList) to identify anime titles in TV shows"
+                        data-search="enable anime checking jikan myanimelist identification">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="tv" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Anime Detection (Jikan)</span>
+                        </div>
+                        <button @click="toggleSetting('enable_anime_checking', 'processing')" :class="toggleBtnClass('enable_anime_checking', 'processing')">
+                            <span :class="toggleKnobClass('enable_anime_checking', 'processing')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('dashboard stats server stats modules sparkline')"
+                        title="Show live server metrics on the dashboard."
+                        data-search="dashboard stats server stats modules sparkline">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="layout-panel-top" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Dashboard Server Stats</span>
+                        </div>
+                        <button @click="toggleSetting('dashboard_stats_enabled', 'ui')" :class="toggleBtnClass('dashboard_stats_enabled', 'ui')">
+                            <span :class="toggleKnobClass('dashboard_stats_enabled', 'ui')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('stats page system stats page disable history collector navigation')"
+                        title="Disable the dedicated /stats page, hide its navigation link, and stop the extra full-page stats collection that page needs."
+                        data-search="stats page system stats page disable history collector navigation">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="activity" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Stats Page</span>
+                        </div>
+                        <button @click="toggleSetting('stats_page_enabled', 'ui')" :class="toggleBtnClass('stats_page_enabled', 'ui')">
+                            <span :class="toggleKnobClass('stats_page_enabled', 'ui')"></span>
+                        </button>
+                    </div>
+
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('ui refresh rate seconds polling')"
+                        title="How often the dashboard and stats UI polls the server for updates."
+                        data-search="ui refresh rate seconds polling">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="timer-reset" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Stats Refresh Interval</span>
+                        </div>
+                        <input type="number" min="1" max="60" v-model.number="settings.ui.ui_refresh_seconds" class="w-16 bg-notion-bg text-notion-text-primary px-2 py-1 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-xs" />
+                    </div>
+
+                    <!-- Skip Files visibility toggle -->
+                    <div
+                        class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md"
+                        v-show="matchesSearch('skip files patterns filtering bypass enable')"
+                        title="Enable skip-file rules - when off, the Skip Files section is hidden"
+                        data-search="skip files patterns filtering bypass enable">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="file-x" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-secondary text-[13px]">Skip Files</span>
+                        </div>
+                        <button @click="toggleSetting('enabled', 'skip_files')" :class="toggleBtnClass('enabled', 'skip_files')" title="Enable or disable skip-file pattern matching">
+                            <span :class="toggleKnobClass('enabled', 'skip_files')"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

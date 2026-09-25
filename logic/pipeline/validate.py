@@ -69,7 +69,7 @@ def _should_skip_completed_item(
     indexers: list[Any], conf: Any, dest_status: Dict[str, Optional[str]], *, force: bool, name: str
 ) -> bool:
     """Return True when every enabled destination already has the item."""
-    from core.registry import resolve_indexer_enabled
+    from core.indexers.models import resolve_indexer_enabled
 
     active_dests_needed = 0
     already_done_count = 0
@@ -181,7 +181,7 @@ def _build_duplicate_prefetch_state(
 ) -> tuple[Dict[str, str], Dict[str, Dict[str, Optional[str]]], Callable[[Path], Optional[Path]]]:
     """Resolve item DB keys and batch-prefetch duplicate state for the job queue."""
     from core.database import get_duplicate_status_batch
-    from core.registry import get_enabled_indexers
+    from core.indexers.registry import get_enabled_indexers
 
     source_root_cache: Dict[str, Optional[Path]] = {}
 

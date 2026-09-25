@@ -3,7 +3,7 @@
 
 from logic.jobs.revalidate import revalidated_plan, revalidation_candidates, revalidation_targets
 from logic.queueing_base import (
-    Any, Optional, Path, database, datetime, log_info, logger, threading, time, timedelta, timezone, usenet_stream,
+    Any, Optional, Path, database, datetime, log_info, logger, threading, time, timedelta, timezone, stream_monitors,
 )
 
 class _QueueServiceMixinPart4:
@@ -16,7 +16,7 @@ class _QueueServiceMixinPart4:
             self._persist_jobs_locked()
 
         if source_monitor_id:
-            usenet_stream.record_stream_monitor_job(source_monitor_id, job)
+            stream_monitors.record_stream_monitor_job(source_monitor_id, job)
 
         category = str(job.get("category") or "misc")
         source = self._normalize_job_source(job.get("source"))
@@ -330,7 +330,7 @@ class _QueueServiceMixinPart4:
                     del self._processes[job_id]
                 self._persist_jobs_locked()
 
-                from logic.process_reaper import get_scheduler
+                from logic.system.reaper import get_scheduler
 
                 get_scheduler().add_job(
                     self._try_start_queued,

@@ -1,0 +1,32 @@
+            <!-- Toast Container (Vue-driven) -->
+            <div v-if="toasts.length" class="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-4 z-50 space-y-2 pointer-events-none">
+                <transition-group>
+                    <div v-for="toast in toasts" :key="toast.id" class="pointer-events-auto max-w-md bg-notion-bg-secondary border border-notion-border rounded-lg shadow-lg overflow-hidden min-w-0 sm:min-w-75">
+                        <div class="px-4 py-3 flex items-start gap-3">
+                            <div :class="toastIconClass(toast)">
+                                <lucide-icon :name="toastIcon(toast)" icon-class="size-5"></lucide-icon>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-sm font-semibold text-notion-text-primary">{{ toast.title }}</h3>
+                                <p class="text-xs text-notion-text-secondary mt-1">{{ toast.message }}</p>
+                                <div v-if="toast.actions && toast.actions.length" class="flex items-center gap-2 mt-2">
+                                    <button
+                                        v-for="action in toast.actions"
+                                        :key="action.label"
+                                        @click="action.callback(); removeToast(toast.id)"
+                                        class="px-2.5 py-1 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded text-[10px] font-medium hover:bg-notion-bg-active hover:text-notion-text-primary transition-colors flex items-center gap-1">
+                                        <lucide-icon v-if="action.icon" :name="action.icon" icon-class="size-3"></lucide-icon>
+                                        {{ action.label }}
+                                    </button>
+                                </div>
+                            </div>
+                            <button @click="removeToast(toast.id)" class="icon-btn shrink-0">
+                                <lucide-icon name="x" icon-class="size-4"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="h-0.5 bg-notion-border relative overflow-hidden">
+                            <div :class="toastProgressClass(toast)" class="h-full transition-colors duration-300"></div>
+                        </div>
+                    </div>
+                </transition-group>
+            </div>

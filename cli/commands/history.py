@@ -31,7 +31,7 @@ def cmd_history(args: argparse.Namespace) -> int:
         processed = f"{j.get('items_processed', 0)}/{j.get('items_total', 0)}"
         dur = j.get("duration_seconds")
         if dur:
-            from logic.stats_engine import format_seconds
+            from logic.stats.collector import format_seconds
 
             dur_str = format_seconds(dur)
         else:
@@ -94,7 +94,8 @@ def cmd_indexers(args: argparse.Namespace) -> int:
     """
     from core import database
     from core.config import get_config
-    from core.registry import get_registry, resolve_indexer_enabled
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_enabled
 
     conf = get_config()
     registry = get_registry()

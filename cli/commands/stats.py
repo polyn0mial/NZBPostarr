@@ -11,7 +11,7 @@ from cli.output import _render_stats_summary
 
 def cmd_stats(args: argparse.Namespace) -> int:
     """Show an on-demand system stats snapshot in CLI mode."""
-    from logic.stats_engine import collect_instant_system_info
+    from logic.stats.system_info import collect_instant_system_info
 
     sample_seconds = max(0.05, float(args.sample_seconds))
     watch_interval = max(0.25, float(args.interval))

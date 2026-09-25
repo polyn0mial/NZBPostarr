@@ -1,0 +1,188 @@
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="destinations" v-show="sectionVisible('destinations')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('destinations')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.destinations ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="send" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Upload Indexers</h2>
+        </div>
+        <button v-if="expandedSections.destinations" @click.stop="reloadIndexers" class="compact-touch text-xs text-notion-text-tertiary hover:text-notion-accent transition-colors flex items-center gap-1 min-h-0" title="Reload indexer plugins">
+            <lucide-icon name="refresh-cw" icon-class="size-3"></lucide-icon>
+            <span>Reload Plugins</span>
+        </button>
+    </div>
+    <div :class="sectionContentClass('destinations')">
+        <div class="p-4 space-y-0.5">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 mb-2">
+                <!-- Global Enable (Backfill) -->
+                <div>
+                    <div
+                        class="setting-item flex items-center justify-between p-2 -mx-2 hover:bg-notion-bg-hover/10 transition-colors rounded-md min-h-8"
+                        v-show="matchesSearch('enable backfill global master switch')"
+                        title="Master switch - enable backfill uploads across all configured indexers"
+                        data-search="enable backfill global master switch">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon name="zap" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                            <span class="font-medium text-notion-text-primary text-[13px]">Enable Backfill</span>
+                        </div>
+                        <button @click="toggleSetting('enable_backfill', 'destinations')" :class="toggleBtnClass('enable_backfill', 'destinations')">
+                            <span :class="toggleKnobClass('enable_backfill', 'destinations')"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Duplicate Error Bypass Setting -->
+                <div class="md:border-l md:border-notion-divider md:pl-6">
+                    <div
+                        class="setting-item flex items-center justify-between gap-3 p-2 -mx-2 hover:bg-notion-bg-hover/10 transition-colors rounded-md min-h-8"
+                        v-show="matchesSearch('duplicate error bypass retry indexer repeat')"
+                        title="Automatically retry with a modified name if an indexer complains about a duplicate submission."
+                        data-search="duplicate error bypass retry indexer repeat">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <lucide-icon name="copy-plus" icon-class="size-3.5 text-notion-accent shrink-0"></lucide-icon>
+                            <span class="font-medium text-notion-text-primary text-[13px]">Duplicate Error Bypass</span>
+                        </div>
+                        <button @click="toggleSetting('enable_duplicate_bypass', 'destinations')" :class="toggleBtnClass('enable_duplicate_bypass', 'destinations')" class="shrink-0">
+                            <span :class="toggleKnobClass('enable_duplicate_bypass', 'destinations')"></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pt-4 pb-4">
+                <div class="h-px bg-notion-border mx-2"></div>
+            </div>
+
+            <!-- Dynamic Indexers Grid - Vue v-for rendering -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8">
+                <div class="space-y-0.5">
+                    <div
+                        v-for="indexer in leftColumnIndexers"
+                        :key="indexer.id"
+                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-[color,background-color,opacity] group min-h-8 gap-y-1"
+                        v-show="matchesSearch((indexer.name || '') + ' ' + (indexer.id || '') + ' indexer api')"
+                        :style="{ opacity: settings.destinations['enable_' + indexer.id] ? 1 : 0.4 }"
+                        :data-search="indexer.name.toLowerCase() + ' ' + indexer.id + ' indexer api'">
+                        <div class="flex items-center gap-2">
+                            <div class="size-5 rounded flex items-center justify-center bg-notion-bg-hover">
+                                <img v-if="indexer.favicon_url && !indexer.faviconError" :src="indexer.favicon_url" referrerpolicy="no-referrer" class="size-3.5 object-contain" :alt="indexer.name" @error="handleFaviconError(indexer)" />
+                                <lucide-icon v-else :name="indexer.icon || 'database'" :icon-class="['size-3.5', getColorClasses(indexer.color).text]" :icon-style="getColorClasses(indexer.color).style?.text"></lucide-icon>
+                            </div>
+                            <span class="text-notion-text-secondary text-[13px]">{{ indexer.name }}</span>
+                            <!-- Edit Key Button -->
+                            <button @click.stop="openKeyModal(indexer)" class="p-1 hover:bg-notion-bg-active text-notion-text-tertiary hover:text-notion-accent rounded transition-all opacity-40 group-hover:opacity-100" title="Edit Credentials">
+                                <lucide-icon name="key" icon-class="size-3"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="flex items-center">
+                            <!-- Segmented Toggle Group -->
+                            <div class="flex items-center border border-notion-border rounded overflow-hidden h-8 bg-notion-bg/30 shadow-inner">
+                                <!-- ACTIVE SEGMENT -->
+                                <button
+                                    @click="toggleSetting('enable_' + indexer.id, 'destinations')"
+                                    :class="settings.destinations['enable_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Toggle Indexer">
+                                    <lucide-icon name="power" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] font-bold uppercase tracking-tight">On</span>
+                                </button>
+
+                                <!-- BACKFILL SEGMENT -->
+                                <button
+                                    v-show="settings.destinations.enable_backfill"
+                                    @click="settings.destinations['backfill_' + indexer.id] = !settings.destinations['backfill_' + indexer.id]"
+                                    :disabled="!canBackfill(indexer.id)"
+                                    :class="[
+                                        settings.destinations['backfill_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !canBackfill(indexer.id) ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Enable Backfill uploads for this indexer">
+                                    <lucide-icon name="history" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Backfill</span>
+                                </button>
+
+                                <!-- PRIORITY SEGMENT -->
+                                <button
+                                    @click="settings.destinations['priority_' + indexer.id] = !settings.destinations['priority_' + indexer.id]"
+                                    :disabled="!settings.destinations['enable_' + indexer.id]"
+                                    :class="[
+                                        settings.destinations['priority_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !settings.destinations['enable_' + indexer.id] ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full transition-colors"
+                                    title="Check to include this indexer in the first (priority) upload set">
+                                    <lucide-icon name="zap" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Priority</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="space-y-0.5 md:border-l md:border-notion-divider md:pl-6">
+                    <div
+                        v-for="indexer in rightColumnIndexers"
+                        :key="indexer.id"
+                        class="setting-item flex flex-wrap items-center justify-between p-2 -mx-2 rounded-md hover:bg-notion-bg-hover/10 transition-[color,background-color,opacity] group min-h-8 gap-y-1"
+                        v-show="matchesSearch((indexer.name || '') + ' ' + (indexer.id || '') + ' indexer api')"
+                        :style="{ opacity: settings.destinations['enable_' + indexer.id] ? 1 : 0.4 }"
+                        :data-search="indexer.name.toLowerCase() + ' ' + indexer.id + ' indexer api'">
+                        <div class="flex items-center gap-2">
+                            <div class="size-5 rounded flex items-center justify-center bg-notion-bg-hover">
+                                <img v-if="indexer.favicon_url && !indexer.faviconError" :src="indexer.favicon_url" referrerpolicy="no-referrer" class="size-3.5 object-contain" :alt="indexer.name" @error="handleFaviconError(indexer)" />
+                                <lucide-icon v-else :name="indexer.icon || 'database'" :icon-class="['size-3.5', getColorClasses(indexer.color).text]" :icon-style="getColorClasses(indexer.color).style?.text"></lucide-icon>
+                            </div>
+                            <span class="text-notion-text-secondary text-[13px]">{{ indexer.name }}</span>
+                            <!-- Edit Key Button -->
+                            <button @click.stop="openKeyModal(indexer)" class="p-1 hover:bg-notion-bg-active text-notion-text-tertiary hover:text-notion-accent rounded transition-all opacity-40 group-hover:opacity-100" title="Edit Credentials">
+                                <lucide-icon name="key" icon-class="size-3"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="flex items-center">
+                            <!-- Segmented Toggle Group -->
+                            <div class="flex items-center border border-notion-border rounded overflow-hidden h-8 bg-notion-bg/30 shadow-inner">
+                                <!-- ACTIVE SEGMENT -->
+                                <button
+                                    @click="toggleSetting('enable_' + indexer.id, 'destinations')"
+                                    :class="settings.destinations['enable_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Toggle Indexer">
+                                    <lucide-icon name="power" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] font-bold uppercase tracking-tight">On</span>
+                                </button>
+
+                                <!-- BACKFILL SEGMENT -->
+                                <button
+                                    v-show="settings.destinations.enable_backfill"
+                                    @click="settings.destinations['backfill_' + indexer.id] = !settings.destinations['backfill_' + indexer.id]"
+                                    :disabled="!canBackfill(indexer.id)"
+                                    :class="[
+                                        settings.destinations['backfill_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !canBackfill(indexer.id) ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors"
+                                    title="Enable Backfill uploads for this indexer">
+                                    <lucide-icon name="history" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Backfill</span>
+                                </button>
+
+                                <!-- PRIORITY SEGMENT -->
+                                <button
+                                    @click="settings.destinations['priority_' + indexer.id] = !settings.destinations['priority_' + indexer.id]"
+                                    :disabled="!settings.destinations['enable_' + indexer.id]"
+                                    :class="[
+                                        settings.destinations['priority_' + indexer.id] ? 'bg-notion-accent text-white border-notion-accent font-bold' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10',
+                                        !settings.destinations['enable_' + indexer.id] ? 'cursor-not-allowed' : ''
+                                    ]"
+                                    class="flex items-center gap-1.5 px-3 h-full transition-colors"
+                                    title="Check to include this indexer in the first (priority) upload set">
+                                    <lucide-icon name="zap" icon-class="size-3.5"></lucide-icon>
+                                    <span class="text-[10px] uppercase tracking-tight">Priority</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

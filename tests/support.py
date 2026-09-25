@@ -68,7 +68,10 @@ from core import database as db
 
 from core import redaction
 
-from core import registry as registry_mod
+from core.indexers import categories as categories_mod
+from core.indexers import http_submit as http_submit_mod
+from core.indexers import models as models_mod
+from core.indexers import registry as registry_mod
 
 from core.config import Config
 
@@ -86,15 +89,12 @@ from core.database import (
     update_db_destination,
 )
 
-from core.registry import (
-    AuthConfig,
-    IndexerDefinition,
-    resolve_indexer_api_key,
-    resolve_indexer_username,
-    submit_to_indexer,
-)
+from core.indexers.models import AuthConfig, IndexerDefinition
+from core.indexers.models import resolve_indexer_api_key, resolve_indexer_username
+from core.indexers.http_submit import submit_to_indexer
 
-from logic import updater
+from logic.system import backup as system_backup
+from logic.system import lifecycle, updater
 from logic import autoupload as autoupload
 from logic.pending import children as pending_children
 from logic.pending import completion as pending_completion
@@ -125,8 +125,9 @@ from cli.commands import upload as cli_upload
 
 from logic.services import ConsoleBuffer, console
 
-from logic.stats_engine import format_seconds, parse_speed_to_bps
+from logic.stats.collector import format_seconds, parse_speed_to_bps
 
+from core.indexers.models import SubmitResult
 from logic.pipeline import (
     checkpoints as pipeline_checkpoints,
     pack_filter as pipeline_pack_filter,
@@ -139,7 +140,6 @@ from logic.pipeline import (
     submit as pipeline_submit,
     validate as pipeline_validate,
 )
-from logic.pipeline.submit import SubmitResult
 
 _PIPELINE_MODULES = (
     pipeline_runner,
@@ -355,7 +355,7 @@ def _capture_submit_request(monkeypatch, *, text: str = "OK", json_payload: dict
                 seen[key] = kwargs[key]
         return DummyResponse()
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
     return seen
 
 def _make_sample_nzb(tmp_path: Path) -> Path:
@@ -464,9 +464,9 @@ def _configure_process_single_environment(
     monkeypatch.setattr(processing_mod, "compute_size_uncached", lambda _path: 10)
     monkeypatch.setattr(db, "check_duplicate_dynamic", lambda *_args, **_kwargs: duplicate_status)
     monkeypatch.setattr(registry_mod, "get_enabled_indexers", lambda _conf: indexers)
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
     monkeypatch.setattr(
-        registry_mod,
+        models_mod,
         "resolve_indexer_priority",
         priority_resolver or (lambda _idx, _conf: False),
     )
@@ -589,10 +589,10 @@ def _configure_pending_snapshot_environment(
     )
     if compute_size_uncached is not None:
         monkeypatch.setattr(pending_tree, "compute_size_uncached", compute_size_uncached)
-    monkeypatch.setattr("core.registry.get_registry", lambda: _Registry())
-    monkeypatch.setattr("core.registry.get_available_categories", lambda: list(available_categories or []))
+    monkeypatch.setattr("core.indexers.registry.get_registry", lambda: _Registry())
+    monkeypatch.setattr("core.indexers.categories.get_available_categories", lambda: list(available_categories or []))
     monkeypatch.setattr(
-        "core.registry.resolve_indexer_backfill",
+        "core.indexers.models.resolve_indexer_backfill",
         resolve_backfill or (lambda _idx, _conf: False),
     )
 
@@ -638,7 +638,7 @@ def _configure_pending_scan_all(
     )
     monkeypatch.setattr("logic.classify.anime.get_cached", anime_cache_lookup)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: _Registry())
-    monkeypatch.setattr(registry_mod, "get_available_categories", lambda: list(available_categories or []))
+    monkeypatch.setattr(categories_mod, "get_available_categories", lambda: list(available_categories or []))
 
     return pending_api._scan_pending_all()
 
@@ -800,7 +800,7 @@ def _make_success_indexer(text_patterns, duplicate_patterns=None):
         website="",
         method="POST",
         submit_url="https://example.com",
-        success=registry_mod.SuccessPatterns(
+        success=models_mod.SuccessPatterns(
             text_patterns=text_patterns,
             duplicate_patterns=duplicate_patterns or [],
         ),
