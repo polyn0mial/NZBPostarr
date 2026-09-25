@@ -22,12 +22,8 @@ from core.utils import (
     set_thread_job,
 )
 from logic import processing, usenet_stream
-from logic.pending_index import get_pending_index_manager
-from logic.queue_metrics import (
-    count_pending_indexer_slots,
-    incomplete_pending_indexer_ids,
-    required_pending_indexer_ids,
-)
+from logic.pending.index import get_pending_index_manager
+from logic.pending.view import build_dashboard_summary
 from logic.queueing import (
     ProcessingJobRequest,
     QueueServiceMixin,
@@ -272,151 +268,15 @@ class UploadService(QueueServiceMixin):
             current_stage="PROBING SOURCE NZB",
         )
 
-    @staticmethod
-    def _empty_dashboard_pending() -> dict[str, Any]:
-        return {
-            "movies": 0,
-            "tv": 0,
-            "misc": 0,
-            "tv_episodes_pending": 0,
-            "tv_episodes_complete": 0,
-            "movies_complete": 0,
-            "tv_complete": 0,
-            "misc_complete": 0,
-            "total_tasks": 0,
-            "red_indexers": 0,
-        }
-
-    @staticmethod
-    def _iter_dashboard_snapshot_rows(snapshot: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
-        items = snapshot.get("items") if isinstance(snapshot, dict) else {}
-        if not isinstance(items, dict):
-            return []
-
-        rows: list[tuple[str, dict[str, Any]]] = []
-        for show in items.get("tv", []) if isinstance(items.get("tv"), list) else []:
-            if isinstance(show, dict):
-                rows.append(("tv", show))
-
-        for category, cat_items in items.items():
-            if category in {"tv", "external"} or not isinstance(cat_items, list):
-                continue
-            for item in cat_items:
-                if isinstance(item, dict):
-                    rows.append((category, item))
-
-        for group in items.get("external", []) if isinstance(items.get("external"), list) else []:
-            if not isinstance(group, dict):
-                continue
-            for item in group.get("items", []) or []:
-                if not isinstance(item, dict):
-                    continue
-                effective_category = str(item.get("detected_category") or "").strip().lower()
-                if not effective_category:
-                    continue
-                rows.append((effective_category, item))
-
-        return rows
-
-    def _build_dashboard_pending_from_snapshot(
-        self,
-        snapshot: dict[str, Any],
-        indexers: list[dict[str, Any]],
-    ) -> tuple[dict[str, Any], dict[str, Any]]:
-        pending = self._empty_dashboard_pending()
-        breakdown: dict[str, dict[str, dict[str, int]]] = {}
-        active_ids = [
-            str(indexer.get("id") or "").strip()
-            for indexer in indexers
-            if isinstance(indexer, dict) and str(indexer.get("id") or "").strip()
-        ]
-        required_ids = required_pending_indexer_ids(indexers)
-        task_totals: dict[str, int] = {}
-        red_indexer_ids: set[str] = set()
-
-        for category, row in self._iter_dashboard_snapshot_rows(snapshot):
-            status_map = row.get("indexers") if isinstance(row.get("indexers"), dict) else {}
-            row_completed = bool(row.get("completed", False))
-
-            if category not in pending:
-                pending[category] = 0
-                pending[f"{category}_complete"] = 0
-
-            if row_completed:
-                pending[f"{category}_complete"] = pending.get(f"{category}_complete", 0) + 1
-            else:
-                pending[category] = pending.get(category, 0) + 1
-
-            if category == "tv":
-                for season in row.get("seasons") or []:
-                    if not isinstance(season, dict):
-                        continue
-                    for item in season.get("items") or []:
-                        if not isinstance(item, dict):
-                            continue
-                        if item.get("itype") not in ("TV Episode", "Anime"):
-                            continue
-                        if bool(item.get("completed", False)):
-                            pending["tv_episodes_complete"] += 1
-                        else:
-                            pending["tv_episodes_pending"] += 1
-
-            task_totals[category] = task_totals.get(category, 0) + count_pending_indexer_slots(status_map, required_ids)
-            red_indexer_ids.update(incomplete_pending_indexer_ids(status_map, required_ids))
-
-            category_breakdown = breakdown.setdefault(
-                category,
-                {idx_id: {"complete": 0, "pending": 0} for idx_id in active_ids},
-            )
-            for idx_id in active_ids:
-                if status_map.get(idx_id) is True:
-                    category_breakdown[idx_id]["complete"] += 1
-                else:
-                    category_breakdown[idx_id]["pending"] += 1
-
-        for category, total in task_totals.items():
-            pending[f"{category}_tasks"] = total
-        pending["total_tasks"] = sum(task_totals.values())
-        pending["red_indexers"] = len(red_indexer_ids)
-        return pending, breakdown
-
     def get_dashboard_summary(self) -> dict[str, Any]:
         """Return dashboard summary derived from the pending-index snapshot and live stats."""
         conf = get_config()
-        now = time.time()
         stats_ttl = float(max(1.0, min(5.0, getattr(conf, "ui_refresh_seconds", 2) or 2)))
-        stats = self._get_statistics_cached(now, stats_ttl)
+        stats = self._get_statistics_cached(time.time(), stats_ttl)
         pending_state = get_pending_index_manager().get_state()
-        snapshot = pending_state.get("snapshot") if isinstance(pending_state, dict) else None
-        if snapshot is None:
+        if not isinstance(pending_state, dict) or pending_state.get("snapshot") is None:
             get_pending_index_manager().request_refresh(reason="dashboard-summary")
-
-        upload_stats = stats.get("uploads", {})
-        by_dest = upload_stats.get("by_destination", {}) if isinstance(upload_stats, dict) else {}
-        indexers = list(snapshot.get("indexers") or []) if isinstance(snapshot, dict) else []
-        pending, breakdown = self._build_dashboard_pending_from_snapshot(snapshot or {}, indexers)
-
-        indexer_list = []
-        for indexer in indexers:
-            if not isinstance(indexer, dict):
-                continue
-            idx_id = str(indexer.get("id") or "").strip()
-            if not idx_id:
-                continue
-            indexer_list.append({**indexer, "stats": by_dest.get(idx_id, {"success": 0, "failed": 0})})
-
-        return {
-            "uploads": upload_stats,
-            "performance": stats.get("performance", {}),
-            "pending": pending,
-            "breakdown": breakdown,
-            "poster_name": conf.poster_name,
-            "ui_refresh_seconds": conf.ui_refresh_seconds,
-            "nntp_status": "Online" if conf.nntp_servers else "Offline",
-            "indexers": indexer_list,
-            "summary_ready": snapshot is not None and bool(pending_state.get("ready", False)),
-            "db_error": snapshot.get("db_error") if isinstance(snapshot, dict) else None,
-        }
+        return build_dashboard_summary(conf, stats, pending_state)
 
     def _execute_processing_job(self, job: dict[str, Any], request: ProcessingJobRequest) -> None:
         """Execute processing.run_job with shared force/error semantics.

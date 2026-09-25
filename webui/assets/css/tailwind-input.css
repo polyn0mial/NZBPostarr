@@ -1,5 +1,68 @@
-@import 'tailwindcss';
-@config '../../tailwind.config.cjs';
+@import 'tailwindcss' source(none);
+
+@source '../../*.html';
+@source '../../partials/**/*.html';
+@source '../js/**/*.js';
+@source not '../js/dist';
+/* The old config also scanned the built bundles, where these two matched in library code.
+   Kept so the compiled class set stays a superset of the old one. */
+@source inline("static capitalize");
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+    --breakpoint-*: initial;
+    --breakpoint-xs: 400px;
+    --breakpoint-sm: 640px;
+    --breakpoint-md: 768px;
+    --breakpoint-lg: 1024px;
+    --breakpoint-xl: 1280px;
+
+    --font-sans:
+        ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI Variable Display', 'Segoe UI', Roboto, Oxygen, Ubuntu,
+        Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+    --font-mono: 'SFMono-Regular', Menlo, Consolas, 'PT Mono', 'Liberation Mono', Courier, monospace;
+
+    --animate-slide-in: slide-in 0.2s ease-out;
+    @keyframes slide-in {
+        0% {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        100% {
+            transform: translateX(0);
+            opacity: 1;
+        }
+    }
+
+    --color-notion-bg: var(--notion-bg);
+    --color-notion-bg-secondary: var(--notion-bg-secondary);
+    --color-notion-bg-elevated: var(--notion-bg-elevated);
+    --color-notion-bg-hover: var(--notion-bg-hover);
+    --color-notion-bg-active: var(--notion-bg-active);
+    --color-notion-text-primary: var(--notion-text-primary);
+    --color-notion-text-secondary: var(--notion-text-secondary);
+    --color-notion-text-tertiary: var(--notion-text-tertiary);
+    --color-notion-text-placeholder: var(--notion-text-placeholder);
+    --color-notion-link: var(--notion-link);
+    --color-notion-border: var(--notion-border);
+    --color-notion-border-strong: var(--notion-border-strong);
+    --color-notion-divider: var(--notion-divider);
+    --color-notion-accent: var(--notion-accent);
+    --color-notion-accent-muted: var(--notion-accent-muted);
+    --color-notion-success: var(--notion-success);
+    --color-notion-warning: var(--notion-warning);
+    --color-notion-error: var(--notion-error);
+    --color-idx-purple: var(--idx-purple);
+    --color-idx-orange: var(--idx-orange);
+    --color-idx-blue: var(--idx-blue);
+    --color-idx-pink: var(--idx-pink);
+    --color-idx-green: var(--idx-green);
+    --color-idx-cyan: var(--idx-cyan);
+    --color-idx-rose: var(--idx-rose);
+    --color-idx-red: var(--idx-red);
+    --color-idx-amber: var(--idx-amber);
+}
 
 @layer components {
     /* Desktop nav dropdown on hover */
@@ -440,7 +503,8 @@
     border-radius: 6px;
 }
 
-/* Force-include DISC category badge classes (higher opacity for visibility) */
+/* Force-include DISC category badge classes (higher opacity for visibility).
+   Kept until W5-F5 removes dynamic class building. */
 @source inline("bg-slate-500/30 text-slate-300 border-emerald-500/50 border-notion-warning/50 bg-emerald-500/15");
 
 /* Reset native SELECT appearance for category pill so custom bg-color applies */

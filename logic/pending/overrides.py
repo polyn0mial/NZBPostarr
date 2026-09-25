@@ -1,15 +1,4 @@
-"""Persisted manual category overrides for pending queue items.
-
-The queue page lets a user override an item's auto-detected category
-(e.g. Movies -> TV) via a per-item dropdown. That choice previously lived
-only in the browser's localStorage, so it never survived a different
-browser, device, or cleared site data. This module persists the same
-{item_key: category} map to a small JSON file on the server instead, so
-it's available from any browser that opens the queue page.
-
-The file lives under the app's data directory (``data/category_overrides.json``);
-an older ``category_overrides.json`` in the app root is read as a fallback.
-"""
+"""Per-path manual category overrides, persisted to one JSON file."""
 
 from __future__ import annotations
 
@@ -22,11 +11,14 @@ from typing import Dict, Optional
 
 from loguru import logger
 
-_lock = threading.Lock()
-_store: Dict[str, str] = {}
-_loaded = False
-_path: Optional[Path] = None
 
+_lock = threading.Lock()
+
+_store: Dict[str, str] = {}
+
+_loaded = False
+
+_path: Optional[Path] = None
 
 def _get_path() -> Path:
     global _path
@@ -36,12 +28,10 @@ def _get_path() -> Path:
         _path = APP_ROOT / "data" / "category_overrides.json"
     return _path
 
-
 def _legacy_path() -> Path:
     from core.config import APP_ROOT
 
     return APP_ROOT / "category_overrides.json"
-
 
 def _load() -> None:
     global _store, _loaded
@@ -61,7 +51,6 @@ def _load() -> None:
             _store = {}
     _loaded = True
 
-
 def _save() -> None:
     path = _get_path()
     try:
@@ -77,13 +66,11 @@ def _save() -> None:
     except Exception as e:
         logger.warning(f"Failed to save category overrides: {e}")
 
-
 def get_all() -> Dict[str, str]:
     """Return the full {item_key: category} override map."""
     with _lock:
         _load()
         return dict(_store)
-
 
 def set_override(key: str, category: Optional[str]) -> None:
     """Persist a category override, or clear it when category is falsy."""

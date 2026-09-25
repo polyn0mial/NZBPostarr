@@ -17,9 +17,13 @@ from api.deps import _filter_bulk_selectable_items, _log_selected_payload
 from core import database
 from core.config import get_config
 from core.utils import VIDEO_EXTENSIONS
-from logic import pending_snapshot as pending_snapshot_mod
-from logic.pending_index import get_pending_index_manager
-from logic.pending.roots import get_configured_category_folders, get_configured_folders
+from logic.pending import children as pending_children
+from logic.pending import index as pending_index
+from logic.pending import tree as pending_tree
+from logic.pending import view as pending_view
+from logic.pending.selection import stamp_upload_itype
+from logic.pending.index import get_pending_index_manager
+from logic.pending.roots import get_configured_folders
 from logic.queueing import ProcessingJobRequest
 from logic.services import get_upload_service, UploadService
 
@@ -52,10 +56,7 @@ def _wait_for_pending_snapshot(max_wait_s: float = 2.0, poll_s: float = 0.1) -> 
     return state
 
 def _scan_pending_all() -> Dict[str, Any]:
-    pending_snapshot_mod.get_config = get_config
-    pending_snapshot_mod.get_configured_category_folders = get_configured_category_folders
-    pending_snapshot_mod.database = database
-    return pending_snapshot_mod.scan_pending_snapshot()
+    return pending_tree.scan_pending_snapshot()
 
 def _refresh_pending_snapshot_now(reason: str = "manual") -> Dict[str, Any]:
     """Rebuild the pending snapshot synchronously and replace the cache."""
@@ -91,7 +92,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
     global _anime_check_inflight, _anime_check_thread
     from logic.classify.anime import check_titles_batch
 
-    names = pending_snapshot_mod.collect_uncached_anime_check_names(data)
+    names = pending_index.collect_uncached_anime_check_names(data)
     if not names:
         return
 
@@ -135,7 +136,7 @@ def get_pending_summary() -> Dict[str, Any]:
 
     if not data:
         return {
-            "summary": pending_snapshot_mod.empty_pending_summary(),
+            "summary": pending_view.empty_pending_summary(),
             "categories": [],
             "indexers": [],
             "cached_at": None,
@@ -193,7 +194,7 @@ def get_pending_items(
         data = state.get("snapshot")
 
     if not data:
-        res = pending_snapshot_mod.filter_pending_snapshot({}, search, category, literal)
+        res = pending_view.filter_pending_snapshot({}, search, category, literal)
         res["ready"] = False
         res["refreshing"] = True
         res["anime_detecting"] = _anime_check_inflight
@@ -215,7 +216,7 @@ def get_pending_items(
         }
 
     anime_enabled = bool(getattr(get_config(), "enable_anime_checking", False))
-    if anime_enabled and pending_snapshot_mod.collect_uncached_anime_check_names(data):
+    if anime_enabled and pending_index.collect_uncached_anime_check_names(data):
         with _anime_check_lock:
             can_start = not _anime_check_inflight and (_anime_check_thread is None or not _anime_check_thread.is_alive())
             if can_start:
@@ -225,7 +226,7 @@ def get_pending_items(
     if not search and category == "all" and not literal:
         res = dict(data)
     else:
-        res = pending_snapshot_mod.filter_pending_snapshot(data, search, category, literal)
+        res = pending_view.filter_pending_snapshot(data, search, category, literal)
 
     # Return only top-level pending rows.
     # Build fresh containers so the shared cached snapshot remains untouched.
@@ -248,7 +249,7 @@ def get_pending_children(
     """Fetch children lazily for a specific pending directory node."""
     state = _pending_index.get_state()
     data = state.get("snapshot") or {}
-    return pending_snapshot_mod.build_external_children_for_request(data, key, path)
+    return pending_children.build_external_children_for_request(data, key, path)
 
 @router.post("/anime-cache")
 def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, Any]:
@@ -415,6 +416,7 @@ def _slim_pending_node(node: Any) -> Any:
     if not isinstance(node, dict):
         return node
     slim = {key: value for key, value in node.items() if not str(key).startswith("_")}
+    stamp_upload_itype(slim)
     raw_children = node.get("children")
     raw_files = node.get("files")
     child_source = raw_children if isinstance(raw_children, list) else raw_files
@@ -502,20 +504,20 @@ async def update_pending_group_order_locked(req: PendingGroupOrderLockedRequest)
 @router.get("/category-overrides")
 def get_category_overrides() -> Dict[str, Any]:
     """Return all persisted manual category overrides for pending items."""
-    from logic import category_overrides
+    from logic.pending import overrides as pending_overrides
 
-    return {"overrides": category_overrides.get_all()}
+    return {"overrides": pending_overrides.get_all()}
 
 @router.post("/category-overrides")
 def set_category_override(req: CategoryOverrideRequest) -> Dict[str, Any]:
     """Persist (or clear, when category is empty) a manual category override."""
-    from logic import category_overrides
+    from logic.pending import overrides as pending_overrides
 
     key = (req.key or "").strip()
     if not key:
         raise HTTPException(status_code=400, detail="Missing item key")
     category = (req.category or "").strip().lower() or None
-    category_overrides.set_override(key, category)
+    pending_overrides.set_override(key, category)
     return {"status": "success", "key": key, "category": category}
 
 def _slim_pending_items(items: Any) -> Any:

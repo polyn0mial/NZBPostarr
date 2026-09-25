@@ -83,7 +83,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         logger.debug(f"  [2/2] Stats Collector skipped ({time.time() - start:.3f}s)")
 
     # Folder Monitor (experimental) - auto-upload on new content
-    from logic.folder_monitor import start_folder_monitor
+    from logic.autoupload import start_folder_monitor
 
     await start_folder_monitor()
     logger.debug(f"  [3/3] Folder Monitor checked ({time.time() - start:.3f}s)")
@@ -97,7 +97,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.debug(f"  [3.5/4] Pending index manager started ({time.time() - start:.3f}s)")
 
     # Warm the pending tree's indexer context off the request path (daemon thread).
-    from logic.pending_snapshot import prewarm_pending_indexer_context
+    from logic.pending.completion import prewarm_pending_indexer_context
 
     prewarm_pending_indexer_context()
 
@@ -116,7 +116,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
         yield
 
     from core.database import checkpoint_wal
-    from logic.folder_monitor import stop_folder_monitor
+    from logic.autoupload import stop_folder_monitor
     from logic.process_reaper import shutdown_scheduler
     from logic.stats_engine import stop_collector
 

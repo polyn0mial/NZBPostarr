@@ -617,7 +617,7 @@ def test_update_settings_reports_partial_success_when_monitor_restart_fails(monk
     async def _boom() -> None:
         raise RuntimeError("restart failed")
 
-    monkeypatch.setattr(folder_monitor, "restart_folder_monitor", _boom)
+    monkeypatch.setattr(autoupload, "restart_folder_monitor", _boom)
 
     result = _run_async(settings_api.update_settings("folders", {"base_folder": "X:/"}))
 
@@ -632,7 +632,7 @@ def test_update_settings_reports_monitor_restart_success(monkeypatch) -> None:
     async def _ok() -> None:
         return None
 
-    monkeypatch.setattr(folder_monitor, "restart_folder_monitor", _ok)
+    monkeypatch.setattr(autoupload, "restart_folder_monitor", _ok)
 
     result = _run_async(settings_api.update_settings("folders", {"base_folder": "X:/"}))
 
@@ -934,17 +934,17 @@ def test_scan_configured_items_preserves_tv_episode_metadata(tmp_path) -> None:
     )
 
 def test_log_pack_completion_state_uses_verbose_level(monkeypatch) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic.pending import completion as pending_completion
 
     calls = []
 
     monkeypatch.setattr(
-        pending_snapshot_mod.logger,
+        pending_completion.logger,
         "log",
         lambda level, message: calls.append((level, message)),
     )
 
-    pending_snapshot_mod._log_pack_completion_state(
+    pending_completion._log_pack_completion_state(
         {
             "name": "Show.Name.S01",
             "completed": False,

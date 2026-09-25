@@ -58,13 +58,13 @@ def build_tree_from_manifest(manifest: Path, target: Path) -> None:
 
 
 def _walk_rows(snapshot: dict[str, Any], rows: list[dict[str, Any]]) -> Iterator[dict[str, Any]]:
-    from logic import pending_snapshot
+    from logic.pending import children as pending_children
 
     for row in rows:
         yield row
         nested = list(row.get("children") or []) + list(row.get("files") or [])
         if not nested and int(row.get("child_count") or 0) > 0:
-            lazy = pending_snapshot.build_external_children_for_request(
+            lazy = pending_children.build_external_children_for_request(
                 snapshot,
                 str(row.get("key") or ""),
                 str(row.get("path") or ""),
@@ -90,21 +90,24 @@ def _row_record(root: Path, row: dict[str, Any]) -> dict[str, Any]:
 
 def scan_root(root: Path) -> list[str]:
     """Return the sorted JSON lines for every pending row under root."""
-    from logic import pending_snapshot
+    from logic.pending import completion as pending_completion
+    from logic.pending import tree as pending_tree
+    from logic.pending import view as pending_view
 
     conf = SimpleNamespace(folder_paths=[{"path": str(root), "category": "external"}], skip_files=None)
     with ExitStack() as stack:
-        stack.enter_context(mock.patch.object(pending_snapshot, "get_config", lambda: conf))
+        for owner in (pending_tree, pending_completion, pending_view):
+            stack.enter_context(mock.patch.object(owner, "get_config", lambda: conf))
         stack.enter_context(
             mock.patch.object(
-                pending_snapshot,
+                pending_tree,
                 "get_configured_category_folders",
                 lambda *_a, **_kw: [("external", root)],
             )
         )
         stack.enter_context(
             mock.patch.object(
-                pending_snapshot.database,
+                pending_completion.database,
                 "get_dashboard_data",
                 lambda _ids: (set(), {}, {}, {}),
             )
@@ -113,15 +116,15 @@ def scan_root(root: Path) -> list[str]:
         stack.enter_context(mock.patch("core.registry.get_available_categories", lambda: []))
         stack.enter_context(mock.patch("core.registry.resolve_indexer_backfill", lambda _idx, _conf: False))
         stack.enter_context(mock.patch("logic.classify.anime.get_cached", lambda _name: None))
-        pending_snapshot.invalidate_pending_indexer_context()
+        pending_completion.invalidate_pending_indexer_context()
         try:
-            snapshot = pending_snapshot.scan_pending_snapshot()
+            snapshot = pending_tree.scan_pending_snapshot()
             rows: list[dict[str, Any]] = []
             for group in snapshot.get("items", {}).get("external", []):
                 rows.extend(group.get("items") or [])
             records = [_row_record(root, row) for row in _walk_rows(snapshot, rows)]
         finally:
-            pending_snapshot.invalidate_pending_indexer_context()
+            pending_completion.invalidate_pending_indexer_context()
     return sorted(json.dumps(record, sort_keys=True) for record in records)
 
 

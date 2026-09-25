@@ -1,9 +1,4 @@
-"""Background pending-index manager.
-
-Keeps the expensive pending snapshot warm off the request path. The index is
-refreshed on manual requests, periodic reconcile, and (debounced) filesystem
-renames/deletes/moves in the watched folders.
-"""
+"""The pending index: background snapshot refresh, filesystem watch and anime lookups."""
 
 from __future__ import annotations
 
@@ -17,6 +12,7 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 
 from core import config as config_mod
 from core.utils import start_watchdog_observer, stop_watchdog_observer
+from logic.classify.anime import cached_lookup
 
 
 class _PendingIndexEventHandler(FileSystemEventHandler):  # type: ignore[misc]
@@ -39,7 +35,6 @@ class _PendingIndexEventHandler(FileSystemEventHandler):  # type: ignore[misc]
                 return
 
         self._manager.request_refresh(reason="watchdog")
-
 
 class PendingIndexManager:
     """Maintains a background-refreshed pending snapshot."""
@@ -205,9 +200,49 @@ class PendingIndexManager:
         if observer is not None:
             logger.debug(f"Pending index watchdog active for {scheduled} folder(s)")
 
-
 _MANAGER = PendingIndexManager()
-
 
 def get_pending_index_manager() -> PendingIndexManager:
     return _MANAGER
+
+def collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
+    """Extract unique candidate titles for anime lookups from a pending snapshot."""
+    seen: set[str] = set()
+    names: list[str] = []
+    video_itypes = {"TV Show", "Movie", "Anime"}
+
+    def _add(name: str) -> None:
+        cleaned = str(name or "").strip()
+        identity = cleaned.casefold()
+        if cleaned and identity not in seen:
+            seen.add(identity)
+            names.append(cleaned)
+
+    def _add_item(item: Dict[str, Any], section: str = "") -> None:
+        detector_candidates = item.get("_anime_lookup_candidates")
+        if isinstance(detector_candidates, (list, tuple)):
+            for candidate in detector_candidates:
+                _add(str(candidate or ""))
+        if item.get("itype") in video_itypes or section in {"tv", "movies", "anime"}:
+            _add(str(item.get("name") or ""))
+
+    items = data.get("items", {})
+
+    for category_key, category_items in items.items():
+        if category_key == "external" or not isinstance(category_items, list):
+            continue
+        for item in category_items:
+            if not isinstance(item, dict):
+                continue
+            _add_item(item, category_key)
+
+    for group in items.get("external", []):
+        for item in group.get("items", []):
+            if isinstance(item, dict):
+                _add_item(item)
+
+    return names
+
+def collect_uncached_anime_check_names(data: Dict[str, Any]) -> list[str]:
+    """Return anime-check candidates that are not already cached."""
+    return [name for name in collect_anime_check_names(data) if cached_lookup(name) is None]

@@ -13,7 +13,8 @@ from api import pending as pending_api
 from api import system as system_api
 from core import config as config_mod
 from core import database as db
-from logic import category_overrides, queueing, updater, usenet_stream
+from logic import queueing, updater, usenet_stream
+from logic.pending import overrides as pending_overrides
 from logic.classify import anime as anime_cache
 from tests.support import _run_async
 
@@ -46,13 +47,13 @@ def test_stream_monitor_state_file(tmp_path, monkeypatch) -> None:
 
 def test_app_root_state_files(monkeypatch) -> None:
     monkeypatch.setattr(anime_cache, "_cache_path", None)
-    monkeypatch.setattr(category_overrides, "_path", None)
+    monkeypatch.setattr(pending_overrides, "_path", None)
 
     assert _rel(anime_cache._get_cache_path(), APP_ROOT) == "data/cache/anime.json"
     assert _rel(updater.STATE_FILE, APP_ROOT) == "data/updater/state.json"
     assert _rel(updater.BACKUP_DIR, APP_ROOT) == "data/updater/backups"
-    assert _rel(category_overrides._get_path(), APP_ROOT) == "data/category_overrides.json"
-    assert _rel(category_overrides._legacy_path(), APP_ROOT) == "category_overrides.json"
+    assert _rel(pending_overrides._get_path(), APP_ROOT) == "data/category_overrides.json"
+    assert _rel(pending_overrides._legacy_path(), APP_ROOT) == "category_overrides.json"
 
 
 def test_deployed_revision_file(monkeypatch) -> None:

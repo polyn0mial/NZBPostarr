@@ -1233,7 +1233,7 @@ def _persist_submission_results(
     if any_success and not test_mode:
         # Pending folder expansion caches indexer ticks; drop them so the new
         # upload shows at once instead of after the cache TTL.
-        from logic.pending_snapshot import invalidate_pending_indexer_context
+        from logic.pending.completion import invalidate_pending_indexer_context
 
         invalidate_pending_indexer_context()
     return any_success

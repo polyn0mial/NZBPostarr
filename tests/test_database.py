@@ -134,7 +134,7 @@ def test_duplicate_and_history_queries_fail_closed_on_db_failure(monkeypatch) ->
             operation()
 
 def test_scan_pending_snapshot_marks_indexer_status_unavailable_on_db_error(tmp_path, monkeypatch) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
+    from logic.pending import tree as pending_tree
 
     movies_dir = tmp_path / "movies"
     movies_dir.mkdir()
@@ -151,17 +151,16 @@ def test_scan_pending_snapshot_marks_indexer_status_unavailable_on_db_error(tmp_
 
     _configure_pending_snapshot_environment(
         monkeypatch,
-        pending_snapshot_mod,
         conf,
         dashboard_data=lambda _ids: (_ for _ in ()).throw(
-            pending_snapshot_mod.database.DatabaseOperationalError("db down")
+            db.DatabaseOperationalError("db down")
         ),
         configured_folders=[("movies", movies_dir)],
         indexers=[indexer],
         compute_size_uncached=lambda path: 1,
     )
 
-    payload = pending_snapshot_mod.scan_pending_snapshot()
+    payload = pending_tree.scan_pending_snapshot()
 
     assert payload["indexer_status_available"] is False
     assert payload["db_error"] == "db down"

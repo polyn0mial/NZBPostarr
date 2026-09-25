@@ -7,7 +7,9 @@ from collections import deque
 
 from tests.support import *
 
-from logic import pending_snapshot as pending_snapshot_mod
+from logic.pending import completion as pending_completion
+from logic.pending import rules as pending_rules
+from logic.pending import tree as pending_tree
 from logic import processing
 from logic.processing_g2 import _iter_work_items
 from logic.queueing_base import ProcessingJobRequest
@@ -441,7 +443,7 @@ def test_filepart_flags_mark_transfers_and_propagate(tmp_path) -> None:
         "movies": [{"name": loose.name, "path": str(loose)}, {"name": other.name, "path": str(other)}],
     }
 
-    pending_snapshot_mod.stamp_filepart_flags(result)
+    pending_tree.stamp_filepart_flags(result)
 
     folder_item = result["external"][0]["items"][0]
     assert folder_item["has_filepart"] is True
@@ -454,10 +456,10 @@ def test_completion_requires_matching_stored_size() -> None:
     upload_map = {"a.mkv": {"geek", "omg"}}
     sizes = {"a.mkv": {"geek": 100}}
 
-    assert pending_snapshot_mod._lookup_upload_map_indexers(
+    assert pending_completion._lookup_upload_map_indexers(
         upload_map, "a.mkv", filesize_by_indexer=sizes, current_size=100
     ) == {"geek", "omg"}
-    assert pending_snapshot_mod._lookup_upload_map_indexers(
+    assert pending_completion._lookup_upload_map_indexers(
         upload_map, "a.mkv", filesize_by_indexer=sizes, current_size=200
     ) == {"omg"}
 
@@ -472,30 +474,30 @@ def test_indexer_context_serves_stale_cache_while_refreshing(monkeypatch) -> Non
         refreshed.set()
         return fresh
 
-    monkeypatch.setattr(pending_snapshot_mod, "_get_pending_indexer_context_fresh", fake_fresh)
-    monkeypatch.setattr(pending_snapshot_mod, "_INDEXER_CTX_CACHE", stale)
-    monkeypatch.setattr(pending_snapshot_mod, "_INDEXER_CTX_CACHE_TS", time.monotonic() - 3600)
-    monkeypatch.setattr(pending_snapshot_mod, "_INDEXER_CTX_REFRESH_RUNNING", False)
+    monkeypatch.setattr(pending_completion, "_get_pending_indexer_context_fresh", fake_fresh)
+    monkeypatch.setattr(pending_completion, "_INDEXER_CTX_CACHE", stale)
+    monkeypatch.setattr(pending_completion, "_INDEXER_CTX_CACHE_TS", time.monotonic() - 3600)
+    monkeypatch.setattr(pending_completion, "_INDEXER_CTX_REFRESH_RUNNING", False)
 
-    assert pending_snapshot_mod._get_pending_indexer_context() is stale
+    assert pending_completion._get_pending_indexer_context() is stale
     assert refreshed.wait(5)
     deadline = time.monotonic() + 5
-    while pending_snapshot_mod._INDEXER_CTX_CACHE is not fresh and time.monotonic() < deadline:
+    while pending_completion._INDEXER_CTX_CACHE is not fresh and time.monotonic() < deadline:
         time.sleep(0.01)
-    assert pending_snapshot_mod._get_pending_indexer_context() is fresh
+    assert pending_completion._get_pending_indexer_context() is fresh
 
-    pending_snapshot_mod.invalidate_pending_indexer_context()
-    assert pending_snapshot_mod._INDEXER_CTX_CACHE is None
+    pending_completion.invalidate_pending_indexer_context()
+    assert pending_completion._INDEXER_CTX_CACHE is None
 
 
 def test_season_markers_and_homogeneous_book_folders() -> None:
     # queue-backend-20
-    assert pending_snapshot_mod._SEASON_MARKER_RE.search("Show.S2023.1080p.WEB-DL")
+    assert pending_rules._SEASON_MARKER_RE.search("Show.S2023.1080p.WEB-DL")
     node = {"name": "Collection"}
     children = [{"name": "a.mp3"}, {"name": "b.mp3"}]
-    assert pending_snapshot_mod._decide_child_promoted_category(node, "misc", children, ["music", "music"]) == "music"
+    assert pending_rules._decide_child_promoted_category(node, "misc", children, ["music", "music"]) == "music"
     tree = {"name": "Collection", "children": [{"name": "a.m4b", "category": "audiobooks"}, {"name": "b.m4b", "category": "audiobooks"}]}
-    pending_snapshot_mod._inherit_category_from_children(tree)
+    pending_rules._inherit_category_from_children(tree)
     assert tree["category"] == "audiobooks"
 
 
@@ -503,7 +505,7 @@ def test_pending_watchdog_ignores_created_files_and_debounces() -> None:
     # queue-backend-21
     from watchdog.events import DirModifiedEvent, FileCreatedEvent, FileDeletedEvent, FileMovedEvent
 
-    from logic.pending_index import PendingIndexManager, _PendingIndexEventHandler
+    from logic.pending.index import PendingIndexManager, _PendingIndexEventHandler
 
     manager = PendingIndexManager(watchdog_debounce_s=60)
     handler = _PendingIndexEventHandler(manager)
