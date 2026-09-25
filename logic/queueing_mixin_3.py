@@ -54,44 +54,11 @@ class _QueueServiceMixinPart3:
             pass
         return pids
 
-    def _suspend_job_processes_locked(self, job_id: str) -> int:
-        processes = self._processes.get(job_id) or []
-        suspended: set[int] = self._suspended_pids.get(job_id, set())
-        count = 0
-
-        for proc in list(processes):
-            for pid in self._collect_process_tree_pids(proc):
-                if pid in suspended:
-                    continue
-                try:
-                    psutil.Process(pid).suspend()
-                    suspended.add(pid)
-                    count += 1
-                except (psutil.Error, OSError):
-                    continue
-
-        if suspended:
-            self._suspended_pids[job_id] = suspended
-        return count
-
-    def _resume_job_processes_locked(self, job_id: str) -> int:
-        resumed = 0
-        for pid in list(self._suspended_pids.get(job_id, set())):
-            try:
-                psutil.Process(pid).resume()
-                resumed += 1
-            except (psutil.Error, OSError):
-                pass
-        self._suspended_pids.pop(job_id, None)
-        return resumed
-
     def _terminate_job_processes_locked(self, job_id: str, *, kill_delay_s: float = 0.5) -> int:
         """Terminate registered tool processes for a job, then schedule a quick kill fallback."""
         processes = list(self._processes.get(job_id) or [])
         if not processes:
             return 0
-
-        self._resume_job_processes_locked(job_id)
 
         pids: list[int] = []
         seen: set[int] = set()
@@ -143,12 +110,10 @@ class _QueueServiceMixinPart3:
                         self._processes[job_id].remove(process)
                         if not self._processes[job_id]:
                             del self._processes[job_id]
-                            self._suspended_pids.pop(job_id, None)
                     except ValueError:
                         pass
                 else:
                     del self._processes[job_id]
-                    self._suspended_pids.pop(job_id, None)
 
     def pause_job(self, job_id: str) -> bool:
         """Mark a running job Paused at once without freezing its tools.
@@ -459,8 +424,7 @@ class _QueueServiceMixinPart3:
         if str(job.get("current_stage") or "") == "PAUSED":
             job["current_stage"] = "UPLOADING"
 
-        resumed = self._resume_job_processes_locked(job_id)
-        logger.debug(f"Resumed job {job_id}; resumed {resumed} process(es)")
+        logger.debug(f"Resumed job {job_id}")
         return False
 
     def stop_job(self, job_id: str, *, clear_after_stop: bool = False) -> bool:
@@ -646,4 +610,3 @@ class _QueueServiceMixinPart3:
 
         self._launch_job(job)
         return job_id
-

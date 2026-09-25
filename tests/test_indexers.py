@@ -505,7 +505,7 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
         assert seen[capture_key][capture_field] == expected_value, case_name
 
 def test_build_pending_summary_prefers_backfill_indexers_for_task_totals() -> None:
-    summary = app_mod._build_pending_summary(
+    summary = pending_snapshot_mod.build_pending_summary(
         {
             "tv": [{"episode_count": 1, "indexers": {"geek": True, "planet": False}}],
             "movies": [{"name": "Movie.1", "indexers": {"geek": False, "planet": True}}],
@@ -557,8 +557,6 @@ def test_pending_summary_includes_indexer_status_metadata(monkeypatch) -> None:
     assert result["db_error"] == "db down"
 
 def test_force_upload_items_collapses_overlapping_tv_paths(tmp_path):
-    from logic.queueing import QueueServiceMixin
-
     show_dir = tmp_path / "Show.Name"
     season_dir = show_dir / "Season 01"
     season_dir.mkdir(parents=True)
@@ -568,8 +566,6 @@ def test_force_upload_items_collapses_overlapping_tv_paths(tmp_path):
     captured: dict[str, object] = {}
 
     class DummyService:
-        group_item_paths_by_category = staticmethod(QueueServiceMixin.group_item_paths_by_category)
-
         def start_processing_job_requests(self, requests, **kwargs):
             captured["requests"] = requests
             captured["kwargs"] = kwargs
@@ -598,8 +594,6 @@ def test_force_upload_items_collapses_overlapping_tv_paths(tmp_path):
     assert captured["kwargs"] == {"source": "pending-force-upload", "reuse_running": False}
 
 def test_force_upload_items_preserves_tv_pack_directory_with_episode_children(tmp_path):
-    from logic.queueing import QueueServiceMixin
-
     season_dir = tmp_path / "Show.Name.S01.1080p.WEB-DL"
     season_dir.mkdir(parents=True)
     episode = season_dir / "Show.Name.S01E01.1080p.WEB-DL.mkv"
@@ -608,8 +602,6 @@ def test_force_upload_items_preserves_tv_pack_directory_with_episode_children(tm
     captured: dict[str, object] = {}
 
     class DummyService:
-        group_item_paths_by_category = staticmethod(QueueServiceMixin.group_item_paths_by_category)
-
         def start_processing_job_requests(self, requests, **kwargs):
             captured["requests"] = requests
             captured["kwargs"] = kwargs

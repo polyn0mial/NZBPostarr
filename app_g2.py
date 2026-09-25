@@ -4,8 +4,8 @@ from typing import Iterator
 
 from app_base import (
     Any, BaseModel, Depends, Dict, File, Form, HTTPException, List, Optional, Path, Set, UploadFile, UploadService, VIDEO_EXTENSIONS,
-    _PENDING_BUILD_SUMMARY, _PENDING_FILTER, asyncio, database, get_configured_folders, get_upload_service, json, logger, os, pending_snapshot_mod,
-    processing, settings_router, system_router, tempfile, tests_router, time, updater, uploads_router, usenet_stream,
+    asyncio, database, get_configured_folders, get_upload_service, json, logger, os, processing, settings_router, system_router,
+    tempfile, tests_router, time, updater, uploads_router, usenet_stream,
 )
 from app_g1 import (BulkDeleteRequest, CreateBackupRequest, QueuePriorityRequest, QueueRevalidateRequest, QueueScheduleRequest, RemoveQueuedJobItemRequest, RenameJobRequest, ReorderQueueRequest, ReorderQueuedJobItemsRequest, StartQueueRequest, StreamStartResponse, UpdateInstallRequest, _history_database_error, _mask_config_secrets, _normalize_request_strings, _resolved_policy_path)  # noqa: F401
 
@@ -443,11 +443,6 @@ async def save_readme_file(req: Dict[str, Any]) -> Dict[str, Any]:
     path.write_text(content, encoding="utf-8")
     return {"status": "success", "path": str(path)}
 
-@tests_router.get("/ping")
-async def ping() -> Dict[str, Any]:
-    """Simple connection test."""
-    return {"status": "pong"}
-
 def _runtime_revision() -> Dict[str, Any]:
     revision_path = Path(__file__).resolve().parent / "data" / "deployed_revision.json"
     if revision_path.exists():
@@ -781,29 +776,6 @@ async def _run_startup_reaper() -> None:
     except Exception as exc:
         logger.error(f"[startup] Boot reaper scan failed: {exc}")
 
-def _collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
-    return pending_snapshot_mod.collect_anime_check_names(data)
-
-def _collect_uncached_anime_check_names(data: Dict[str, Any]) -> list[str]:
-    return pending_snapshot_mod.collect_uncached_anime_check_names(data)
-
-def _classify_video_name(name: str, folder_category: str = "", assume_movie_if_unknown: bool = False) -> str:
-    return pending_snapshot_mod.classify_video_name(name, folder_category, assume_movie_if_unknown)
-
-def _detect_external_category(name: str, entry_path: Path) -> str:
-    return pending_snapshot_mod.detect_external_category(name, entry_path)
-
-def _detect_content_itype(name: str, entry_path: Path, folder_category: str) -> str:
-    return pending_snapshot_mod.detect_content_itype(name, entry_path, folder_category)
-
-def _build_pending_summary(items: Dict[str, Any], indexers: Optional[List[Dict[str, Any]]] = None) -> Dict[str, int]:
-    return _PENDING_BUILD_SUMMARY(items, indexers)
-
-def _filter_pending(
-    data: Dict[str, Any], search: Optional[str], category: str, literal: bool = False
-) -> Dict[str, Any]:
-    return _PENDING_FILTER(data, search, category, literal)
-
 def _slim_pending_node(node: Any) -> Any:
     """Strip a pending-tree node down to its top-level fields.
 
@@ -825,4 +797,3 @@ def _slim_pending_node(node: Any) -> Any:
         if "files" in slim:
             slim["files"] = []
     return slim
-

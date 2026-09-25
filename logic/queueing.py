@@ -20,7 +20,6 @@ class QueueServiceMixin(_QueueServiceMixinPart1, _QueueServiceMixinPart2, _Queue
     def _initialize_queue_state(self) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._processes: dict[str, list[Any]] = {}
-        self._suspended_pids: dict[str, set[int]] = {}
         self._queue_processing_paused = False
         self._queue_scheduler_stop = threading.Event()
         self._queue_scheduler_thread: Optional[threading.Thread] = None

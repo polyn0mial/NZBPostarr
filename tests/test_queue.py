@@ -2,6 +2,8 @@
 
 """NZBPostarr queue tests."""
 
+import psutil
+
 from tests.support import *
 
 def test_job_names_use_category_and_item_count(tmp_path) -> None:
@@ -165,7 +167,6 @@ def test_upload_service_requeues_stopped_job_after_restart(tmp_path) -> None:
     service._lock = threading.Lock()
     service._jobs = {}
     service._processes = {}
-    service._suspended_pids = {}
     service._queue_processing_paused = False
     service._jobs_state_path = tmp_path / "job_queue_state.json"
     service._jobs_state_backup_path = tmp_path / "job_queue_state.json.bak"
@@ -269,7 +270,6 @@ def test_upload_service_requeues_running_job_after_crash(tmp_path) -> None:
     service._lock = threading.Lock()
     service._jobs = {}
     service._processes = {}
-    service._suspended_pids = {}
     service._queue_processing_paused = False
     service._jobs_state_path = tmp_path / "job_queue_state.json"
     service._jobs_state_backup_path = tmp_path / "job_queue_state.json.bak"
@@ -447,11 +447,12 @@ def test_pausing_one_job_keeps_scheduler_lane(tmp_path, monkeypatch) -> None:
     }
     launched: list[str] = []
 
-    def refuse_suspend(_job_id):
+    def refuse_suspend(_process):
         raise AssertionError("pause must not suspend processes")
 
-    monkeypatch.setattr(service, "_suspend_job_processes_locked", refuse_suspend)
+    monkeypatch.setattr(psutil.Process, "suspend", refuse_suspend)
     monkeypatch.setattr(service, "_launch_job", lambda job: launched.append(str(job["job_id"])))
+    assert not hasattr(service, "_suspend_job_processes_locked")
 
     assert service.pause_job("active") is True
     service._try_start_queued()
@@ -519,7 +520,6 @@ def test_resume_cancels_unacknowledged_python_pause(tmp_path, monkeypatch) -> No
             "started_at": "2026-01-01T00:00:00+00:00",
         }
     }
-    monkeypatch.setattr(service, "_suspend_job_processes_locked", lambda _job_id: 0)
 
     assert service.pause_job("active") is True
     assert service.resume_job("active") is True
@@ -547,20 +547,15 @@ def test_paused_job_resume_waits_for_busy_lane_then_resumes(tmp_path, monkeypatc
             "started_at": "2026-01-01T00:00:01+00:00",
         },
     }
-    resumed: list[str] = []
-    monkeypatch.setattr(service, "_resume_job_processes_locked", lambda job_id: resumed.append(job_id) or 0)
-
     assert service.resume_job("paused") is True
     assert service._jobs["paused"]["status"] == "paused"
     assert service._jobs["paused"]["resume_requested"] is True
-    assert resumed == []
 
     service._jobs["active"]["status"] = "completed"
     service._try_start_queued()
 
     assert service._jobs["paused"]["status"] == "running"
     assert service._jobs["paused"]["pause_requested"] is False
-    assert resumed == ["paused"]
 
 def test_scheduler_selects_highest_priority_job(tmp_path, monkeypatch) -> None:
     service = _make_queue_service_stub(tmp_path)

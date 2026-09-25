@@ -634,7 +634,6 @@ def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
     config["debug"] = False
     config["log_level"] = "INFO"
     config["ui_refresh_seconds"] = 2
-    config["static_cache_max_age"] = 3600
 
     # ── Fill remaining defaults ──────────────────────────────────────
     config.setdefault("alt_bins", ["alt.binaries.misc"])
@@ -648,7 +647,6 @@ def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
     config.setdefault("file_size_limit_enabled", True)
     config.setdefault("enable_duplicate_bypass", True)
     config.setdefault("nfolder", None)
-    config.setdefault("medianfo", None)
     config.setdefault("dashboard_stats_enabled", True)
     config.setdefault(
         "dashboard_stats_modules",

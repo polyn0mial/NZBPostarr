@@ -283,7 +283,12 @@ def test_anime_check_has_no_cooldown_after_an_empty_batch(monkeypatch) -> None:
     data = _make_pending_snapshot()
     monkeypatch.setattr(app_mod, "_pending_index", _SyncIndex(data))
     monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(enable_anime_checking=True))
-    monkeypatch.setattr(app_mod, "_collect_uncached_anime_check_names", lambda _data: ["Some Title"])
+    uncached_calls: list[object] = []
+    monkeypatch.setattr(
+        pending_snapshot_mod,
+        "collect_uncached_anime_check_names",
+        lambda _data: uncached_calls.append(_data) or ["Some Title"],
+    )
     monkeypatch.setattr("logic.anime_cache.check_titles_batch", lambda names: {n: None for n in names})
     monkeypatch.setattr(app_mod.threading, "Thread", _Thread)
     monkeypatch.setattr(app_mod, "_anime_check_thread", None)
@@ -293,6 +298,7 @@ def test_anime_check_has_no_cooldown_after_an_empty_batch(monkeypatch) -> None:
     app_mod.get_pending_items()
 
     assert started == ["pending-anime-check"]
+    assert uncached_calls, "the patched pending_snapshot owner was never consulted"
     assert not hasattr(app_base, "_ANIME_CHECK_COOLDOWN_S")
 
 

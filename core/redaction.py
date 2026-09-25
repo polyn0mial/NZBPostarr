@@ -30,10 +30,6 @@ def is_sensitive_key(key: Any) -> bool:
     return bool(_SENSITIVE_KEY_RE.search(str(key or "")))
 
 
-def mask_secret(value: Any) -> Any:
-    return SECRET_MASK if value not in (None, "") else value
-
-
 def redact_mapping(values: Mapping[str, Any]) -> dict[str, Any]:
     """Return a recursively copied mapping with sensitive values removed."""
     redacted: dict[str, Any] = {}

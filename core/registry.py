@@ -128,13 +128,6 @@ class CategoryMapping(BaseModel):
         dump = self.model_dump()
         return any(bool(value) for key, value in dump.items() if key != "default")
 
-    def get_code(self, category: str) -> str:
-        """Get the indexer-specific code for a category, with fallbacks."""
-        code, _matched_key, _direct = self.resolve_code(category)
-        if code:
-            return code
-        return self.default
-
     def supported_categories(self) -> list[str]:
         """Return list of category keys this mapping supports (excluding 'default')."""
         return [k for k in self.model_dump() if k != "default" and self.model_dump()[k]]
@@ -445,54 +438,6 @@ class IndexerRegistry:
             # Subsequent reloads (Single line to avoid console clutter)
             log_verbose(f"Indexer Registry Reloaded: {len(self._indexers)} indexer(s) updated")
 
-    def update_indexer_yaml(self, indexer_id: str, updates: Dict[str, Any], reload: bool = True) -> bool:
-        """Update an indexer's YAML file with new values."""
-        yaml_file = self._indexer_files.get(indexer_id)
-        if not yaml_file or not yaml_file.exists():
-            logger.error(f"Cannot update indexer '{indexer_id}': YAML file not found")
-            return False
-
-        try:
-            with open(yaml_file, "r", encoding="utf-8") as f:
-                data = yaml.safe_load(f)
-
-            if isinstance(data, list):
-                # Handle multi-indexer files
-                found = False
-                for idx_data in data:
-                    if idx_data.get("id") == indexer_id:
-                        # Strip old credentials from individual YAML
-                        idx_data.pop("api_key", None)
-                        idx_data.pop("username", None)
-                        idx_data.update(updates)
-                        found = True
-                        break
-                if not found:
-                    logger.error(f"Indexer '{indexer_id}' not found in {yaml_file}")
-                    return False
-            else:
-                # Handle single indexer file
-                if data.get("id") == indexer_id:
-                    # Strip old credentials from individual YAML
-                    data.pop("api_key", None)
-                    data.pop("username", None)
-                    data.update(updates)
-                else:
-                    logger.error(f"Indexer '{indexer_id}' ID mismatch in {yaml_file}")
-                    return False
-
-            with open(yaml_file, "w", encoding="utf-8") as f:
-                yaml.dump(data, f, default_flow_style=False, sort_keys=False)
-
-            # Reload to sync memory (optional for batching)
-            if reload:
-                self._load_indexers()
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to update {yaml_file}: {e}")
-            return False
-
     def reload(self) -> None:
         """Reload all indexer definitions."""
         start = time.time()
@@ -598,14 +543,6 @@ def _cat_key_to_id(key: str) -> str:
     if key in _KNOWN_CATEGORIES:
         return _KNOWN_CATEGORIES[key]["id"]
     return key
-
-
-def _cat_id_to_key(cat_id: str) -> str:
-    """Convert an internal category ID back to the indexer YAML key."""
-    for key, meta in _KNOWN_CATEGORIES.items():
-        if meta["id"] == cat_id:
-            return key
-    return cat_id
 
 
 def get_available_categories() -> List[Dict[str, Any]]:

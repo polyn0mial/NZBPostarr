@@ -27,13 +27,12 @@ from logic.pending_scan_base import (
 )
 from logic.pending_scan_g1 import (
     ExplicitPathResolution as ExplicitPathResolution, IgnoredScanPath as IgnoredScanPath, PendingScanItem as PendingScanItem,
-    ScanPathItem as ScanPathItem, VideoClassificationResult as VideoClassificationResult, _coerce_category_hint as _coerce_category_hint,
+    VideoClassificationResult as VideoClassificationResult, _coerce_category_hint as _coerce_category_hint,
     _default_cached_anime_lookup as _default_cached_anime_lookup, _entry_hint_text as _entry_hint_text,
     _folder_path_entry_categories as _folder_path_entry_categories, _has_related_video_files as _has_related_video_files,
     _hint_category_from_itype as _hint_category_from_itype, _hinted_content_itype as _hinted_content_itype, _is_anime_directory as _is_anime_directory,
     _is_non_episode_anime_extra as _is_non_episode_anime_extra, _iter_leaf_files as _iter_leaf_files, _iter_video_candidates as _iter_video_candidates,
-    _iter_video_files as _iter_video_files, _legacy_external_folder_categories as _legacy_external_folder_categories,
-    _legacy_folder_field_categories as _legacy_folder_field_categories, _looks_like_part_episode as _looks_like_part_episode,
+    _iter_video_files as _iter_video_files, _looks_like_part_episode as _looks_like_part_episode,
     _looks_like_sports_event as _looks_like_sports_event, _movie_fallback_itype as _movie_fallback_itype,
     _normalize_lookup_title as _normalize_lookup_title, _scan_cache_get as _scan_cache_get, _scan_cache_put as _scan_cache_put,
     _scan_content_extensions as _scan_content_extensions, _series_signature as _series_signature, _video_classification as _video_classification,
@@ -1129,51 +1128,6 @@ def scan_configured_items(
 
     return items
 
-def collect_auto_category_scan_items(folder: Path) -> List[Tuple[str, Path]]:
-    """Collect direct child entries from a folder grouped by inferred category."""
-    return [(item.category, item.path) for item in scan_folder_items(folder, "external", sort_entries=True)]
-
 def collect_configured_scan_items(conf: Any, *, must_exist: bool = False) -> List[Tuple[str, Path, Path]]:
     """Collect direct child entries from configured folders using assigned categories."""
     return [(item.category, item.folder, item.path) for item in scan_configured_items(conf, must_exist=must_exist)]
-
-def collect_category_scan_items(folder: Path, category: str, video_extensions: Set[str]) -> List[ScanPathItem]:
-    """Collect pending-scan items for a specific configured category folder."""
-    if not folder.exists():
-        return []
-
-    items: List[ScanPathItem] = []
-
-    for scan_item in scan_folder_items(folder, category, sort_entries=False, video_extensions=video_extensions):
-        if scan_item.category == "tv":
-            for episode_path, episode_rel_key in zip(scan_item.episode_paths, scan_item.episode_rel_keys):
-                items.append(
-                    ScanPathItem(
-                        path=episode_path,
-                        name=episode_path.name,
-                        rel_key=episode_rel_key,
-                        is_episode=True,
-                    )
-                )
-            if scan_item.is_dir or not scan_item.episode_paths:
-                items.append(
-                    ScanPathItem(
-                        path=scan_item.path,
-                        name=scan_item.name,
-                        rel_key=scan_item.rel_key,
-                        is_episode=False,
-                    )
-                )
-            continue
-
-        items.append(
-            ScanPathItem(
-                path=scan_item.path,
-                name=scan_item.name,
-                rel_key=scan_item.rel_key,
-                is_episode=False,
-            )
-        )
-
-    return items
-

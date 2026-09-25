@@ -24,17 +24,7 @@ from core.utils import (
     reset_thread_job,
     set_thread_job,
 )
-try:
-    from logic.pending_scan import looks_like_generic_tv_season_folder
-except Exception:
-    def looks_like_generic_tv_season_folder(name: str) -> bool:
-        s = str(name or "")
-        return bool(
-            re.search(
-                r"(?i)(?:^|[\s._-])season[\s._-]*\d{1,2}(?:$|[\s._-])|(?:^|[\s._-])s\d{1,2}(?:$|[\s._-])",
-                s,
-            )
-        ) and not bool(re.search(r"(?i)s\d{1,2}[\s._-]*e\d{1,3}|\d{1,2}x\d{1,3}", s))
+from logic.pending_scan import looks_like_generic_tv_season_folder
 from logic import usenet_stream
 _QUEUE_SOURCE_TOKEN_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:WEB(?:[.\s_-]?DL|[.\s_-]?Rip|[.\s_-]?HD)?|WEBDL|WEBRip|WEBHD|BluRay|BDRip|BRRip|REMUX|HDRip|PDRip|HDTV|PDTV|"

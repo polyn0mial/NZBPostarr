@@ -171,7 +171,7 @@ def test_process_single_uses_expected_submission_category(tmp_path, monkeypatch)
         assert result == 0, case_name
         assert seen["cat"] == expected_submission_category, case_name
 
-def test_pending_bulk_preview_applies_exclusions_and_path_consolidation(tmp_path, monkeypatch) -> None:
+def test_pending_bulk_selection_applies_exclusions_and_path_consolidation(tmp_path) -> None:
     blocked_root = tmp_path / "qbittorrent"
     allowed_root = tmp_path / "ready"
     blocked_root.mkdir()
@@ -188,48 +188,22 @@ def test_pending_bulk_preview_applies_exclusions_and_path_consolidation(tmp_path
             {"path": str(allowed_root), "allow_bulk_selection": True},
         ]
     )
-    captured: dict[str, object] = {}
+    items = [
+        {"path": str(blocked_item), "category": "movies"},
+        {"path": str(allowed_parent), "category": "movies"},
+        {"path": str(allowed_child), "category": "movies"},
+    ]
 
-    async def fake_preview(items, **kwargs):
-        captured["items"] = items
-        captured["kwargs"] = kwargs
-        return {
-            "status": "preview",
-            "summary": {"selected": len(items), "planned": len(items), "ready": len(items)},
-            "destinations": {},
-            "items": [],
-        }
+    selected_items, excluded_count = app_mod._filter_bulk_selectable_items(items, conf)
+    collapsed_items = app_mod._collapse_force_upload_items(selected_items)
 
-    monkeypatch.setattr(app_mod, "get_config", lambda: conf)
-    monkeypatch.setattr(app_mod, "_preview_selected_items", fake_preview)
-    req = app_mod.ForceUploadRequest(
-        items=[
-            {"path": str(blocked_item), "category": "movies"},
-            {"path": str(allowed_parent), "category": "movies"},
-            {"path": str(allowed_child), "category": "movies"},
-        ],
-        bulk_selection=True,
-        indexer_id="geek",
-    )
-
-    result = _run_async(app_mod.preview_force_upload_items(req))
-
-    assert captured["items"] == [{"path": str(allowed_child), "category": "movies"}]
-    assert result["selection"] == {
-        "matched": 3,
-        "bulk_excluded": 1,
-        "overlapping_paths": 1,
-        "excluded_roots": [str(blocked_root.resolve())],
-    }
-    assert captured["kwargs"] == {
-        "enable_duplicate_check": True,
-        "test_mode": False,
-        "indexer_id": "geek",
-        "force": None,
-    }
+    assert collapsed_items == [{"path": str(allowed_child), "category": "movies"}]
+    assert excluded_count == 1
+    assert len(selected_items) - len(collapsed_items) == 1
+    assert [str(root) for root in app_mod._bulk_selection_excluded_roots(conf)] == [str(blocked_root.resolve())]
 
 def test_build_pending_summary_supports_dynamic_categories() -> None:
-    summary = app_mod._build_pending_summary(
+    summary = pending_snapshot_mod.build_pending_summary(
         {
             "tv": [
                 {"episode_count": 5, "indexers": {"geek": False, "planet": True}},
@@ -596,7 +570,7 @@ def test_pending_filter_tv_includes_external_tv_groups() -> None:
         "categories": [{"id": "tv", "label": "TV Shows"}],
     }
 
-    result = app_mod._filter_pending(data, None, "tv", False)
+    result = pending_snapshot_mod.filter_pending_snapshot(data, None, "tv", False)
 
     assert len(result["items"]["external"]) == 2
     assert result["items"]["external"][0]["items"][0]["name"] == "Show.With.Ambiguous.Name"
@@ -628,7 +602,7 @@ def test_collect_anime_check_names_includes_tv_movies_and_external() -> None:
         }
     }
 
-    names = app_mod._collect_anime_check_names(data)
+    names = pending_snapshot_mod.collect_anime_check_names(data)
 
     assert set(names) == {
         "Frieren",
@@ -651,7 +625,7 @@ def test_movie_name_detection_prefers_movie_classification(monkeypatch, tmp_path
     for case_name, name, folder_hint, cached, expected_itype, expected_category in cases:
         monkeypatch.setattr(anime_cache, "get_cached", lambda _name: cached)
 
-        assert app_mod._classify_video_name(name, folder_hint) == expected_itype, case_name
+        assert pending_snapshot_mod.classify_video_name(name, folder_hint) == expected_itype, case_name
 
         movie = _touch(tmp_path / case_name / name)
         assert pending_scan.detect_auto_category(movie) == expected_category, case_name
@@ -763,7 +737,6 @@ def test_detector_result_precedes_generic_episode_shape(monkeypatch) -> None:
 
     release_name = "Any.Series.S12E34.1080p.WEB-DL"
 
-    assert pending_snapshot_mod._detect_external_category_fast(release_name, children_have_tv=True) == "anime"
     assert pending_scan.classify_video_name(
         release_name,
         anime_lookup=lambda _name: True,
@@ -1586,25 +1559,6 @@ def test_pending_items_anime_check_start_behavior(monkeypatch) -> None:
         else:
             assert started == [], case_name
 
-def test_pending_scan_collects_tv_items_and_pack(tmp_path) -> None:
-    tv_dir = tmp_path / "tv"
-    season = tv_dir / "Show.S01"
-    season.mkdir(parents=True)
-    (season / "Show.S01E01.mkv").write_bytes(b"x")
-    (season / "Show.S01E02.mkv").write_bytes(b"y")
-
-    items = pending_scan.collect_category_scan_items(tv_dir, "tv", {".mkv"})
-
-    rel_keys = {item.rel_key for item in items}
-    assert "Show.S01/Show.S01E01.mkv" in rel_keys
-    assert "Show.S01/Show.S01E02.mkv" in rel_keys
-    assert "Show.S01" in rel_keys
-
-    episode_count = sum(1 for item in items if item.is_episode)
-    pack_count = sum(1 for item in items if not item.is_episode and item.rel_key == "Show.S01")
-    assert episode_count == 2
-    assert pack_count == 1
-
 def test_upload_service_dashboard_summary_uses_pending_index_state(monkeypatch) -> None:
     from logic import services as services_mod
 
@@ -1947,7 +1901,7 @@ def test_scan_pending_all_keeps_pokemon_folder_and_episodes_anime(monkeypatch, t
     assert top_item["detected_category"] == "anime"
     assert top_item["itype"] == "Anime"
     assert top_item["auto_selectable"] is True
-    assert "pokemon" in {name.casefold() for name in app_mod._collect_anime_check_names(result)}
+    assert "pokemon" in {name.casefold() for name in pending_snapshot_mod.collect_anime_check_names(result)}
 
 
 def test_scan_pending_all_ignored_extra_files_do_not_block_pack_completion(monkeypatch, tmp_path) -> None:

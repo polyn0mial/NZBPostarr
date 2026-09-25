@@ -10,15 +10,6 @@ from logic.pending_scan_base import (
 )
 
 @dataclass(frozen=True)
-class ScanPathItem:
-    """Normalized pending-scan item for category-aware directory traversals."""
-
-    path: Path
-    name: str
-    rel_key: str
-    is_episode: bool
-
-@dataclass(frozen=True)
 class PendingScanItem:
     """Canonical top-level scan result shared by queueing, monitoring, and dashboard flows."""
 
@@ -109,17 +100,15 @@ def _folder_path_entry_categories(
     include_external: bool,
     must_exist: bool,
     seen: Set[tuple[str, str]],
-) -> Tuple[List[Tuple[str, Path]], bool]:
-    """First pass of get_configured_category_folders: modern `folder_paths` entries."""
+) -> List[Tuple[str, Path]]:
+    """Scan roots from the modern `folder_paths` entries."""
     categories: List[Tuple[str, Path]] = []
-    saw_folder_entry = False
 
     for fp in folder_entries:
         if isinstance(fp, str):
             fp = {"path": fp}
         if not isinstance(fp, dict):
             continue
-        saw_folder_entry = True
 
         raw_category = str(fp.get("category", "") or "").strip().lower()
         category = "external" if raw_category in _AUTO_ROOT_CATEGORIES else raw_category
@@ -139,69 +128,6 @@ def _folder_path_entry_categories(
             continue
         seen.add(key)
         categories.append((category, folder))
-
-    return categories, saw_folder_entry
-
-def _legacy_folder_field_categories(
-    conf: Any,
-    *,
-    wanted: Optional[str],
-    include_external: bool,
-    must_exist: bool,
-    seen: Set[tuple[str, str]],
-) -> List[Tuple[str, Path]]:
-    """Legacy-fallback pass of get_configured_category_folders: movies_folder/tv_folder/misc_folder."""
-    categories: List[Tuple[str, Path]] = []
-    legacy_fields = ("movies_folder", "tv_folder", "misc_folder")
-    for attr_name in legacy_fields:
-        if wanted and wanted != "external":
-            continue
-        folder = getattr(conf, attr_name, None)
-        if not folder:
-            continue
-        folder_path = Path(folder)
-        if must_exist and not folder_path.exists():
-            continue
-        key = ("external", str(folder_path))
-        if key in seen:
-            continue
-        seen.add(key)
-        if include_external:
-            categories.append(("external", folder_path))
-
-    return categories
-
-def _legacy_external_folder_categories(
-    conf: Any,
-    *,
-    wanted: Optional[str],
-    include_external: bool,
-    must_exist: bool,
-    seen: Set[tuple[str, str]],
-) -> List[Tuple[str, Path]]:
-    """Legacy-fallback pass of get_configured_category_folders: external_folders/external_folder."""
-    categories: List[Tuple[str, Path]] = []
-    if include_external and (wanted in (None, "external")):
-        raw_external = getattr(conf, "external_folders", None)
-        if isinstance(raw_external, (list, tuple)):
-            external_values = list(raw_external)
-        elif raw_external:
-            external_values = [raw_external]
-        else:
-            single_external = getattr(conf, "external_folder", None)
-            external_values = [single_external] if single_external else []
-
-        for folder in external_values:
-            if not folder:
-                continue
-            folder_path = Path(folder)
-            if must_exist and not folder_path.exists():
-                continue
-            key = ("external", str(folder_path))
-            if key in seen:
-                continue
-            seen.add(key)
-            categories.append(("external", folder_path))
 
     return categories
 
@@ -223,29 +149,13 @@ def get_configured_category_folders(
         get_folder_path_entries() if callable(get_folder_path_entries) else getattr(conf, "folder_paths", [])
     )
 
-    categories, saw_folder_entry = _folder_path_entry_categories(
+    return _folder_path_entry_categories(
         folder_entries,
         wanted=wanted,
         include_external=include_external,
         must_exist=must_exist,
         seen=seen,
     )
-
-    if categories or saw_folder_entry:
-        return categories
-
-    categories.extend(
-        _legacy_folder_field_categories(
-            conf, wanted=wanted, include_external=include_external, must_exist=must_exist, seen=seen
-        )
-    )
-    categories.extend(
-        _legacy_external_folder_categories(
-            conf, wanted=wanted, include_external=include_external, must_exist=must_exist, seen=seen
-        )
-    )
-
-    return categories
 
 def looks_like_tv_name(name: str) -> bool:
     """Return True when a release name clearly looks episodic/TV-like."""
@@ -635,4 +545,3 @@ def _iter_video_files(folder: Path, video_extensions: Set[str]) -> Iterable[Path
                 continue
             if os.path.splitext(fname)[1].lower() in video_extensions:
                 yield Path(root) / fname
-

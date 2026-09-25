@@ -656,18 +656,6 @@ def db_reorder_queue(item_ids: List[int]) -> bool:
     return True
 
 
-def checkpoint_db() -> bool:
-    """Flush WAL log to disk."""
-    try:
-        with get_engine().connect() as conn:
-            conn.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
-            conn.commit()
-        return True
-    except SQLAlchemyError as e:
-        logger.error(f"DB Checkpoint failed: {e}")
-        return False
-
-
 def get_database_health() -> Dict[str, Any]:
     """Get comprehensive database health and statistics."""
     from core.config import get_config
@@ -1153,60 +1141,6 @@ def get_duplicate_status_batch(
         raise DatabaseOperationalError(f"Batch duplicate check failed for {len(unique_keys)} items") from e
 
     return results
-
-
-def get_uploaded_names(enabled_indexers: Optional[Dict[str, bool]] = None) -> Set[str]:
-    """Get item names that have been successfully uploaded to all enabled indexers."""
-    try:
-        with session_scope() as session:
-            if not enabled_indexers:
-                stmt = select(Upload.item_name)
-                return set(session.execute(stmt).scalars())
-
-            active_ids = [idx_id for idx_id, enabled in enabled_indexers.items() if enabled]
-            if not active_ids:
-                return set()
-
-            # Subquery to find uploads that have ALL the required indexer results
-            stmt = (
-                select(Upload.item_name)
-                .join(UploadResult)
-                .filter(UploadResult.indexer_id.in_(active_ids))
-                .where(UploadResult.status == "success")
-                .group_by(Upload.id)
-                .having(func.count(UploadResult.indexer_id.distinct()) == len(active_ids))  # pylint: disable=not-callable
-            )
-            return set(session.execute(stmt).scalars())
-    except Exception as e:
-        logger.error(f"Failed to fetch uploaded names: {e}")
-        raise DatabaseOperationalError("Failed to fetch uploaded names") from e
-
-
-def get_upload_map(active_ids: List[str]) -> Dict[str, Set[str]]:
-    """Get a mapping of item names to the set of indexer IDs they were uploaded to."""
-    if not active_ids:
-        return {}
-    try:
-        with session_scope() as session:
-            stmt = (
-                select(
-                    Upload.item_name,
-                    func.group_concat(func.distinct(UploadResult.indexer_id)),
-                )
-                .join(UploadResult)
-                .filter(UploadResult.indexer_id.in_(active_ids))
-                .where(UploadResult.status == "success")
-                .group_by(Upload.item_name)
-            )
-            mapping: Dict[str, Set[str]] = {}
-            for name, idx_csv in session.execute(stmt):
-                if not idx_csv:
-                    continue
-                mapping[name] = {idx for idx in str(idx_csv).split(",") if idx}
-            return mapping
-    except Exception as e:
-        logger.error(f"Failed to fetch upload map: {e}")
-        raise DatabaseOperationalError("Failed to fetch upload map") from e
 
 
 def get_dashboard_data(

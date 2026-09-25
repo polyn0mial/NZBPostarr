@@ -421,20 +421,6 @@ class _QueueServiceMixinPart1:
                 normalized.append(text)
         return normalized
 
-    @staticmethod
-    def group_item_paths_by_category(
-        items: list[dict[str, Any]],
-        default_category: str = "",
-    ) -> dict[str, list[str]]:
-        grouped: dict[str, list[str]] = {}
-        for item in items:
-            category = str(item.get("category") or default_category).strip()
-            path = item.get("path")
-            if not path or not category:
-                continue
-            grouped.setdefault(category, []).append(str(path))
-        return grouped
-
     def start_path_jobs(self, grouped_paths: dict[str, list[str]], **kwargs: Any) -> list[dict[str, Any]]:
         """Start one queued job per category for a grouped set of explicit paths."""
         started: list[dict[str, Any]] = []
