@@ -1,172 +1,20 @@
 import { createApp } from 'vue';
-import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
-import { filesize } from 'filesize';
-import humanizeDuration from 'humanize-duration';
 import copy from 'copy-to-clipboard';
-import escapeStringRegexp from 'escape-string-regexp';
 import { computePosition, flip, shift, offset } from '@floating-ui/dom';
 import { createElement as createLucideElement, icons as lucideIcons } from 'lucide';
+import { formatUtils } from './shared/format.js';
+import { statusConfig, getStatusConfig as statusConfigFor } from './shared/status.js';
+import {
+    mapHistorySeries,
+    mapDeltaHistorySeries,
+    seedHistorySeries,
+    appendHistoryPoint,
+    computePositiveRateDelta,
+    sumNumericFields,
+} from './shared/series.js';
 
-dayjs.extend(relativeTime);
-
-// Configure humanizeDuration
-const humanizer = humanizeDuration.humanizer({
-    language: 'shortEn',
-    languages: {
-        shortEn: {
-            y: () => 'y',
-            mo: () => 'mo',
-            w: () => 'w',
-            d: () => 'd',
-            h: () => 'h',
-            m: () => 'm',
-            s: () => 's',
-            ms: () => 'ms',
-        },
-    },
-    round: true,
-    spacer: '',
-    conjunction: ' ',
-    serialComma: false,
-});
-
-// ============================================================
-//  SHARED FORMATTING UTILITIES (Vue filters/methods)
-// ============================================================
-
-export const formatUtils = {
-    formatBytes(bytes) {
-        if (bytes === 0) return '0 B';
-        if (!bytes || Number.isNaN(bytes)) return '-';
-        return filesize(bytes, { base: 2, standard: 'jedec' });
-    },
-
-    formatDuration(seconds) {
-        if (seconds === 0) return '0s';
-        if (!seconds || Number.isNaN(seconds)) return '-';
-        return humanizer(seconds * 1000, { largest: 2 });
-    },
-
-    formatSpeed(bps) {
-        if (bps === 0) return '0.00 MB/s';
-        if (!bps || Number.isNaN(bps)) return '-';
-        return filesize(bps, { base: 2, standard: 'jedec' }) + '/s';
-    },
-
-    formatDate(dateStr) {
-        if (!dateStr) return '-';
-        const d = dayjs(dateStr);
-        if (!d.isValid()) return '-';
-        return d.format('M/D/YYYY h:mm A');
-    },
-
-    formatRelativeDate(dateStr) {
-        if (!dateStr) return '-';
-        const d = dayjs(dateStr);
-        if (!d.isValid()) return '-';
-
-        const now = dayjs();
-        if (d.isSame(now, 'day')) return 'Today ' + d.format('h:mm A');
-        if (d.isSame(now.subtract(1, 'day'), 'day')) return 'Yesterday ' + d.format('h:mm A');
-        if (now.diff(d, 'day') < 7 && now.diff(d, 'day') >= 1) return d.fromNow();
-
-        return d.format('M/D/YYYY h:mm A');
-    },
-
-    formatUptime(seconds) {
-        if (!seconds || isNaN(seconds)) return '-';
-        const days = Math.floor(seconds / 86400);
-        const hours = Math.floor((seconds % 86400) / 3600);
-        const mins = Math.floor((seconds % 3600) / 60);
-        let parts = [];
-        if (days > 0) parts.push(days + 'd');
-        if (hours > 0) parts.push(hours + 'h');
-        if (mins > 0 || parts.length === 0) parts.push(mins + 'm');
-        return parts.join(' ');
-    },
-
-    escapeHtml(text) {
-        if (!text) return '';
-        return String(text).replace(/[&<>"']/g, (ch) => {
-            switch (ch) {
-                case '&': return '&amp;';
-                case '<': return '&lt;';
-                case '>': return '&gt;';
-                case '"': return '&quot;';
-                case "'": return '&#39;';
-                default: return ch;
-            }
-        });
-    },
-
-    /**
-     * Escape special regex characters.
-     * Uses the battle-tested escape-string-regexp package.
-     */
-    escapeRegex(str) {
-        return escapeStringRegexp(str);
-    },
-
-    /**
-     * Returns an array of {text, hl} segments for XSS-safe, v-html-free search highlighting.
-     * Use with v-for + <mark> in templates.
-     */
-    highlightSegments(text, searchQuery, literalSearch = false) {
-        if (!text || !searchQuery) return [{ text: text || '', hl: false }];
-
-        let patterns;
-        if (literalSearch) {
-            patterns = [escapeStringRegexp(searchQuery)];
-        } else {
-            patterns = searchQuery.replace(/[-_.]/g, ' ').split(/\s+/).filter(w => w).map(w => escapeStringRegexp(w));
-        }
-
-        if (patterns.length === 0) return [{ text, hl: false }];
-
-        const regex = new RegExp(`(${patterns.join('|')})`, 'gi');
-        const segments = [];
-        let lastIndex = 0;
-        let match;
-
-        while ((match = regex.exec(text)) !== null) {
-            if (match.index > lastIndex) {
-                segments.push({ text: text.slice(lastIndex, match.index), hl: false });
-            }
-            segments.push({ text: match[0], hl: true });
-            lastIndex = regex.lastIndex;
-        }
-
-        if (lastIndex < text.length) {
-            segments.push({ text: text.slice(lastIndex), hl: false });
-        }
-
-        return segments.length ? segments : [{ text, hl: false }];
-    },
-
-    /**
-     * Returns HTML string with search matches highlighted (for backward-compat v-html usage).
-     * Prefer highlightSegments + v-for for new code.
-     */
-    highlightSearch(text, searchQuery, literalSearch = false) {
-        if (!text || !searchQuery) return formatUtils.escapeHtml(text);
-
-        let displayName = formatUtils.escapeHtml(text);
-
-        if (literalSearch) {
-            const regex = new RegExp(`(${escapeStringRegexp(searchQuery)})`, 'gi');
-            displayName = displayName.replace(regex, '<mark class="bg-notion-warning/30 text-notion-text-primary rounded px-0.5">$1</mark>');
-        } else {
-            const words = searchQuery.replace(/[-_.]/g, ' ').split(/\s+/).filter(w => w);
-            words.forEach(word => {
-                const regex = new RegExp(`(${escapeStringRegexp(word)})`, 'gi');
-                displayName = displayName.replace(regex, '<mark class="bg-notion-warning/30 text-notion-text-primary rounded px-0.5">$1</mark>');
-            });
-        }
-
-        return displayName;
-    },
-};
+export { formatUtils, statusConfig };
+export { mapHistorySeries, mapDeltaHistorySeries, seedHistorySeries, appendHistoryPoint, computePositiveRateDelta, sumNumericFields };
 
 // ============================================================
 //  COLOR MAP FOR INDEXERS
@@ -197,21 +45,6 @@ export function badgeClass(color, extraClasses = '') {
     const tint = colorClassMap[color] || colorClassMap['gray'];
     return `badge ${tint.bg} ${tint.text}${extraClasses ? ' ' + extraClasses : ''}`;
 }
-
-// ============================================================
-//  STATUS CONFIGS FOR JOBS
-// ============================================================
-
-export const statusConfig = {
-    completed: { icon: 'check-circle', color: 'text-notion-success', bg: 'bg-green-500/20' },
-    failed: { icon: 'x-circle', color: 'text-notion-error', bg: 'bg-red-500/20' },
-    stopped: { icon: 'pause-circle', color: 'text-notion-warning', bg: 'bg-yellow-500/20' },
-    cancelled: { icon: 'pause-circle', color: 'text-notion-warning', bg: 'bg-yellow-500/20' },
-    running: { icon: 'loader-2', color: 'text-notion-accent', bg: 'bg-blue-500/20' },
-    paused: { icon: 'pause-circle', color: 'text-notion-warning', bg: 'bg-yellow-500/20' },
-    queued: { icon: 'clock', color: 'text-notion-text-tertiary', bg: 'bg-notion-bg-hover' },
-    default: { icon: 'circle', color: 'text-notion-text-tertiary', bg: 'bg-notion-bg-hover' }
-};
 
 // ============================================================
 //  MEDIA TYPE / CATEGORY UTILITIES  (shared across all pages)
@@ -498,61 +331,6 @@ export function isTvType(type) {
     if (!type) return false;
     const t = type.toLowerCase();
     return t === 'tv' || t === 'episode';
-}
-
-// ============================================================
-//  SHARED STATS / HISTORY UTILITIES
-// ============================================================
-
-function createHistoryPoint(value, nextId) {
-    return { id: nextId(), v: value ?? 0 };
-}
-
-export function mapHistorySeries(values, targetLen, nextId) {
-    let normalized = Array.isArray(values) ? values.slice() : [];
-    const length = Math.max(0, Number(targetLen) || 0);
-    if (normalized.length < length) {
-        normalized = [...new Array(length - normalized.length).fill(0), ...normalized];
-    }
-    return normalized.map(value => createHistoryPoint(value, nextId));
-}
-
-export function mapDeltaHistorySeries(values, targetLen, nextId, divisor = 1) {
-    const normalized = Array.isArray(values) ? values : [];
-    const safeDivisor = Math.max(0.001, Number(divisor) || 1);
-    let deltas = [];
-    for (let i = 1; i < normalized.length; i += 1) {
-        deltas.push(Math.max(0, ((normalized[i] ?? 0) - (normalized[i - 1] ?? 0)) / safeDivisor));
-    }
-    const length = Math.max(0, Number(targetLen) || 0);
-    if (deltas.length < length) {
-        deltas = [...new Array(length - deltas.length).fill(0), ...deltas];
-    }
-    return deltas.map(value => createHistoryPoint(value, nextId));
-}
-
-export function seedHistorySeries(length, nextId) {
-    const count = Math.max(0, Math.floor(Number(length) || 0));
-    return Array.from({ length: count }, () => createHistoryPoint(0, nextId));
-}
-
-export function appendHistoryPoint(series, value, nextId, maxLen) {
-    if (!Array.isArray(series)) return;
-    series.push(createHistoryPoint(value, nextId));
-    const limit = Math.max(0, Math.floor(Number(maxLen) || 0));
-    if (limit > 0 && series.length > limit) {
-        series.splice(0, series.length - limit);
-    }
-}
-
-export function computePositiveRateDelta(current, previous, intervalSecs = 1) {
-    if (previous === null || previous === undefined) return 0;
-    const safeInterval = Math.max(0.001, Number(intervalSecs) || 1);
-    return Math.max(0, ((Number(current) || 0) - (Number(previous) || 0)) / safeInterval);
-}
-
-export function sumNumericFields(source, fieldNames = []) {
-    return fieldNames.reduce((total, fieldName) => total + (Number(source?.[fieldName]) || 0), 0);
 }
 
 // ============================================================
@@ -1300,7 +1078,7 @@ export function createVuePage(pageOptions = {}) {
 
         // Status helper
         getStatusConfig(status) {
-            return statusConfig[status] || { icon: 'circle', color: 'text-notion-text-tertiary', bg: 'bg-gray-500/20' };
+            return statusConfigFor(status);
         },
 
         // ============================================================
