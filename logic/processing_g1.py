@@ -437,7 +437,7 @@ def _selected_indexers(
     conf: Any, target_indexer_id: Optional[str], target_indexer_ids: Optional[List[str]]
 ) -> list[Any]:
     """Return the enabled indexers selected for this item run."""
-    from core.registry import get_enabled_indexers
+    from core.indexers.registry import get_enabled_indexers
 
     indexers = get_enabled_indexers(conf)
     if target_indexer_ids:
@@ -451,7 +451,7 @@ def _should_skip_completed_item(
     indexers: list[Any], conf: Any, dest_status: Dict[str, Optional[str]], *, force: bool, name: str
 ) -> bool:
     """Return True when every enabled destination already has the item."""
-    from core.registry import resolve_indexer_enabled
+    from core.indexers.models import resolve_indexer_enabled
 
     active_dests_needed = 0
     already_done_count = 0
@@ -552,7 +552,7 @@ def _summarize_preview_details(
 
 def _build_upload_sets(indexers: list[Any], conf: Any) -> list[dict[str, Any]]:
     """Construct logical upload sets for the selected indexers."""
-    from core.registry import resolve_indexer_priority
+    from core.indexers.models import resolve_indexer_priority
 
     upload_sets: list[dict[str, Any]] = []
     for indexer in indexers:
@@ -584,7 +584,7 @@ def _split_parallel_server_connections(raw_sets: list[tuple[dict[str, Any], Any]
 
 def _upload_target_display(upload_set: dict[str, Any]) -> str:
     """Return the formatted display label for an upload set."""
-    from core.registry import get_indexer
+    from core.indexers.registry import get_indexer
 
     ids_part = upload_set["id"].split(" (")[0]
     resolved: list[str] = []

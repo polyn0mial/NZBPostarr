@@ -17,7 +17,8 @@ def cmd_status(args: argparse.Namespace) -> int:
     does not affect the exit code.
     """
     from core.config import get_config
-    from core.registry import get_registry, resolve_indexer_enabled
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_enabled
 
     conf = get_config()
     registry = get_registry()

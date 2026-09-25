@@ -11,7 +11,8 @@ from typing import Any, Dict, List, Optional, Set
 
 from loguru import logger
 
-from core import database
+from core.db import engine as db_engine
+from core.db import ledger as db_ledger
 from core.config import get_config
 from core.fs import compute_size_uncached
 from core.logging import log_backend_timing
@@ -644,11 +645,9 @@ def _scan_regular_category_folder(
 def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     """Inner snapshot builder, wrapped by ``scan_pending_snapshot`` for caching."""
     started = time.perf_counter()
-    from core.registry import (
-        get_available_categories,
-        get_registry,
-        resolve_indexer_backfill,
-    )
+    from core.indexers.categories import get_available_categories
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_backfill
 
     conf = get_config()
     registry = get_registry()
@@ -670,9 +669,9 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     failed_map: Dict[str, Dict[str, str]] = {}
     filesize_by_indexer: Dict[str, Dict[str, int]] = {}
     try:
-        _fully_done, upload_map, failed_map, filesize_by_indexer = database.get_dashboard_data(active_ids)
+        _fully_done, upload_map, failed_map, filesize_by_indexer = db_ledger.completion_index(active_ids)
         completed_lookup = _normalize_dashboard_lookup_values(_fully_done)
-    except database.DatabaseOperationalError as exc:
+    except db_engine.DatabaseOperationalError as exc:
         db_error = str(exc)
         indexer_status_available = False
         logger.warning(f"Pending scan continuing without indexer completion state due to DB error: {exc}")

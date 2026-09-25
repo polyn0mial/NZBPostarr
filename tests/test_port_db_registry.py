@@ -6,7 +6,7 @@ from loguru import logger
 
 from tests.support import *
 
-from core.database import pin_folder_ts_to_children
+from core.db.uploads import pin_folder_ts_to_children
 
 _OLD_TS = "2020-01-01 00:00:00.000000"
 
@@ -14,7 +14,7 @@ _OLD_TS = "2020-01-01 00:00:00.000000"
 def _set_updated_at(key: str, value: str) -> None:
     with session_scope() as session:
         session.execute(
-            db.text("UPDATE uploads SET updated_at = :ts WHERE item_name = :name"),
+            text("UPDATE uploads SET updated_at = :ts WHERE item_name = :name"),
             {"ts": value, "name": key},
         )
 
@@ -22,7 +22,7 @@ def _set_updated_at(key: str, value: str) -> None:
 def _raw_updated_at(key: str) -> str:
     with session_scope() as session:
         return session.execute(
-            db.text("SELECT updated_at FROM uploads WHERE item_name = :name"),
+            text("SELECT updated_at FROM uploads WHERE item_name = :name"),
             {"name": key},
         ).scalar_one()
 
@@ -30,7 +30,7 @@ def _raw_updated_at(key: str) -> str:
 def _set_filesize(key: str, value) -> None:
     with session_scope() as session:
         session.execute(
-            db.text("UPDATE uploads SET filesize = :size WHERE item_name = :name"),
+            text("UPDATE uploads SET filesize = :size WHERE item_name = :name"),
             {"size": value, "name": key},
         )
 
@@ -44,7 +44,7 @@ def _success(key: str, dest: str = "geek", size: int = 100, **extra) -> bool:
 
 @pytest.mark.usefixtures("isolated_sqlite_db")
 def test_engine_pool_matches_server_sizing() -> None:
-    engine = db.get_engine()
+    engine = db_engine.get_engine()
     assert engine.pool.size() == 10
     assert engine.pool._max_overflow == 5
 
@@ -146,14 +146,14 @@ def test_failed_retry_never_overwrites_prior_success() -> None:
         assert result.error is None
         assert result.server_name == "first"
 
-    _fully_done, success_map, failed_map, _sizes = db.get_dashboard_data(["geek"])
+    _fully_done, success_map, failed_map, _sizes = db_ledger.completion_index(["geek"])
     assert success_map[key] == {"geek"}
     assert key not in failed_map
 
     # A failure with no prior success is still recorded.
     other = "Show/Show.S01E04.1080p.WEB-DL.mkv"
     assert update_db_destination("geek", other, 100, other, status="failed", error="boom") is True
-    _fully_done, _success_map, failed_map, _sizes = db.get_dashboard_data(["geek"])
+    _fully_done, _success_map, failed_map, _sizes = db_ledger.completion_index(["geek"])
     assert failed_map[other] == {"geek": "boom"}
 
 
@@ -167,11 +167,11 @@ def test_check_duplicate_dynamic_ignores_suffix_matches_without_size() -> None:
     _set_filesize(stored, None)
 
     new_key = "New.Folder/Show.S02E01.mkv"
-    assert db.check_duplicate_dynamic(new_key, "TV Episode", ["geek"], filesize=100)["geek"] is None
+    assert db_ledger.destinations_for(new_key, "TV Episode", ["geek"], filesize=100)["geek"] is None
     # Without a size to compare the old behaviour stays.
-    assert db.check_duplicate_dynamic(new_key, "TV Episode", ["geek"])["geek"] is not None
+    assert db_ledger.destinations_for(new_key, "TV Episode", ["geek"])["geek"] is not None
     # An exact-key record still counts even when its size is unknown.
-    assert db.check_duplicate_dynamic(stored, "TV Episode", ["geek"], filesize=100)["geek"] is not None
+    assert db_ledger.destinations_for(stored, "TV Episode", ["geek"], filesize=100)["geek"] is not None
 
 
 # --- db-registry-06 -----------------------------------------------------------
@@ -187,15 +187,15 @@ def test_duplicate_status_batch_is_size_aware() -> None:
     suffix_key = "Folder.C/Show.S03E02.mkv"
     keys = [sized, unsized, suffix_key]
 
-    plain = db.get_duplicate_status_batch(keys, ["geek"])
+    plain = db_ledger.destinations_for_batch(keys, ["geek"])
     assert all(plain[key]["geek"] is not None for key in keys)
 
-    same = db.get_duplicate_status_batch(keys, ["geek"], filesizes={sized: 100, unsized: 5, suffix_key: 5})
+    same = db_ledger.destinations_for_batch(keys, ["geek"], filesizes={sized: 100, unsized: 5, suffix_key: 5})
     assert same[sized]["geek"] is not None
     assert same[unsized]["geek"] is not None
     assert same[suffix_key]["geek"] is None
 
-    replaced = db.get_duplicate_status_batch([sized], ["geek"], filesizes={sized: 200})
+    replaced = db_ledger.destinations_for_batch([sized], ["geek"], filesizes={sized: 200})
     assert replaced[sized]["geek"] is None
 
 
@@ -204,7 +204,7 @@ def test_duplicate_status_batch_is_size_aware() -> None:
 
 @pytest.mark.usefixtures("isolated_sqlite_db")
 def test_dashboard_data_returns_filesize_by_indexer() -> None:
-    assert db.get_dashboard_data([]) == (set(), {}, {}, {})
+    assert db_ledger.completion_index([]) == (set(), {}, {}, {})
 
     int_key = "Show/Show.S04E01.mkv"
     text_key = "Show/Show.S04E02.mkv"
@@ -216,7 +216,7 @@ def test_dashboard_data_returns_filesize_by_indexer() -> None:
     _set_filesize(text_key, "456")
     _set_filesize(bad_key, "not-a-size")
 
-    fully_done, success_map, failed_map, sizes = db.get_dashboard_data(["geek", "omg"])
+    fully_done, success_map, failed_map, sizes = db_ledger.completion_index(["geek", "omg"])
     assert {int_key, text_key, bad_key} <= fully_done
     assert success_map[int_key] == {"geek", "omg"}
     assert failed_map == {}
@@ -235,7 +235,7 @@ def _curl_indexer(**overrides) -> IndexerDefinition:
         submit_url="https://example.invalid/api-upload.php",
         method="CURL",
         auth=AuthConfig(method="none"),
-        success=registry_mod.SuccessPatterns(text_patterns=["upload successful"], duplicate_patterns=["duplicate"]),
+        success=models_mod.SuccessPatterns(text_patterns=["upload successful"], duplicate_patterns=["duplicate"]),
     )
     values.update(overrides)
     return IndexerDefinition(**values)
@@ -247,12 +247,12 @@ def _api_indexer() -> IndexerDefinition:
         name="NZBGeek",
         submit_url="https://example.invalid/api",
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
-        success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+        success=models_mod.SuccessPatterns(text_patterns=["OK"]),
     )
 
 
-def _response(status_code: int, body: str, reason: str = "") -> registry_mod.requests.Response:
-    response = registry_mod.requests.Response()
+def _response(status_code: int, body: str, reason: str = "") -> http_submit_mod.requests.Response:
+    response = http_submit_mod.requests.Response()
     response.status_code = status_code
     response.reason = reason
     response.encoding = "utf-8"
@@ -274,13 +274,14 @@ def test_curl_submission_follows_redirects_and_uses_final_page(tmp_path, monkeyp
         seen.update(kwargs)
         return _response(200, "<html><body>Upload successful</body></html>", "OK")
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
-    ok, status, _reason = submit_to_indexer(
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
+    result = submit_to_indexer(
         indexer=_curl_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key=""),
     )
+    ok, status, _reason = result.success, result.status, result.reason
 
     assert "allow_redirects" not in seen  # requests follows redirects by default
     assert seen["verify"] is False
@@ -290,16 +291,17 @@ def test_curl_submission_follows_redirects_and_uses_final_page(tmp_path, monkeyp
 
 def test_curl_submission_error_page_after_redirect_is_a_network_error(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        registry_mod.requests,
+        http_submit_mod.requests,
         "request",
         lambda *_args, **_kwargs: _response(500, "<html><title>Error</title><p>inf=err3</p></html>", "Internal Server Error"),
     )
-    ok, status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=_curl_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key=""),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert (ok, status) == (False, "network_error")
     assert reason == "HTTP 500 Internal Server Error | Body: Error inf=err3"
@@ -310,13 +312,14 @@ def test_http_error_message_uses_status_line_and_meta_description(tmp_path, monk
         '<html><head><meta content="Upload rejected for secret-key-123" name="description">'
         "</head><body><h1>Nope</h1></body></html>"
     )
-    monkeypatch.setattr(registry_mod.requests, "request", lambda *_args, **_kwargs: _response(400, body, "Bad Request"))
-    ok, status, reason = submit_to_indexer(
+    monkeypatch.setattr(http_submit_mod.requests, "request", lambda *_args, **_kwargs: _response(400, body, "Bad Request"))
+    result = submit_to_indexer(
         indexer=_api_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key="secret-key-123"),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert (ok, status) == (False, "network_error")
     assert reason.startswith("HTTP 400 Bad Request | Body: Upload rejected for ")
@@ -326,32 +329,34 @@ def test_http_error_message_uses_status_line_and_meta_description(tmp_path, monk
 
 def test_http_error_message_plain_text_body(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        registry_mod.requests,
+        http_submit_mod.requests,
         "request",
         lambda *_args, **_kwargs: _response(503, "Service\nUnavailable", ""),
     )
-    _ok, _status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=_api_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key="secret-key-123"),
     )
+    _ok, _status, reason = result.success, result.status, result.reason
     assert reason == "HTTP 503 Error | Body: Service Unavailable"
 
 
 def test_connection_error_message_names_the_failure_and_redacts(tmp_path, monkeypatch) -> None:
     def fake_request(*_args, **_kwargs):
-        raise registry_mod.requests.exceptions.SSLError(
+        raise http_submit_mod.requests.exceptions.SSLError(
             "HTTPSConnectionPool: Max retries exceeded with url: /api?apikey=secret-key-123 (certificate verify failed)"
         )
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
-    ok, status, reason = submit_to_indexer(
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
+    result = submit_to_indexer(
         indexer=_api_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key="secret-key-123"),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert (ok, status) == (False, "network_error")
     assert reason.startswith("SSLError: ")
@@ -361,18 +366,19 @@ def test_connection_error_message_names_the_failure_and_redacts(tmp_path, monkey
 
 def test_successful_submission_logs_redacted_response_body(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        registry_mod.requests,
+        http_submit_mod.requests,
         "request",
         lambda *_args, **_kwargs: _response(200, "OK\nuploaded with key secret-key-123", "OK"),
     )
     messages, sink_id = _capture_logs()
     try:
-        ok, _status, _reason = submit_to_indexer(
+        result = submit_to_indexer(
             indexer=_api_indexer(),
             rls_name="Some.Release.2026.1080p.WEB-DL",
             nzb_path=_make_sample_nzb(tmp_path),
             config=_DummySubmitConfig(api_key="secret-key-123"),
         )
+        ok, _status, _reason = result.success, result.status, result.reason
     finally:
         logger.remove(sink_id)
 
@@ -386,11 +392,11 @@ def test_successful_submission_logs_redacted_response_body(tmp_path, monkeypatch
 
 
 def test_available_categories_do_not_mirror_audiobooks(monkeypatch) -> None:
-    books = registry_mod.CategoryMapping(books="7020")
+    books = models_mod.CategoryMapping(books="7020")
     indexer = _api_indexer().model_copy(update={"categories": books})
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(all=lambda: [indexer]))
 
-    assert [cat["id"] for cat in registry_mod.get_available_categories()] == ["books"]
+    assert [cat["id"] for cat in categories_mod.get_available_categories()] == ["books"]
     assert books.resolve_code("audiobooks")[0] == "7020"  # submit-time fallback stays
 
 

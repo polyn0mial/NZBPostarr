@@ -8,9 +8,9 @@ import json
 
 def cmd_history(args: argparse.Namespace) -> int:
     """Show recent job history from the database."""
-    from core import database
+    from core.db import job_history as db_job_history
 
-    jobs = database.get_job_history(limit=args.limit)
+    jobs = db_job_history.get_job_history(limit=args.limit)
 
     if args.json:
         print(json.dumps({"jobs": jobs}, indent=2, default=str))
@@ -53,9 +53,9 @@ def cmd_issues(args: argparse.Namespace) -> int:
     one row per attempt. This groups failures by (indexer, error signature) so
     a recurring problem shows up as one counted row instead of a scroll.
     """
-    from core import database
+    from core.db import issues as db_issues
 
-    result = database.get_grouped_upload_errors(
+    result = db_issues.get_grouped_upload_errors(
         indexer_id=args.destination,
         limit=args.limit,
         since_days=args.since_days,
@@ -92,13 +92,14 @@ def cmd_indexers(args: argparse.Namespace) -> int:
 
     Exit codes: 0 when at least one indexer is enabled, 1 when none are.
     """
-    from core import database
+    from core.db import stats as db_stats
     from core.config import get_config
-    from core.registry import get_registry, resolve_indexer_enabled
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_enabled
 
     conf = get_config()
     registry = get_registry()
-    stats = database.get_detailed_stats()
+    stats = db_stats.get_detailed_stats()
     by_dest = stats.get("uploads", {}).get("by_destination", {})
 
     rows = []

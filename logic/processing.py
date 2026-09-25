@@ -637,7 +637,7 @@ def _validate_queue_item(
     prefetched_base_folder: Optional[Path] = None,
 ) -> QueueItemValidation:
     """Validate one queue item without blocking the rest of the job."""
-    from core.database import check_duplicate_dynamic
+    from core.db.ledger import destinations_for
 
     conf = get_config()
     name = path.name
@@ -695,13 +695,13 @@ def _validate_queue_item(
         if item_size_bytes and all(value is not None for value in dest_status.values()):
             live_key = _build_item_key(path, source_root)
             try:
-                dest_status = check_duplicate_dynamic(live_key, db_type, indexer_ids, filesize=item_size_bytes)
+                dest_status = destinations_for(live_key, db_type, indexer_ids, filesize=item_size_bytes)
             except Exception:  # pylint: disable=broad-exception-caught
                 pass  # keep the prefetched result on error
     else:
         key = _build_item_key(path, source_root)
         try:
-            dest_status = check_duplicate_dynamic(key, db_type, indexer_ids, filesize=item_size_bytes)
+            dest_status = destinations_for(key, db_type, indexer_ids, filesize=item_size_bytes)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             reason = f"Validation failed for {name}: duplicate check error ({exc})"
             logger.exception(reason)
@@ -1198,13 +1198,16 @@ def _persist_submission_results(
     upload_result: dict[str, Any],
 ) -> bool:
     """Persist per-indexer submission results and return whether any succeeded."""
+    from logic.queue_metrics import request_live_queue_refresh
+
     any_success = False
     for dest_id, ok, reason, sub_status in api_results:
         if ok:
             logger.info(f"[INDEXER] {dest_id} accepted '{name}'")
             any_success = True
             if not test_mode and item_size > 0:
-                update_db_destination(dest_id, name, item_size, key, itype=itype, **upload_result)
+                if update_db_destination(dest_id, name, item_size, key, itype=itype, **upload_result):
+                    request_live_queue_refresh(reason="upload-success")
                 _record_folder_hierarchy_rows(
                     item_path,
                     base_folder=base_folder,
@@ -1219,7 +1222,8 @@ def _persist_submission_results(
             logger.info(f"[INDEXER] {dest_id} duplicate treated as already-posted for '{name}'")
             any_success = True
             if not test_mode and item_size > 0:
-                update_db_destination(dest_id, name, item_size, key, itype=itype, **upload_result)
+                if update_db_destination(dest_id, name, item_size, key, itype=itype, **upload_result):
+                    request_live_queue_refresh(reason="upload-success")
             continue
         if not test_mode and item_size > 0:
             update_db_destination(
@@ -1424,7 +1428,7 @@ def process_single(
     validated_submission_category: Optional[str] = None,
 ) -> int:
     """Process a single item (orchestrated for dual uploads)."""
-    from core.database import check_duplicate_dynamic
+    from core.db.ledger import destinations_for
 
     conf = get_config()
     name = path.name
@@ -1450,7 +1454,7 @@ def process_single(
     key = _build_item_key(path, base_folder)
 
     if prefetched_dest_status is None:
-        dest_status = check_duplicate_dynamic(key, itype, indexer_ids, filesize=item_size_bytes)
+        dest_status = destinations_for(key, itype, indexer_ids, filesize=item_size_bytes)
     else:
         dest_status = {idx: prefetched_dest_status.get(idx) for idx in indexer_ids}
     is_new = all(v is None for v in dest_status.values())
@@ -1967,7 +1971,7 @@ def _log_job_completion(category: str, test_mode: bool, run_state: "_JobRunState
 
     Extracted from run_job to keep its own branching down.
     """
-    from core.database import get_all_upload_stats
+    from core.db.stats import get_all_upload_stats
 
     stats = get_all_upload_stats() or {}
     log_completed("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -1982,7 +1986,7 @@ def _log_job_completion(category: str, test_mode: bool, run_state: "_JobRunState
     if stats:
         # Build dynamic totals line from ALL enabled/active indexers
         active_stats = []
-        from core.registry import get_enabled_indexers
+        from core.indexers.registry import get_enabled_indexers
 
         for idx in get_enabled_indexers(get_config()):
             # Fetch count from stats dict (keys are format {idx_id}_count)

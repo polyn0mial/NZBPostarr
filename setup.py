@@ -34,6 +34,18 @@ from core.tools import resolve_tool, tool_version
 ROOT = Path(__file__).resolve().parent
 
 
+# (id, display name, website) per shipped indexers/*.yaml; setup.py is stdlib-only so it cannot
+# load them. tests/test_indexers.py holds this equal to the YAMLs.
+SETUP_INDEXERS = (
+    ("geek", "NZBGeek", "https://nzbgeek.info"),
+    ("su", "NZB.Life", "https://nzb.life"),
+    ("planet", "NZBPlanet", "https://nzbplanet.net"),
+    ("slug", "DrunkenSlug", "https://drunkenslug.com"),
+    ("in", "NZBs.in", "https://nzbs.in"),
+    ("omg", "OMGwtfnzbs", "https://omgwtfnzbs.org"),
+)
+
+
 def _get_setup_config_path() -> Path:
     env_path = os.getenv("NZBPOSTARR_CONFIG")
     if env_path:
@@ -542,19 +554,10 @@ def setup_config(total: int, tool_status: Dict[str, bool]) -> None:
     info("Configure which indexers to upload to.")
     dim("You can add/change these later in the WebUI settings.\n")
 
-    indexers = [
-        ("geek", "NZBGeek", "https://nzbgeek.info"),
-        ("su", "NZB.Life", "https://nzb.life"),
-        ("planet", "NZBPlanet", "https://nzbplanet.net"),
-        ("slug", "DrunkenSlug", "https://drunkenslug.com"),
-        ("in", "NZBs.in", "https://nzbs.in"),
-        ("omg", "OMGwtfnzbs", "https://omgwtfnzbs.me"),
-    ]
-
     api_keys: Dict[str, str] = {}
     usernames: Dict[str, str] = {}
 
-    for idx_id, idx_name, idx_url in indexers:
+    for idx_id, idx_name, idx_url in SETUP_INDEXERS:
         dim(f"  {idx_name} - {idx_url}")
         key = ask(f"  {idx_name} API key (blank to skip)", "")
         if key:
@@ -793,7 +796,7 @@ def smoke_test(total: int) -> None:
     info("Testing database init...")
     try:
         r = run(
-            f"{VENV_PY} -c \"from core.database import init_database; init_database(); print('OK')\"",
+            f"{VENV_PY} -c \"from core.db.schema import init_database; init_database(); print('OK')\"",
             check=False,
             capture=True,
         )
@@ -810,7 +813,7 @@ def smoke_test(total: int) -> None:
     info("Testing indexer registry...")
     try:
         r = run(
-            f"{VENV_PY} -c \"from core.registry import get_registry; r = get_registry(); print(f'OK: {{len(r.all())}} indexers loaded')\"",
+            f"{VENV_PY} -c \"from core.indexers.registry import get_registry; r = get_registry(); print(f'OK: {{len(r.all())}} indexers loaded')\"",
             check=False,
             capture=True,
         )

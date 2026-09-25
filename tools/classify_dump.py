@@ -107,14 +107,14 @@ def scan_root(root: Path) -> list[str]:
         )
         stack.enter_context(
             mock.patch.object(
-                pending_completion.database,
-                "get_dashboard_data",
+                pending_completion.db_ledger,
+                "completion_index",
                 lambda _ids: (set(), {}, {}, {}),
             )
         )
-        stack.enter_context(mock.patch("core.registry.get_registry", lambda: _NoIndexers()))
-        stack.enter_context(mock.patch("core.registry.get_available_categories", lambda: []))
-        stack.enter_context(mock.patch("core.registry.resolve_indexer_backfill", lambda _idx, _conf: False))
+        stack.enter_context(mock.patch("core.indexers.registry.get_registry", lambda: _NoIndexers()))
+        stack.enter_context(mock.patch("core.indexers.categories.get_available_categories", lambda: []))
+        stack.enter_context(mock.patch("core.indexers.models.resolve_indexer_backfill", lambda _idx, _conf: False))
         stack.enter_context(mock.patch("logic.classify.anime.get_cached", lambda _name: None))
         pending_completion.invalidate_pending_indexer_context()
         try:

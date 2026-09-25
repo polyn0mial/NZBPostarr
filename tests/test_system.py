@@ -800,8 +800,8 @@ def test_get_current_settings_preserves_folder_path_categories(monkeypatch) -> N
     )
 
     patch_hit(monkeypatch, settings_api, "get_config", lambda: conf)
-    monkeypatch.setattr("core.registry.get_all_indexers", lambda: [])
-    monkeypatch.setattr("core.registry.get_available_categories", lambda: [])
+    monkeypatch.setattr("core.indexers.registry.get_all_indexers", lambda: [])
+    monkeypatch.setattr("core.indexers.categories.get_available_categories", lambda: [])
 
     result = _run_async(settings_api.get_current_settings())
 
@@ -1045,7 +1045,7 @@ def test_resolve_force_flag(monkeypatch) -> None:
         assert UploadService._resolve_force_flag(**kwargs) is expected, case_name
 
 def test_check_success_word_boundary() -> None:
-    from core.registry import _check_success
+    from core.indexers.http_submit import _check_success
 
     cases = [
         ("short-pattern-standalone-match", ["OK"], "OK", True),
@@ -1064,7 +1064,7 @@ def test_should_skip_completed_item_respects_force(monkeypatch) -> None:
     from logic.processing import _should_skip_completed_item
 
     monkeypatch.setattr(
-        "core.registry.resolve_indexer_enabled",
+        "core.indexers.models.resolve_indexer_enabled",
         lambda _idx, _conf: True,
     )
 

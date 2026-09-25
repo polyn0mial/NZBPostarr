@@ -83,7 +83,7 @@ def test_each_page_keeps_the_category_palette_the_server_serves(tmp_path) -> Non
     assert base["apps"] == "orange" and result["hex"]["apps"] == "#f97316"
     assert result["base"]["disc"] == ["slate", "bg-slate-500/15 text-slate-400"]
 
-    # Queue page (the server serves pages/queue.js with its own categoryMeta).
+    # Queue page (pages/queue/ uses its own categoryMeta).
     queue = result["queue"]
     assert queue["tv"] == ["cyan", "bg-cyan-500/15 text-cyan-400"]
     assert queue["misc"] == ["orange", "bg-orange-500/15 text-orange-400"]
@@ -96,8 +96,8 @@ def test_each_page_keeps_the_category_palette_the_server_serves(tmp_path) -> Non
 
 
 def test_queue_modules_use_the_queue_palette() -> None:
-    for module in ("queue.js", "queue-methods-3.js", "queue-computed-1.js"):
-        source = _read_repo_text("webui", "assets", "js", "pages", module)
+    for module in ("pending-categories.js",):
+        source = _read_repo_text("webui", "assets", "js", "pages", "queue", module)
         assert "queueCategoryMeta as categoryMeta" in source, module
 
 
@@ -111,7 +111,7 @@ def test_queue_page_keeps_the_saved_state_key_of_the_live_server() -> None:
 
 
 def test_bulk_selection_off_means_manual_selection_only(tmp_path) -> None:
-    methods = _read_repo_text("webui", "assets", "js", "pages", "queue-methods-1.js").replace("\r\n", "\n")
+    methods = _read_repo_text("webui", "assets", "js", "pages", "queue", "pending-filters.js").replace("\r\n", "\n")
     start = methods.index("findFolderEntryForGroup(group) {")
     end = methods.index("/**\n     * Backward-compatible count/has helpers", start)
 
@@ -141,8 +141,8 @@ def test_bulk_selection_off_means_manual_selection_only(tmp_path) -> None:
 def test_no_page_reads_a_manual_select_only_key() -> None:
     for parts in (
         ("webui", "queue.html"),
-        ("webui", "assets", "js", "pages", "queue-methods-1.js"),
-        ("webui", "assets", "js", "dist", "pages", "queue.js"),
+        ("webui", "assets", "js", "pages", "queue", "pending-filters.js"),
+        ("webui", "assets", "js", "dist", "pages", "queue", "index.js"),
     ):
         assert "manual_select_only" not in _read_repo_text(*parts), "/".join(parts)
 

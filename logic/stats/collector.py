@@ -11,7 +11,7 @@ import humanfriendly  # type: ignore[import-untyped]
 import psutil
 from loguru import logger
 
-from core import database
+from core.db import stats as db_stats
 from logic.stats.process_stats import ProcessStatsCollector
 
 _B_IN_MIB = cast(int, humanfriendly.parse_size("1 MiB"))
@@ -57,7 +57,7 @@ def _seed_ring_from_db() -> None:
     if _RING_SEEDED:
         return
     try:
-        hist = database.get_system_stats_history(limit=_MAX_RING)
+        hist = db_stats.get_system_stats_history(limit=_MAX_RING)
         timestamps = hist.get("recorded_at", [])
         for i, ts in enumerate(timestamps):
             _STATS_RING.append(
@@ -83,7 +83,7 @@ def _seed_ring_from_db() -> None:
                 }
             )
 
-        iface_hist = database.get_interface_stats_history(limit=_MAX_RING)
+        iface_hist = db_stats.get_interface_stats_history(limit=_MAX_RING)
         for if_name, data in iface_hist.items():
             ring: Deque[Dict[str, Any]] = deque(maxlen=_MAX_RING)
             for j, ts in enumerate(data.get("recorded_at", [])):
@@ -110,7 +110,7 @@ def get_stats_history(limit: int = 60) -> Dict[str, List[Any]]:
     ring = list(_STATS_RING)
     if not ring:
         # Ring not yet populated - fallback to DB
-        return database.get_system_stats_history(limit)
+        return db_stats.get_system_stats_history(limit)
     if limit and len(ring) > limit:
         ring = ring[-limit:]
     return {
@@ -140,7 +140,7 @@ def get_iface_history(limit: int = 60) -> Dict[str, Dict[str, List[Any]]]:
     Falls back to DB if the ring is empty.
     """
     if not _IFACE_RING:
-        return database.get_interface_stats_history(limit)
+        return db_stats.get_interface_stats_history(limit)
     result: Dict[str, Dict[str, List[Any]]] = {}
     for if_name, ring in _IFACE_RING.items():
         items = list(ring)
@@ -232,7 +232,7 @@ def sync_collector_schedule() -> None:
     job_id = "prune_system_stats"
     if _stats_page_enabled():
         scheduler.add_job(
-            database.prune_system_stats,
+            db_stats.prune_system_stats,
             "interval",
             minutes=30,
             id=job_id,
@@ -462,7 +462,7 @@ async def _stats_collector() -> None:
                         # Grab the most-recent snapshot for DB persistence
                         recent = list(_STATS_RING)[-6:]  # last 6 snapshots (~5 min)
                         await asyncio.to_thread(
-                            database.record_system_stats_batch,
+                            db_stats.record_system_stats_batch,
                             [
                                 {
                                     "cpu": s["cpu"],
@@ -496,7 +496,7 @@ async def _stats_collector() -> None:
                             for n, sp in _INTERFACE_SPEEDS.items()
                         ]
                         if iface_data:
-                            await asyncio.to_thread(database.record_interface_stats, iface_data)
+                            await asyncio.to_thread(db_stats.record_interface_stats, iface_data)
                     except Exception as e:  # pylint: disable=broad-exception-caught
                         logger.debug(f"DB flush failed: {e}")
 
@@ -539,7 +539,7 @@ async def stop_collector() -> None:
     try:
         recent = list(_STATS_RING)[-6:]
         for s in recent:
-            database.record_system_stats(
+            db_stats.record_system_stats(
                 cpu=s["cpu"],
                 mem=s["memory"],
                 up=s["upload_mbps"],

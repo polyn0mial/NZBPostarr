@@ -19,20 +19,13 @@ import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 
 from core.config import Config, NNTPServer, get_config
-from core.registry import get_indexer, submit_to_indexer
+from core.indexers.http_submit import submit_to_indexer
+from core.indexers.models import SubmitResult
+from core.indexers.registry import get_indexer
 from core.format import get_priority_label, is_priority_key
 from core.logging import log_info
 from core.proc import extract_percentage, extract_speed, run_command
 from logic.jobs.context import get_thread_job, update_job_progress
-
-
-@dataclass(frozen=True, slots=True)
-class SubmitResult:
-    """Canonical outcome returned by every indexer submission path."""
-
-    success: bool
-    status: str
-    reason: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -531,7 +524,7 @@ def submit_api(
                 logger.info(f"{indexer.log_name} Retry {attempt}/{max_retries} in {wait}s...")
                 time.sleep(wait)
 
-            success, status, reason = submit_to_indexer(
+            result = submit_to_indexer(
                 indexer=indexer,
                 rls_name=rls_name,
                 nzb_path=nzb,
@@ -540,10 +533,11 @@ def submit_api(
                 nfo_path=nfo_path,
                 mediainfo_path=mediainfo_path,
             )
+            success, status, reason = result.success, result.status, result.reason
             last_reason = reason
 
             if success:
-                return SubmitResult(True, "success", reason)
+                return result
 
             # Permanent failure - no point retrying
             if status in _PERMANENT_FAILURE_STATUSES:

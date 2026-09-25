@@ -17,11 +17,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, cast
 import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 from core.config import get_config
-from core.database import (
-    pin_folder_ts_to_children,
-    record_nntp_success,
-    update_db_destination,
-)
+from core.db.uploads import pin_folder_ts_to_children, record_nntp_success, update_db_destination
 from core.fs import compute_size_uncached, should_skip_file
 from core.logging import log_completed, log_info, log_success, log_verbose
 from core.media import (

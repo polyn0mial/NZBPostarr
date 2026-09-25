@@ -11,7 +11,8 @@ from types import SimpleNamespace
 
 from api import pending as pending_api
 from core import config as config_mod
-from core import database as db
+from core.db import models as db_models
+from core.db import queue_items as db_queue_items
 from logic import queueing
 from logic.system import backup as system_backup
 from logic.system import lifecycle, updater
@@ -29,7 +30,7 @@ def _rel(path: Path, root: Path) -> str:
 
 def test_job_queue_state_files(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(queueing, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
-    monkeypatch.setattr(queueing.database, "db_load_queue", lambda: [])
+    monkeypatch.setattr(db_queue_items, "db_load_queue", lambda: [])
     service = object.__new__(queueing.QueueServiceMixin)
     service._lock = threading.Lock()
     service._queue_scheduler_loop = lambda: None
@@ -76,7 +77,7 @@ def test_deployed_revision_file(monkeypatch) -> None:
 
 
 def test_queue_items_table() -> None:
-    assert db.QueueItem.__tablename__ == "queue_items"
+    assert db_models.QueueItem.__tablename__ == "queue_items"
 
 
 def test_pending_group_order_config_keys(monkeypatch) -> None:

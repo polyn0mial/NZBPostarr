@@ -88,5 +88,5 @@ def test_normalize_category_and_itype_mapping() -> None:
     assert media.normalize_category("Movie") == media.normalize_category("movies")
     assert media.category_for_itype("TV Show") == media.category_for_itype("tv episode")
     assert media.category_for_itype("nonsense") == "misc"
-    assert {category for category, _label in media.CATEGORIES} >= {"movies", "tv", "anime", "music"}
+    assert {category.id for category in media.CATEGORIES} >= {"movies", "tv", "anime", "music"}
 

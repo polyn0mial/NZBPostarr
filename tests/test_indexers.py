@@ -193,12 +193,13 @@ def test_submit_to_indexer_flags_missing_api_key_as_misconfigured() -> None:
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
     )
 
-    ok, status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=indexer,
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=Path("unused.nzb"),
         config=_DummySubmitConfig(api_key=""),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert ok is False
     assert status == "misconfigured"
@@ -212,17 +213,18 @@ def test_submit_to_indexer_rejects_unknown_category_without_default_fallback(tmp
         name="Movies Only",
         submit_url="https://example.invalid/api",
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
-        categories=registry_mod.CategoryMapping(tv="", movie="2040", misc="5000", default="5000"),
-        success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+        categories=models_mod.CategoryMapping(tv="", movie="2040", misc="5000", default="5000"),
+        success=models_mod.SuccessPatterns(text_patterns=["OK"]),
     )
 
-    ok, status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=indexer,
         rls_name="Show.Name.S01.1080p.WEB-DL",
         nzb_path=nzb_file,
         config=_DummySubmitConfig(),
         cat="tv",
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert ok is False
     assert status == "misconfigured"
@@ -232,9 +234,9 @@ def test_submit_to_indexer_rejects_unknown_category_without_default_fallback(tmp
 def test_audiobook_category_mapping_prefers_direct_code_then_books_fallback() -> None:
     from core.media import normalize_category
 
-    direct = registry_mod.CategoryMapping(audiobooks="3030", books="7020")
-    fallback = registry_mod.CategoryMapping(books="7020")
-    missing = registry_mod.CategoryMapping(movie="2040")
+    direct = models_mod.CategoryMapping(audiobooks="3030", books="7020")
+    fallback = models_mod.CategoryMapping(books="7020")
+    missing = models_mod.CategoryMapping(movie="2040")
 
     assert normalize_category("audiobook") == "audiobooks"
     assert normalize_category("audiobooks") == "audiobooks"
@@ -248,7 +250,7 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
         id="audio-check",
         name="Audio Check",
         submit_url="https://example.invalid/api",
-        categories=registry_mod.CategoryMapping(audiobooks="3030"),
+        categories=models_mod.CategoryMapping(audiobooks="3030"),
     )
     monkeypatch.setattr(
         registry_mod,
@@ -256,13 +258,12 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
         lambda: SimpleNamespace(all=lambda: [indexer]),
     )
 
-    assert registry_mod.get_available_categories() == [
+    assert categories_mod.get_available_categories() == [
         {
             "id": "audiobooks",
             "key": "audiobooks",
             "label": "Audiobooks",
-            "icon": "headphones",
-            "color": "teal-400",
+            "order": 0,
             "indexers": [
                 {
                     "id": "audio-check",
@@ -282,7 +283,7 @@ def test_books_mapping_advertises_only_books_for_all_jobs(monkeypatch) -> None:
         id="books-check",
         name="Books Check",
         submit_url="https://example.invalid/api",
-        categories=registry_mod.CategoryMapping(books="7020"),
+        categories=models_mod.CategoryMapping(books="7020"),
     )
     monkeypatch.setattr(
         registry_mod,
@@ -290,7 +291,7 @@ def test_books_mapping_advertises_only_books_for_all_jobs(monkeypatch) -> None:
         lambda: SimpleNamespace(all=lambda: [indexer]),
     )
 
-    categories = registry_mod.get_available_categories()
+    categories = categories_mod.get_available_categories()
     # D03: a books-only mapping no longer mirrors an Audiobooks category.
     assert [category["id"] for category in categories] == ["books"]
     assert processing._resolve_job_categories("all") == ["books"]
@@ -306,8 +307,8 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="NZBGeek",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(tv="5040", movie="2040", misc="5000", default="5000"),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                categories=models_mod.CategoryMapping(tv="5040", movie="2040", misc="5000", default="5000"),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Show.Name.S01.1080p.WEB-DL",
             "tv_pack",
@@ -325,10 +326,10 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="TV Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     tv="5040", movie="2040", anime="5070", misc="5000", default="5000"
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Show.Name.S00E01.1080p.WEB-DL",
             "tv",
@@ -346,10 +347,10 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="Anime Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     tv="5040", movie="2040", anime="5070", misc="5000", default="5000"
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Anime.Name.S01E01.1080p.WEB-DL",
             "anime",
@@ -367,10 +368,10 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="NZBGeek",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     movie="2040", movie_sd="2030", movie_hd="2040", misc="5000", default="5000"
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Movie.Name.1999.DVD.REMUX.NTSC",
             "movies",
@@ -391,7 +392,7 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 curl_template="https://example.invalid/api-upload.php?user={username}&api={api_key}",
                 auth=AuthConfig(method="curl_url"),
                 category_param="catid",
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     movie="movie",
                     movie_sd="15",
                     movie_hd="16",
@@ -399,7 +400,7 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                     misc="29",
                     default="video",
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Movie.Name.2001.DVD.REMUX.PAL",
             "movies",
@@ -429,12 +430,12 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="Audio Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(
+                categories=models_mod.CategoryMapping(
                     audiobooks="3030",
                     books="7020",
                     misc="5000",
                 ),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Author.Name.Novel.Unabridged.MP3",
             "audiobooks",
@@ -452,8 +453,8 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
                 name="Books Check",
                 submit_url="https://example.invalid/api",
                 auth=AuthConfig(method="query_param", api_key_param="apikey"),
-                categories=registry_mod.CategoryMapping(books="7020", misc="5000"),
-                success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+                categories=models_mod.CategoryMapping(books="7020", misc="5000"),
+                success=models_mod.SuccessPatterns(text_patterns=["OK"]),
             ),
             "Author.Name.Novel.Unabridged.MP3",
             "audiobooks",
@@ -493,13 +494,14 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
         seen = _capture_submit_request(monkeypatch, text=response_text, json_payload=response_json)
         nzb_file = _make_sample_nzb(tmp_path / case_name)
 
-        ok, status, _reason = submit_to_indexer(
+        result = submit_to_indexer(
             indexer=indexer,
             rls_name=release_name,
             nzb_path=nzb_file,
             config=config,
             cat=category,
         )
+        ok, status, _reason = result.success, result.status, result.reason
 
         assert ok is True, case_name
         assert status == "success", case_name
@@ -694,3 +696,53 @@ def test_submit_api_batch_isolates_indexer_exceptions(tmp_path, monkeypatch) -> 
         ("bad", False, "Unhandled submission exception for indexer 'bad': boom", "error"),
         ("good", True, "ok", "success"),
     ]
+
+
+def _shipped_indexer_yamls() -> list:
+    return [path for path in sorted((REPO_ROOT / "indexers").glob("*.yaml")) if not path.name.startswith("_") and ".example." not in path.name]
+
+
+def test_every_shipped_indexer_yaml_loads_strictly() -> None:
+    import yaml
+
+    loaded = [IndexerDefinition(**yaml.safe_load(path.read_text(encoding="utf-8"))) for path in _shipped_indexer_yamls()]
+    assert {indexer.id for indexer in loaded} == {"geek", "in", "omg", "planet", "slug", "su"}
+    with pytest.raises(ValueError, match="extra"):
+        IndexerDefinition(id="typo", name="Typo", submit_url="https://example.invalid/api", submit_urll="x")
+
+
+def test_available_categories_payload_keys_carry_no_presentation(monkeypatch) -> None:
+    indexer = IndexerDefinition(
+        id="keys-check",
+        name="Keys Check",
+        submit_url="https://example.invalid/api",
+        categories=models_mod.CategoryMapping(movie="2000", tv="5000", misc="7000"),
+    )
+    monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(all=lambda: [indexer]))
+
+    categories = categories_mod.get_available_categories()
+    assert [(cat["id"], cat["label"], cat["order"]) for cat in categories] == [
+        ("movies", "Movies", 0),
+        ("tv", "TV Shows", 1),
+        ("misc", "Misc", 2),
+    ]
+    assert all(sorted(cat) == ["id", "indexers", "key", "label", "order"] for cat in categories)
+
+
+def test_setup_indexer_list_matches_shipped_yamls() -> None:
+    import ast
+
+    import yaml
+
+    tree = ast.parse((REPO_ROOT / "setup.py").read_text(encoding="utf-8"))
+    setup_list = next(
+        ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "SETUP_INDEXERS" for t in node.targets)
+    )
+    shipped = {}
+    for path in _shipped_indexer_yamls():
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        shipped[data["id"]] = (data["id"], data["name"], data["website"])
+    assert sorted(setup_list) == sorted(shipped.values())
+    assert shipped["su"][1] == "NZB.Life"

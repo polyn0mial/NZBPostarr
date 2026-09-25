@@ -245,8 +245,8 @@ def _build_duplicate_prefetch_state(
     target_indexer_ids: Optional[List[str]],
 ) -> tuple[Dict[str, str], Dict[str, Dict[str, Optional[str]]], Callable[[Path], Optional[Path]]]:
     """Resolve item DB keys and batch-prefetch duplicate state for the job queue."""
-    from core.database import get_duplicate_status_batch
-    from core.registry import get_enabled_indexers
+    from core.db.ledger import destinations_for_batch
+    from core.indexers.registry import get_enabled_indexers
 
     source_root_cache: Dict[str, Optional[Path]] = {}
 
@@ -273,14 +273,14 @@ def _build_duplicate_prefetch_state(
         from logic.processing import _live_size_bytes
 
         item_keys = [item_db_keys[path_key(item)] for item, _cat in sorted_items]
-        # Current on-disk size per item key -- lets get_duplicate_status_batch tell
+        # Current on-disk size per item key -- lets destinations_for_batch tell
         # a genuine re-upload of the same name apart from a locally-replaced file
         # (same name, different size) instead of treating every name match as done.
         item_filesizes: Dict[str, int] = {
             item_db_keys[path_key(item)]: _live_size_bytes(item)
             for item, _cat in sorted_items
         }
-        prefetched_dupes = get_duplicate_status_batch(item_keys, eligible_indexer_ids, filesizes=item_filesizes)
+        prefetched_dupes = destinations_for_batch(item_keys, eligible_indexer_ids, filesizes=item_filesizes)
 
     return item_db_keys, prefetched_dupes, source_root_for
 
@@ -533,7 +533,7 @@ def _resolve_target_indexers_for_single(
     return all_indexers
 
 def _resolve_job_categories(category: str) -> list[str]:
-    from core.registry import get_available_categories
+    from core.indexers.categories import get_available_categories
 
     category_lower = category.lower()
     active_categories = [item["id"] for item in get_available_categories()]

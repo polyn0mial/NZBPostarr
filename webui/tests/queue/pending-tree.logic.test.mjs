@@ -1,42 +1,8 @@
-// Node tests for the pure pending-tree helpers that the queue page modules share.
-// pages/queue.js is a browser entry point: it imports the bundler alias "page-base" and
-// mounts the Vue page on import. A resolve hook swaps those imports for inert stubs so the
-// module can load under node and its exported helpers can be tested directly.
+// Node tests for the pure pending-tree helpers (pages/queue/pending-tree.logic.js).
 import assert from 'node:assert/strict';
-import { register } from 'node:module';
 import { test } from 'node:test';
 
-const stubs = {
-    'page-base': [
-        'export const createVuePage = () => null;',
-        'export const queueCategoryMeta = {};',
-        'export const categoryLabel = () => "";',
-        'export const itypeToCategory = () => "";',
-        'export const categoryToItype = () => "";',
-    ].join('\n'),
-    sortablejs: 'export default class Sortable {}',
-    'lodash.debounce': 'export default (fn) => fn;',
-};
-
-const hooks = `
-const stubs = ${JSON.stringify(stubs)};
-export async function resolve(specifier, context, nextResolve) {
-    if (Object.hasOwn(stubs, specifier)) {
-        return { url: 'data:text/javascript,' + encodeURIComponent(stubs[specifier]), shortCircuit: true };
-    }
-    return nextResolve(specifier, context);
-}
-// package.json declares commonjs for the build tooling; the page sources are ES modules.
-export async function load(url, context, nextLoad) {
-    if (url.startsWith('file:') && url.includes('/assets/js/') && url.endsWith('.js')) {
-        return nextLoad(url, { ...context, format: 'module' });
-    }
-    return nextLoad(url, context);
-}
-`;
-register(`data:text/javascript,${encodeURIComponent(hooks)}`);
-
-const { normalizePendingNode, deepFreezePendingTree } = await import('../assets/js/pages/queue.js');
+import { normalizePendingNode, deepFreezePendingTree } from '../../assets/js/pages/queue/pending-tree.logic.js';
 
 // The two page methods normalizePendingNode calls on the Vue instance.
 const page = {

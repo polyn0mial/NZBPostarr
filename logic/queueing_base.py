@@ -11,7 +11,6 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 from loguru import logger
-from core import database
 from core.config import get_config
 from core.logging import log_info, log_success
 from core.media import normalize_category
@@ -22,7 +21,7 @@ from logic.jobs.models import JobState, ProcessingJobRequest, QueueStartSummary,
 
 __all__ = [
     'Any', 'JobState', 'Optional', 'Path', 'ProcessingJobRequest', 'QueueStartSummary', 'StreamJobRequest',
-    'database', 'datetime', 'get_config', 'log_info', 'log_success', 'logger', 'looks_like_generic_tv_season_folder',
+    'datetime', 'get_config', 'log_info', 'log_success', 'logger', 'looks_like_generic_tv_season_folder',
     'normalize_category', 'os', 're', 'reset_thread_job', 'set_thread_job', 'shutil',
     'threading', 'time', 'timedelta', 'timezone', 'stream_monitors', 'uuid',
 ]

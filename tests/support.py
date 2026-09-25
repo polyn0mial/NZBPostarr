@@ -64,35 +64,36 @@ from api import system as system_api
 
 from core import config as config_mod
 
-from core import database as db
+from core.db import engine as db_engine
+from core.db import history as db_history
+from core.db import issues as db_issues
+from core.db import job_history as db_job_history
+from core.db import ledger as db_ledger
+from core.db import models as db_models
+from core.db import queue_items as db_queue_items
+from core.db import schema as db_schema
+from core.db import stats as db_stats
+from core.db import timefmt as db_timefmt
+from core.db import uploads as db_uploads
 
 from core import redaction
 
-from core import registry as registry_mod
+from core.indexers import categories as categories_mod
+from core.indexers import http_submit as http_submit_mod
+from core.indexers import models as models_mod
+from core.indexers import registry as registry_mod
 
 from core.config import Config
 
-from core.database import (
-    DatabaseOperationalError,
-    JobHistory,
-    SystemStat,
-    Upload,
-    UploadResult,
-    get_system_stats_history,
-    init_database,
-    record_nntp_success,
-    record_system_stats,
-    session_scope,
-    update_db_destination,
-)
+from core.db.engine import DatabaseOperationalError, session_scope
+from core.db.models import JobHistory, SystemStat, Upload, UploadResult
+from core.db.schema import init_database
+from core.db.stats import get_system_stats_history, record_system_stats
+from core.db.uploads import record_nntp_success, update_db_destination
 
-from core.registry import (
-    AuthConfig,
-    IndexerDefinition,
-    resolve_indexer_api_key,
-    resolve_indexer_username,
-    submit_to_indexer,
-)
+from core.indexers.models import AuthConfig, IndexerDefinition
+from core.indexers.models import resolve_indexer_api_key, resolve_indexer_username
+from core.indexers.http_submit import submit_to_indexer
 
 from logic.system import backup as system_backup
 from logic.system import lifecycle, updater
@@ -128,7 +129,7 @@ from logic.services import ConsoleBuffer, console
 
 from logic.stats.collector import format_seconds, parse_speed_to_bps
 
-from logic.uploaders import SubmitResult
+from core.indexers.models import SubmitResult
 
 from tests.webui._source import _queue_source
 
@@ -284,7 +285,7 @@ def _capture_submit_request(monkeypatch, *, text: str = "OK", json_payload: dict
                 seen[key] = kwargs[key]
         return DummyResponse()
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
     return seen
 
 def _make_sample_nzb(tmp_path: Path) -> Path:
@@ -391,11 +392,11 @@ def _configure_process_single_environment(
     monkeypatch.setattr(processing_mod, "record_nntp_success", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(processing_mod, "update_db_destination", lambda *_args, **_kwargs: True)
     monkeypatch.setattr(processing_mod, "compute_size_uncached", lambda _path: 10)
-    monkeypatch.setattr(db, "check_duplicate_dynamic", lambda *_args, **_kwargs: duplicate_status)
+    monkeypatch.setattr(db_ledger, "destinations_for", lambda *_args, **_kwargs: duplicate_status)
     monkeypatch.setattr(registry_mod, "get_enabled_indexers", lambda _conf: indexers)
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
     monkeypatch.setattr(
-        registry_mod,
+        models_mod,
         "resolve_indexer_priority",
         priority_resolver or (lambda _idx, _conf: False),
     )
@@ -501,14 +502,14 @@ def _configure_pending_snapshot_environment(
         monkeypatch.setattr(owner, "get_config", lambda: conf)
     if callable(dashboard_data):
         monkeypatch.setattr(
-            db,
-            "get_dashboard_data",
+            db_ledger,
+            "completion_index",
             lambda ids: _as_dashboard_data(dashboard_data(ids)),
         )
     else:
         monkeypatch.setattr(
-            db,
-            "get_dashboard_data",
+            db_ledger,
+            "completion_index",
             lambda _ids: _as_dashboard_data(dashboard_data),
         )
     monkeypatch.setattr(
@@ -518,15 +519,15 @@ def _configure_pending_snapshot_environment(
     )
     if compute_size_uncached is not None:
         monkeypatch.setattr(pending_tree, "compute_size_uncached", compute_size_uncached)
-    monkeypatch.setattr("core.registry.get_registry", lambda: _Registry())
-    monkeypatch.setattr("core.registry.get_available_categories", lambda: list(available_categories or []))
+    monkeypatch.setattr("core.indexers.registry.get_registry", lambda: _Registry())
+    monkeypatch.setattr("core.indexers.categories.get_available_categories", lambda: list(available_categories or []))
     monkeypatch.setattr(
-        "core.registry.resolve_indexer_backfill",
+        "core.indexers.models.resolve_indexer_backfill",
         resolve_backfill or (lambda _idx, _conf: False),
     )
 
 def _as_dashboard_data(value):
-    """Return get_dashboard_data's 4-tuple (fully_done, upload_map, failed_map, filesize_by_indexer).
+    """Return completion_index's 4-tuple (fully_done, upload_map, failed_map, filesize_by_indexer).
 
     Older fixtures give only the first three values; the missing filesize map
     means "no stored sizes", which keeps name-only completion matching.
@@ -559,7 +560,7 @@ def _configure_pending_scan_all(
 
     for owner in (pending_tree, pending_completion, pending_view):
         monkeypatch.setattr(owner, "get_config", lambda: _Conf())
-    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: _as_dashboard_data(dashboard_data))
+    monkeypatch.setattr(db_ledger, "completion_index", lambda _ids: _as_dashboard_data(dashboard_data))
     monkeypatch.setattr(
         pending_tree,
         "get_configured_category_folders",
@@ -567,7 +568,7 @@ def _configure_pending_scan_all(
     )
     monkeypatch.setattr("logic.classify.anime.get_cached", anime_cache_lookup)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: _Registry())
-    monkeypatch.setattr(registry_mod, "get_available_categories", lambda: list(available_categories or []))
+    monkeypatch.setattr(categories_mod, "get_available_categories", lambda: list(available_categories or []))
 
     return pending_api._scan_pending_all()
 
@@ -683,20 +684,20 @@ def isolated_sqlite_db(tmp_path, monkeypatch) -> Iterator[None]:
     monkeypatch.setattr(config_mod.Config, "log_db", property(_tmp_log_db))
 
     # Reset cached engine/session factory so the patched path takes effect.
-    engine = getattr(db, "_ENGINE", None)
+    engine = getattr(db_engine, "_ENGINE", None)
     if engine is not None:
         engine.dispose()
-    db._ENGINE = None
-    db._SESSION_FACTORY = None
+    db_engine._ENGINE = None
+    db_engine._SESSION_FACTORY = None
 
-    assert db.init_database() is True
+    assert db_schema.init_database() is True
     yield
 
-    engine = getattr(db, "_ENGINE", None)
+    engine = getattr(db_engine, "_ENGINE", None)
     if engine is not None:
         engine.dispose()
-    db._ENGINE = None
-    db._SESSION_FACTORY = None
+    db_engine._ENGINE = None
+    db_engine._SESSION_FACTORY = None
 
 def _set_duplicate_checking(monkeypatch, enabled: bool) -> None:
     class _Conf:
@@ -729,7 +730,7 @@ def _make_success_indexer(text_patterns, duplicate_patterns=None):
         website="",
         method="POST",
         submit_url="https://example.com",
-        success=registry_mod.SuccessPatterns(
+        success=models_mod.SuccessPatterns(
             text_patterns=text_patterns,
             duplicate_patterns=duplicate_patterns or [],
         ),
