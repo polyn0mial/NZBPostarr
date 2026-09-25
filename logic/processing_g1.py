@@ -175,12 +175,6 @@ def _has_tv_season_pack_name(path: Path) -> bool:
         token in folder_name for token in ("season", "complete")
     )
 
-def _processing_cached_anime_lookup(name: str) -> Optional[bool]:
-    """Use cached anime state only; queue validation should not wait on Jikan."""
-    from logic.anime_cache import get_cached
-
-    return get_cached(name)
-
 def get_tv_sort_key(path: Path) -> tuple[str, int, str]:
     """
     Simple Sort key for TV uploads.
@@ -379,7 +373,7 @@ def _resolve_ambiguous_submission_category(path: Path, normalized_category: str,
     if normalized_itype in {"anime", "music", "audiobooks", "books", "apps"}:
         return normalized_itype
 
-    from logic.anime_cache import get_cached
+    from logic.classify.anime import get_cached
 
     candidates = [path.name]
     if path.suffix:

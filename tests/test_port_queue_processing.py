@@ -402,7 +402,7 @@ def test_tv_pack_rules_use_new_keys_and_map_legacy_ones(monkeypatch) -> None:
     monkeypatch.setattr("core.config.get_config", lambda: config)
 
     def reason(name: str) -> str:
-        return pending_scan._tv_pack_episode_rejection_reason(Path(name), video_exts)
+        return classify_tv_packs._tv_pack_episode_rejection_reason(Path(name), video_exts)
 
     assert reason("Show.S01E01.1080p.AMZN.mkv") == "TV episode missing media source token"
     assert reason("Show.S01E01.1080p.AMZN.WEB-DL.mkv") == ""
@@ -421,7 +421,7 @@ def test_year_named_folder_with_episodes_is_not_a_movie(tmp_path) -> None:
     _touch_file(show / "Show.S01E01.1080p.WEB-DL.mkv")
     _touch_file(show / "Show.S01E02.1080p.WEB-DL.mkv")
 
-    result = pending_scan.resolve_explicit_path(show, anime_lookup=lambda _name: False)
+    result = classify_explicit.resolve_explicit_path(show, anime_lookup=lambda _name: False)
 
     assert result.category != "movies"
 
@@ -524,7 +524,7 @@ def test_pending_watchdog_ignores_created_files_and_debounces() -> None:
 
 def test_anime_lookup_runs_outside_the_cache_lock(monkeypatch) -> None:
     # queue-backend-23
-    from logic import anime_cache
+    from logic.classify import anime as anime_cache
 
     lock_states: list[bool] = []
 

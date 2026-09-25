@@ -43,7 +43,8 @@ def main() -> None:
     config_mod.Config.nzb_sub = _state_path(root, "nzbs")  # type: ignore[method-assign]
     config_mod.Config.mediainfo_sub = _state_path(root, "mediainfo")  # type: ignore[method-assign]
 
-    from logic import anime_cache, category_overrides, updater
+    from logic import category_overrides, updater
+    from logic.classify import anime as anime_cache
 
     updater.STATE_DIR = root / "updater"
     updater.STATE_FILE = updater.STATE_DIR / "state.json"

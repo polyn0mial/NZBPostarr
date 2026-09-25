@@ -64,7 +64,7 @@ def test_queue_start_filters_misc_and_missing_category_but_runs_valid_items(tmp_
     ]
 
 def test_folder_category_hint_does_not_match_keyword_inside_ancestor_name() -> None:
-    from logic.pending_scan import infer_folder_category_hint
+    from logic.classify.hints import infer_folder_category_hint
 
     assert infer_folder_category_hint(Path("C:/Users/example/AppData/Local")) == ""
     assert infer_folder_category_hint(Path("C:/media/apps/releases")) == "apps"
@@ -150,7 +150,7 @@ def test_process_single_uses_expected_submission_category(tmp_path, monkeypatch)
 
         conf = _make_process_single_conf(case_root, include_script_dir=True)
         _configure_process_single_environment(monkeypatch, processing, conf)
-        monkeypatch.setattr("logic.anime_cache.get_cached", anime_lookup)
+        monkeypatch.setattr("logic.classify.anime.get_cached", anime_lookup)
 
         seen: dict[str, str] = {}
 
@@ -613,7 +613,7 @@ def test_collect_anime_check_names_includes_tv_movies_and_external() -> None:
     }
 
 def test_movie_name_detection_prefers_movie_classification(monkeypatch, tmp_path) -> None:
-    import logic.anime_cache as anime_cache
+    import logic.classify.anime as anime_cache
 
     cases = [
         ("detector-positive-overrides-year", "Animated.Feature.2001.1080p.BluRay.x264", "movies", True, "Anime", "anime"),
@@ -625,11 +625,11 @@ def test_movie_name_detection_prefers_movie_classification(monkeypatch, tmp_path
     for case_name, name, folder_hint, cached, expected_itype, expected_category in cases:
         monkeypatch.setattr(anime_cache, "get_cached", lambda _name: cached)
 
-        assert pending_snapshot_mod.classify_video_name(name, folder_hint) == expected_itype, case_name
+        assert classify_names.classify_video_name(name, folder_hint, anime_lookup=anime_cached_lookup) == expected_itype, case_name
 
         movie = _touch(tmp_path / case_name / name)
-        assert pending_scan.detect_auto_category(movie) == expected_category, case_name
-        assert pending_scan.detect_auto_itype(movie) == expected_itype, case_name
+        assert classify_content.detect_auto_category(movie) == expected_category, case_name
+        assert classify_content.detect_auto_itype(movie) == expected_itype, case_name
 
 def test_resolve_explicit_path_single_item_cases(tmp_path) -> None:
     cases = [
@@ -660,7 +660,7 @@ def test_resolve_explicit_path_single_item_cases(tmp_path) -> None:
         if category_hint is not None:
             kwargs["category_hint"] = category_hint
 
-        result = pending_scan.resolve_explicit_path(target, **kwargs)
+        result = classify_explicit.resolve_explicit_path(target, **kwargs)
 
         assert result.category == expected_category, case_name
         assert result.itype == expected_itype, case_name
@@ -689,7 +689,7 @@ def test_pokemon_anime_hint_survives_accent_and_source_tokens(tmp_path) -> None:
         detector_queries.append(name)
         return True
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         anime_dir,
         category_hint="anime",
         anime_lookup=detector,
@@ -700,12 +700,12 @@ def test_pokemon_anime_hint_survives_accent_and_source_tokens(tmp_path) -> None:
     assert result.queue_paths == episodes
     assert any("pokemon" in query.casefold() for query in detector_queries)
     for episode in episodes:
-        assert pending_scan.detect_auto_category(
+        assert classify_content.detect_auto_category(
             episode,
             folder_category_hint="anime",
             anime_lookup=detector,
         ) == "anime"
-        assert pending_scan.detect_auto_itype(
+        assert classify_content.detect_auto_itype(
             episode,
             folder_category_hint="anime",
             anime_lookup=detector,
@@ -715,7 +715,7 @@ def test_pokemon_anime_hint_survives_accent_and_source_tokens(tmp_path) -> None:
 def test_archer_remains_western_tv_even_under_anime_hint(tmp_path) -> None:
     episode = _touch(tmp_path / "Anime" / "Archer.S01E01.1080p.WEB-DL.mkv")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         episode,
         category_hint="anime",
         anime_lookup=lambda _name: False,
@@ -723,7 +723,7 @@ def test_archer_remains_western_tv_even_under_anime_hint(tmp_path) -> None:
 
     assert result.category == "tv"
     assert result.itype == "TV Episode"
-    assert pending_scan.classify_video_name(
+    assert classify_names.classify_video_name(
         episode.name,
         "anime",
         anime_lookup=lambda _name: False,
@@ -731,13 +731,12 @@ def test_archer_remains_western_tv_even_under_anime_hint(tmp_path) -> None:
 
 
 def test_detector_result_precedes_generic_episode_shape(monkeypatch) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
 
-    monkeypatch.setattr(pending_snapshot_mod, "_anime_cache_lookup", lambda _name: True)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: True)
 
     release_name = "Any.Series.S12E34.1080p.WEB-DL"
 
-    assert pending_scan.classify_video_name(
+    assert classify_names.classify_video_name(
         release_name,
         anime_lookup=lambda _name: True,
     ) == "Anime"
@@ -746,7 +745,7 @@ def test_detector_result_precedes_generic_episode_shape(monkeypatch) -> None:
 def test_detector_result_precedes_generic_movie_year(tmp_path) -> None:
     release = _touch(tmp_path / "Animated.Feature.2001.1080p.BluRay.mkv")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         release,
         category_hint="movies",
         anime_lookup=lambda _name: True,
@@ -758,15 +757,19 @@ def test_detector_result_precedes_generic_movie_year(tmp_path) -> None:
 
 
 def test_production_classifier_has_no_title_specific_exception_tables() -> None:
-    source = _read_repo_text("logic", "pending_scan.py")
-    snapshot_source = _read_repo_text("logic", "pending_snapshot.py")
+    sources = {
+        path.relative_to(REPO_ROOT).as_posix(): path.read_text(encoding="utf-8")
+        for path in sorted((REPO_ROOT / "logic").rglob("*.py"))
+    }
+    assert "logic/classify/names.py" in sources
 
-    assert "_KNOWN_ANIME_TITLE" not in source
-    assert "_KNOWN_TV_TITLE" not in source
-    assert "_KNOWN_MOVIE_TITLE" not in source
-    assert "_KNOWN_NON_ANIME_TV_TITLE" not in source
-    assert "looks_like_known_" not in source
-    assert "pokemon|pocket monsters|horizons" not in snapshot_source
+    for relative, source in sources.items():
+        assert "_KNOWN_ANIME_TITLE" not in source, relative
+        assert "_KNOWN_TV_TITLE" not in source, relative
+        assert "_KNOWN_MOVIE_TITLE" not in source, relative
+        assert "_KNOWN_NON_ANIME_TV_TITLE" not in source, relative
+        assert "looks_like_known_" not in source, relative
+        assert "pokemon|pocket monsters|horizons" not in source, relative
 
 
 def test_air_date_episodes_are_tv_not_movies() -> None:
@@ -776,7 +779,6 @@ def test_air_date_episodes_are_tv_not_movies() -> None:
     "Movie" before any TV pattern was consulted, so every daily show, news and
     sport broadcast was filed as a movie.
     """
-    from logic import pending_snapshot
 
     episodes = [
         "The.Daily.Show.2024.03.11.Jon.Stewart.720p.WEB",
@@ -784,9 +786,9 @@ def test_air_date_episodes_are_tv_not_movies() -> None:
         "Show.Name.2020.12.31.Guest.720p.HDTV",
     ]
     for name in episodes:
-        assert pending_scan.classify_video_name(name) == "TV Show", name
+        assert classify_names.classify_video_name(name) == "TV Show", name
         # The dashboard path must agree with the scanner path.
-        assert pending_snapshot.classify_video_name(name) == "TV Show", name
+        assert classify_names.classify_video_name(name, anime_lookup=anime_cached_lookup) == "TV Show", name
 
     # A bare release year, a title that is a number, and an impossible
     # month/day must all still read as movies.
@@ -797,7 +799,7 @@ def test_air_date_episodes_are_tv_not_movies() -> None:
         "Movie.Name.2019.13.45.1080p",
     ]
     for name in movies:
-        assert pending_scan.classify_video_name(name) == "Movie", name
+        assert classify_names.classify_video_name(name) == "Movie", name
 
 def test_season_series_tokens_do_not_swallow_resolution_or_year_digits() -> None:
     """Season/Series must be followed by a standalone number, not a prefix of one.
@@ -813,7 +815,7 @@ def test_season_series_tokens_do_not_swallow_resolution_or_year_digits() -> None
         ("The.Last.Season.2014.1080p.WEB-DL", "Movie"),
     ]
     for name, expected in cases:
-        assert pending_scan.classify_video_name(name) == expected, name
+        assert classify_names.classify_video_name(name) == expected, name
 
     # Genuine season/series markers must still be detected.
     shows = [
@@ -822,17 +824,17 @@ def test_season_series_tokens_do_not_swallow_resolution_or_year_digits() -> None
         "Doctor.Who.Series.4.1080p.BluRay",
     ]
     for name in shows:
-        assert pending_scan.classify_video_name(name) == "TV Show", name
+        assert classify_names.classify_video_name(name) == "TV Show", name
 
 def test_anime_cache_key_normalizes_latin_diacritics() -> None:
-    from logic import anime_cache
+    from logic.classify import anime as anime_cache
 
     assert anime_cache._cache_key("Pokémon") == anime_cache._cache_key("Pokemon")
     assert anime_cache._title_matches("Pokémon", "Pokemon") is True
 
 
 def test_two_word_translated_anime_match_respects_release_year(monkeypatch, tmp_path) -> None:
-    from logic import anime_cache
+    from logic.classify import anime as anime_cache
 
     response_data = {
         "data": [
@@ -868,19 +870,19 @@ def test_two_word_translated_anime_match_respects_release_year(monkeypatch, tmp_
     assert anime_cache.is_anime(original_anime) is True
     assert anime_cache.get_cached(original_anime) is True
     assert anime_cache.set_cached("Ghost in the Shell", True) is True
-    assert pending_scan.classify_video_name(
+    assert classify_names.classify_video_name(
         live_action,
         anime_lookup=anime_cache.get_cached,
     ) == "Movie"
     release_file = _touch(tmp_path / f"{live_action}.mkv", b"x")
-    assert pending_scan.detect_auto_category(
+    assert classify_content.detect_auto_category(
         release_file,
         anime_lookup=anime_cache.get_cached,
     ) == "movies"
 
 
 def test_jikan_entry_year_uses_aired_date_when_year_is_missing() -> None:
-    from logic import anime_cache
+    from logic.classify import anime as anime_cache
 
     entry = {"year": None, "aired": {"from": "1995-11-18T00:00:00+00:00"}}
 
@@ -888,7 +890,7 @@ def test_jikan_entry_year_uses_aired_date_when_year_is_missing() -> None:
 
 
 def test_anime_cache_correction_can_flip_and_invalidate_one_release(monkeypatch, tmp_path) -> None:
-    from logic import anime_cache
+    from logic.classify import anime as anime_cache
 
     cache_path = tmp_path / "anime.json"
     monkeypatch.setattr(anime_cache, "_cache", {})
@@ -912,12 +914,12 @@ def test_anime_cache_correction_can_flip_and_invalidate_one_release(monkeypatch,
 def test_explicit_user_category_overrides_cached_anime_verdict() -> None:
     name = "Ghost.in.the.Shell.2017.1080p.BluRay"
 
-    assert pending_scan.classify_video_name(
+    assert classify_names.classify_video_name(
         name,
         anime_lookup=lambda _name: True,
         explicit_category_hint="movies",
     ) == "Movie"
-    assert pending_scan.classify_video_name(
+    assert classify_names.classify_video_name(
         name,
         anime_lookup=lambda _name: False,
         explicit_itype_hint="Anime",
@@ -925,7 +927,7 @@ def test_explicit_user_category_overrides_cached_anime_verdict() -> None:
 
 
 def test_explicit_category_outranks_stale_display_itype() -> None:
-    result = pending_scan.classify_video_name_result(
+    result = classify_names.classify_video_name_result(
         "Show.Name.S01E01.1080p.WEB-DL",
         explicit_category_hint="movies",
         explicit_itype_hint="TV Show",
@@ -939,7 +941,7 @@ def test_explicit_movie_category_outranks_stale_tv_itype_for_path_resolution(tmp
     release.mkdir()
     _touch(release / "Movie.Collection.2024.1080p.BluRay.mkv", b"x")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         release,
         category_hint="movies",
         itype_hint="TV Show",
@@ -951,7 +953,7 @@ def test_explicit_movie_category_outranks_stale_tv_itype_for_path_resolution(tmp
 
 
 def test_structured_video_classification_keeps_unknowns_explicit() -> None:
-    result = pending_scan.classify_video_name_result(
+    result = classify_names.classify_video_name_result(
         "Plain.Release.Name.1080p.BluRay",
         anime_lookup=lambda _name: False,
     )
@@ -961,8 +963,8 @@ def test_structured_video_classification_keeps_unknowns_explicit() -> None:
     assert result.confidence == "unknown"
     assert result.method == "No reliable signal"
     assert result.evidence == ()
-    assert pending_scan.classify_video_name("Plain.Release.Name.1080p.BluRay") == "Misc"
-    assert pending_scan.classify_video_name(
+    assert classify_names.classify_video_name("Plain.Release.Name.1080p.BluRay") == "Misc"
+    assert classify_names.classify_video_name(
         "Plain.Release.Name.1080p.BluRay",
         assume_movie_if_unknown=True,
     ) == "Movie"
@@ -970,7 +972,7 @@ def test_structured_video_classification_keeps_unknowns_explicit() -> None:
 
 def test_guessit_episode_metadata_requires_an_episode_shaped_name(monkeypatch) -> None:
     monkeypatch.setattr(
-        pending_scan,
+        classify_names,
         "parse_release_name",
         lambda _name: {
             "media_type": "tv",
@@ -979,11 +981,11 @@ def test_guessit_episode_metadata_requires_an_episode_shaped_name(monkeypatch) -
         },
     )
 
-    result = pending_scan.classify_video_name_result(
+    result = classify_names.classify_video_name_result(
         "Show.Name.S1.1.1080p.WEB-DL",
         anime_lookup=lambda _name: False,
     )
-    unshaped = pending_scan.classify_video_name_result(
+    unshaped = classify_names.classify_video_name_result(
         "Plain.Release.Name.1080p.WEB-DL",
         anime_lookup=lambda _name: False,
     )
@@ -999,7 +1001,7 @@ def test_guessit_episode_metadata_requires_an_episode_shaped_name(monkeypatch) -
 
 def test_guessit_movie_metadata_requires_year_or_collection(monkeypatch) -> None:
     monkeypatch.setattr(
-        pending_scan,
+        classify_names,
         "parse_release_name",
         lambda _name: {
             "media_type": "movie",
@@ -1008,11 +1010,11 @@ def test_guessit_movie_metadata_requires_year_or_collection(monkeypatch) -> None
         },
     )
 
-    collection = pending_scan.classify_video_name_result(
+    collection = classify_names.classify_video_name_result(
         "Example.Trilogy.1080p.BluRay",
         anime_lookup=lambda _name: False,
     )
-    unknown = pending_scan.classify_video_name_result(
+    unknown = classify_names.classify_video_name_result(
         "Example.Release.1080p.BluRay",
         anime_lookup=lambda _name: False,
     )
@@ -1027,9 +1029,9 @@ def test_release_parser_failure_degrades_to_unknown(monkeypatch) -> None:
     def fail_parse(_name):
         raise ValueError("bad release")
 
-    monkeypatch.setattr(pending_scan, "parse_release_name", fail_parse)
+    monkeypatch.setattr(classify_names, "parse_release_name", fail_parse)
 
-    result = pending_scan.classify_video_name_result(
+    result = classify_names.classify_video_name_result(
         "Plain.Release.Name.1080p.BluRay",
         anime_lookup=lambda _name: False,
     )
@@ -1041,7 +1043,7 @@ def test_release_parser_failure_degrades_to_unknown(monkeypatch) -> None:
 def test_explicit_path_user_category_overrides_cached_anime_verdict(tmp_path) -> None:
     release = _touch(tmp_path / "Ghost.in.the.Shell.2017.1080p.BluRay.mkv", b"x")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         release,
         category_hint="movies",
         respect_explicit_hint=True,
@@ -1054,7 +1056,6 @@ def test_explicit_path_user_category_overrides_cached_anime_verdict(tmp_path) ->
 
 
 def test_part_numbered_miniseries_are_tv_before_movie_year() -> None:
-    from logic import pending_snapshot
 
     releases = [
         "Chernobyl.Part.1.2019.1080p.AMZN.WEB-DL-GROUP.mkv",
@@ -1062,8 +1063,8 @@ def test_part_numbered_miniseries_are_tv_before_movie_year() -> None:
     ]
 
     for name in releases:
-        assert pending_scan.classify_video_name(name) == "TV Show", name
-        assert pending_snapshot.classify_video_name(name) == "TV Show", name
+        assert classify_names.classify_video_name(name) == "TV Show", name
+        assert classify_names.classify_video_name(name, anime_lookup=anime_cached_lookup) == "TV Show", name
 
 
 @pytest.mark.parametrize(
@@ -1074,12 +1075,12 @@ def test_part_numbered_miniseries_are_tv_before_movie_year() -> None:
     ],
 )
 def test_part_numbered_feature_films_remain_movies(name) -> None:
-    assert pending_scan.classify_video_name(name, anime_lookup=lambda _name: False) == "Movie"
+    assert classify_names.classify_video_name(name, anime_lookup=lambda _name: False) == "Movie"
 
 
 def test_part_numbered_web_episode_without_year_is_tv() -> None:
     name = "Series.Name.Part.2.1080p.WEB-DL"
-    assert pending_scan.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
+    assert classify_names.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
 
 
 @pytest.mark.parametrize(
@@ -1091,17 +1092,16 @@ def test_part_numbered_web_episode_without_year_is_tv() -> None:
     ],
 )
 def test_high_absolute_episode_numbers_are_tv(monkeypatch, tmp_path, name) -> None:
-    from logic import anime_cache
-    from logic import pending_snapshot
+    from logic.classify import anime as anime_cache
 
     entry = _touch(tmp_path / name, b"x")
     monkeypatch.setattr(anime_cache, "get_cached", lambda _name: False)
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: False)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
-    assert pending_scan.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
-    assert pending_scan.detect_auto_itype(entry, anime_lookup=lambda _name: False) == "TV Episode"
-    assert pending_scan.detect_auto_category(entry, anime_lookup=lambda _name: False) == "tv"
-    assert pending_snapshot.detect_external_category(name, entry) == "tv"
+    assert classify_names.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
+    assert classify_content.detect_auto_itype(entry, anime_lookup=lambda _name: False) == "TV Episode"
+    assert classify_content.detect_auto_category(entry, anime_lookup=lambda _name: False) == "tv"
+    assert classify_content.detect_external_category(name, entry) == "tv"
 
 
 @pytest.mark.parametrize(
@@ -1115,7 +1115,7 @@ def test_high_absolute_episode_numbers_are_tv(monkeypatch, tmp_path, name) -> No
     ],
 )
 def test_high_absolute_episode_pattern_excludes_years_and_resolutions(name, expected) -> None:
-    assert pending_scan.classify_video_name(name, anime_lookup=lambda _name: False) == expected
+    assert classify_names.classify_video_name(name, anime_lookup=lambda _name: False) == expected
 
 
 @pytest.mark.parametrize(
@@ -1127,17 +1127,16 @@ def test_high_absolute_episode_pattern_excludes_years_and_resolutions(name, expe
     ],
 )
 def test_recognized_sports_events_are_tv(monkeypatch, tmp_path, name) -> None:
-    from logic import anime_cache
-    from logic import pending_snapshot
+    from logic.classify import anime as anime_cache
 
     entry = _touch(tmp_path / name, b"x")
     monkeypatch.setattr(anime_cache, "get_cached", lambda _name: False)
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: False)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
-    assert pending_scan.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
-    assert pending_scan.detect_auto_itype(entry, anime_lookup=lambda _name: False) == "TV Episode"
-    assert pending_scan.detect_auto_category(entry, anime_lookup=lambda _name: False) == "tv"
-    assert pending_snapshot.detect_external_category(name, entry) == "tv"
+    assert classify_names.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
+    assert classify_content.detect_auto_itype(entry, anime_lookup=lambda _name: False) == "TV Episode"
+    assert classify_content.detect_auto_category(entry, anime_lookup=lambda _name: False) == "tv"
+    assert classify_content.detect_external_category(name, entry) == "tv"
 
 
 @pytest.mark.parametrize(
@@ -1150,13 +1149,13 @@ def test_recognized_sports_events_are_tv(monkeypatch, tmp_path, name) -> None:
     ],
 )
 def test_sports_event_signal_requires_both_league_and_context(name) -> None:
-    assert pending_scan.classify_video_name(name, anime_lookup=lambda _name: False) == "Movie"
+    assert classify_names.classify_video_name(name, anime_lookup=lambda _name: False) == "Movie"
 
 
 def test_complete_miniseries_phrase_is_tv_before_movie_year() -> None:
     name = "Band.of.Brothers.2001.COMPLETE.MINISERIES.1080p.BluRay"
 
-    assert pending_scan.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
+    assert classify_names.classify_video_name(name, anime_lookup=lambda _name: False) == "TV Show"
 
 
 @pytest.mark.parametrize(
@@ -1178,25 +1177,23 @@ def test_snapshot_and_scan_external_categories_agree(
     name,
     expected_category,
 ) -> None:
-    from logic import anime_cache
-    from logic import pending_snapshot
+    from logic.classify import anime as anime_cache
 
     entry = _touch(tmp_path / name, b"x")
     monkeypatch.setattr(anime_cache, "get_cached", lambda _name: False)
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: False)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
-    assert pending_scan.detect_external_category(name, entry) == expected_category
-    assert pending_snapshot.detect_external_category(name, entry) == expected_category
+    assert classify_content.detect_external_category(name, entry) == expected_category
+    assert classify_content.detect_external_category(name, entry) == expected_category
 
 
 def test_confirmed_anime_cache_still_overrides_external_tv_shape(monkeypatch, tmp_path) -> None:
-    from logic import pending_snapshot
 
     name = "Anime.Name.S01E01.1080p.WEB.mkv"
     entry = _touch(tmp_path / name, b"x")
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: True)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: True)
 
-    assert pending_snapshot.detect_external_category(name, entry) == "anime"
+    assert classify_content.detect_external_category(name, entry) == "anime"
 
 
 @pytest.mark.parametrize(
@@ -1210,7 +1207,7 @@ def test_snapshot_metadata_keeps_unknown_video_for_manual_review(monkeypatch, tm
     from logic import pending_snapshot
 
     entry = _touch(tmp_path / name, b"x")
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: False)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
     metadata = pending_snapshot._build_detected_item_metadata(entry)
 
@@ -1229,11 +1226,10 @@ def test_guessit_episode_signal_reaches_snapshot_and_processing(monkeypatch, tmp
         "season_number": 1,
         "episode_number": 1,
     }
-    monkeypatch.setattr(pending_scan, "parse_release_name", lambda _name: parsed)
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: False)
-    monkeypatch.setattr(processing, "_processing_cached_anime_lookup", lambda _name: False)
+    monkeypatch.setattr(classify_names, "parse_release_name", lambda _name: parsed)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
-    resolution = pending_scan.resolve_explicit_path(
+    resolution = classify_explicit.resolve_explicit_path(
         episode,
         anime_lookup=lambda _name: False,
     )
@@ -1251,8 +1247,8 @@ def test_guessit_episode_signal_reaches_snapshot_and_processing(monkeypatch, tmp
     assert resolution.queue_paths == (episode,)
     assert resolution.detection_method == "guessit"
     assert resolution.detection_evidence == ("episode metadata",)
-    assert pending_scan.detect_content_itype(episode.name, episode, "") == "TV Episode"
-    assert pending_scan.detect_auto_category(episode, anime_lookup=lambda _name: False) == "tv"
+    assert classify_content.detect_content_itype(episode.name, episode, "") == "TV Episode"
+    assert classify_content.detect_auto_category(episode, anime_lookup=lambda _name: False) == "tv"
     assert metadata["detected_category"] == "tv"
     assert metadata["detection_method"] == "guessit"
     assert metadata["detection_confidence"] == "strong"
@@ -1271,10 +1267,10 @@ def test_guessit_movie_collection_reaches_explicit_and_snapshot_paths(monkeypatc
         "season_number": None,
         "episode_number": None,
     }
-    monkeypatch.setattr(pending_scan, "parse_release_name", lambda _name: parsed)
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: False)
+    monkeypatch.setattr(classify_names, "parse_release_name", lambda _name: parsed)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
-    resolution = pending_scan.resolve_explicit_path(
+    resolution = classify_explicit.resolve_explicit_path(
         collection,
         category_hint="external",
         anime_lookup=lambda _name: False,
@@ -1285,7 +1281,7 @@ def test_guessit_movie_collection_reaches_explicit_and_snapshot_paths(monkeypatc
     assert resolution.queue_paths == (collection,)
     assert resolution.detection_method == "guessit"
     assert resolution.detection_evidence == ("movie collection",)
-    assert pending_scan.detect_content_itype(collection.name, collection, "") == "Movie"
+    assert classify_content.detect_content_itype(collection.name, collection, "") == "Movie"
     assert metadata["detected_category"] == "movies"
     assert metadata["detection_method"] == "guessit"
     assert metadata["detection_evidence"] == ["movie collection"]
@@ -1294,7 +1290,7 @@ def test_guessit_movie_collection_reaches_explicit_and_snapshot_paths(monkeypatc
 def test_non_video_extension_episode_is_reported_as_ignored(tmp_path) -> None:
     episode = _touch(tmp_path / "Show.Name.S01E01.WEB")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         episode,
         anime_lookup=lambda _name: False,
     )
@@ -1313,7 +1309,7 @@ def test_complete_series_container_queues_valid_episode_leaves(tmp_path) -> None
     s02e01 = _touch(complete / "Season 2" / "Show.Name.S02E01.1080p.WEB-DL.mkv", b"b")
     extra = _touch(complete / "Season 2" / "readme.txt", "x")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         complete,
         category_hint="tv",
         anime_lookup=lambda _name: False,
@@ -1331,7 +1327,7 @@ def test_single_nested_movie_filename_classifies_neutral_parent(tmp_path) -> Non
     parent = tmp_path / "TV Shows"
     _touch(parent / "Movie.Name.2020.1080p.BluRay.mkv", b"x")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         parent,
         anime_lookup=lambda _name: False,
     )
@@ -1346,7 +1342,7 @@ def test_one_year_bearing_child_does_not_classify_multi_video_parent_as_movie(tm
     _touch(parent / "Movie.Name.2020.1080p.BluRay.mkv", b"x")
     _touch(parent / "Untitled.Release.1080p.WEB.mkv", b"x")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         parent,
         anime_lookup=lambda _name: False,
     )
@@ -1358,7 +1354,7 @@ def test_nested_season_and_episode_folders_supply_tv_context(tmp_path) -> None:
     show = tmp_path / "Show"
     episode = _touch(show / "Season 1" / "Episode 1" / "file.mkv", b"x")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         show,
         anime_lookup=lambda _name: False,
     )
@@ -1377,7 +1373,7 @@ def test_resolve_explicit_path_uses_jikan_for_anime_and_filters_extras(tmp_path)
     episode_two = _touch(anime_dir / "[SubsPlease] Frieren - 02 (1080p).mkv", b"b")
     opening = _touch(anime_dir / "[SubsPlease] Frieren - NCOP (1080p).mkv", b"c")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         anime_dir,
         category_hint="tv",
         anime_lookup=lambda _name: True,
@@ -1397,7 +1393,7 @@ def test_resolve_explicit_path_tv_pack_ignores_non_episode_files(tmp_path) -> No
     opening = _touch(season / "Show.Name.OP.1080p.WEB-DL.mkv", b"c")
     notes = _touch(season / "readme.txt", "hello")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         season,
         category_hint="tv",
         anime_lookup=lambda _name: False,
@@ -1418,7 +1414,7 @@ def test_resolve_explicit_path_disc_content_is_flagged_and_ignored(tmp_path) -> 
     stream = _touch(release_dir / "BDMV" / "00001.m2ts", b"a")
     index = _touch(release_dir / "BDMV" / "index.bdmv", b"b")
 
-    result = pending_scan.resolve_explicit_path(release_dir, anime_lookup=lambda _name: False)
+    result = classify_explicit.resolve_explicit_path(release_dir, anime_lookup=lambda _name: False)
 
     assert result.category == "movies"
     assert result.itype == "Movie"
@@ -1437,13 +1433,13 @@ def test_bare_disc_images_are_apps_not_video_discs(monkeypatch, tmp_path, extens
 
     release_dir = tmp_path / "SomeGame-RUNE"
     image = _touch(release_dir / f"somegame{extension}", b"a")
-    monkeypatch.setattr(pending_snapshot, "_anime_cache_lookup", lambda _name: False)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: False)
 
-    assert pending_scan.detect_auto_itype(release_dir, anime_lookup=lambda _name: False) == "App"
-    assert pending_scan.detect_auto_category(release_dir, anime_lookup=lambda _name: False) == "apps"
-    assert pending_scan.detect_external_category(release_dir.name, release_dir) == "apps"
+    assert classify_content.detect_auto_itype(release_dir, anime_lookup=lambda _name: False) == "App"
+    assert classify_content.detect_auto_category(release_dir, anime_lookup=lambda _name: False) == "apps"
+    assert classify_content.detect_external_category(release_dir.name, release_dir) == "apps"
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         release_dir,
         anime_lookup=lambda _name: False,
     )
@@ -1462,8 +1458,8 @@ def test_installer_folder_with_disc_image_is_app_content(tmp_path) -> None:
     installer = _touch(release_dir / "setup.exe", b"b")
     data = _touch(release_dir / "setup-1.bin", b"c")
 
-    assert pending_scan.detect_auto_category(release_dir, anime_lookup=lambda _name: False) == "apps"
-    result = pending_scan.resolve_explicit_path(release_dir, anime_lookup=lambda _name: False)
+    assert classify_content.detect_auto_category(release_dir, anime_lookup=lambda _name: False) == "apps"
+    result = classify_explicit.resolve_explicit_path(release_dir, anime_lookup=lambda _name: False)
 
     assert result.category == "apps"
     assert result.itype == "App"
@@ -1472,22 +1468,21 @@ def test_installer_folder_with_disc_image_is_app_content(tmp_path) -> None:
 
 
 def test_disc_words_without_structure_do_not_force_movie(tmp_path) -> None:
-    from logic import pending_snapshot
 
     release_dir = tmp_path / "Game.Full.BluRay"
     _touch(release_dir / "installer.iso", b"a")
     marker_only_file = _touch(tmp_path / "VIDEO_TS" / "readme.txt", b"b")
 
-    assert pending_scan.detect_auto_category(release_dir, anime_lookup=lambda _name: False) == "apps"
-    assert pending_scan.detect_auto_itype(release_dir, anime_lookup=lambda _name: False) == "App"
-    assert pending_snapshot._classify_standalone_file_category(marker_only_file) == ""
+    assert classify_content.detect_auto_category(release_dir, anime_lookup=lambda _name: False) == "apps"
+    assert classify_content.detect_auto_itype(release_dir, anime_lookup=lambda _name: False) == "App"
+    assert classify_content.classify_standalone_file_category(marker_only_file) == ""
 
 
 def test_resolve_explicit_path_tv_disc_pack_stays_tv_when_anime_not_confirmed(tmp_path) -> None:
     season_dir = tmp_path / "Season 1"
     _touch(season_dir / "DISC_1" / "VIDEO_TS" / "VIDEO_TS.IFO", b"a")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         season_dir,
         category_hint="anime",
         anime_lookup=lambda _name: False,
@@ -1503,7 +1498,7 @@ def test_resolve_explicit_path_uses_series_signature_for_generic_seasonal_anime_
     season_dir = tmp_path / "Seasonal Anime"
     episode = _touch(season_dir / "[SubsPlease] Frieren - 01 (1080p).mkv", b"x")
 
-    result = pending_scan.resolve_explicit_path(
+    result = classify_explicit.resolve_explicit_path(
         season_dir,
         anime_lookup=lambda name: True if str(name).strip().lower() == "frieren" else None,
     )
@@ -1519,7 +1514,7 @@ def test_resolve_explicit_path_detects_ebook_folder_and_ignores_sidecars(tmp_pat
     cover = _touch(books_dir / "cover.jpg", b"y")
     readme = _touch(books_dir / "readme.txt", "hello")
 
-    result = pending_scan.resolve_explicit_path(books_dir)
+    result = classify_explicit.resolve_explicit_path(books_dir)
 
     assert result.category == "books"
     assert result.itype == "Ebook"
@@ -1538,7 +1533,7 @@ def test_pending_scan_falls_back_to_misc_for_ambiguous_external_video(tmp_path) 
         root = tmp_path / case_name / root_name
         release = _touch(root / release_name, b"a")
 
-        items = pending_scan.scan_folder_items(root, "external")
+        items = pending_roots.scan_folder_items(root, "external")
 
         assert len(items) == 1, case_name
         assert items[0].path == release, case_name
@@ -2008,7 +2003,7 @@ def test_disc_selection_queues_the_whole_release_and_routes_by_underlying_type(m
 
     release = tmp_path / "Show.Name.S01.DVD"
     _touch(release / "VIDEO_TS" / "VIDEO_TS.IFO")
-    monkeypatch.setattr(processing, "_processing_cached_anime_lookup", lambda _name: True)
+    monkeypatch.setattr("logic.classify.explicit.cached_lookup", lambda _name: True)
 
     items = processing._collect_targeted_job_items(
         paths=[str(release)],
@@ -2025,7 +2020,7 @@ def test_disc_selection_queues_the_whole_release_and_routes_by_underlying_type(m
 
 
 def test_targeted_job_assembly_never_uses_live_anime_lookup(monkeypatch, tmp_path) -> None:
-    from logic import anime_cache
+    from logic.classify import anime as anime_cache
     import logic.processing as processing
 
     movie = _touch(tmp_path / "Movie.Name.2024.1080p.BluRay.mkv", b"x")
@@ -2034,7 +2029,7 @@ def test_targeted_job_assembly_never_uses_live_anime_lookup(monkeypatch, tmp_pat
         raise AssertionError("targeted job assembly called the live anime detector")
 
     monkeypatch.setattr(anime_cache, "is_anime", fail_live_lookup)
-    monkeypatch.setattr(processing, "_processing_cached_anime_lookup", lambda _name: False)
+    monkeypatch.setattr("logic.classify.explicit.cached_lookup", lambda _name: False)
 
     items = processing._collect_targeted_job_items(
         paths=[str(movie)],
@@ -2126,14 +2121,13 @@ def test_scan_pending_all_marks_ebook_folder_and_ignores_sidecars(monkeypatch, t
 
 
 def test_video_folder_is_not_reclassified_by_book_or_audio_sidecars(tmp_path) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
 
     release = tmp_path / "Pokemon.S20"
     _touch(release / "Pokemon.S20E01.1080p.WEBRip.mkv")
     _touch(release / "episode-guide.epub")
     _touch(release / "commentary.mp3")
 
-    assert pending_snapshot_mod._directory_extension_first_category(release) == ""
+    assert classify_content._directory_extension_first_category(release) == ""
 
 
 def test_audio_dominant_album_ignores_one_promo_video(tmp_path) -> None:
@@ -2142,11 +2136,11 @@ def test_audio_dominant_album_ignores_one_promo_video(tmp_path) -> None:
     cover = _touch(release / "cover.jpg", b"x")
     promo = _touch(release / "promo.mp4", b"x")
 
-    assert pending_scan.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Music"
-    assert pending_scan.detect_auto_category(release, anime_lookup=lambda _name: False) == "music"
-    assert pending_scan.detect_external_category(release.name, release) == "music"
+    assert classify_content.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Music"
+    assert classify_content.detect_auto_category(release, anime_lookup=lambda _name: False) == "music"
+    assert classify_content.detect_external_category(release.name, release) == "music"
 
-    result = pending_scan.resolve_explicit_path(release, anime_lookup=lambda _name: False)
+    result = classify_explicit.resolve_explicit_path(release, anime_lookup=lambda _name: False)
 
     assert result.category == "music"
     assert result.itype == "Music"
@@ -2162,21 +2156,20 @@ def test_audio_video_tie_remains_movie_led(tmp_path) -> None:
     _touch(release / "Movie.Name.2024.1080p.BluRay.mkv", b"x")
     _touch(release / "soundtrack.flac", b"x")
 
-    assert pending_scan.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Movie"
-    assert pending_scan.detect_auto_category(release, anime_lookup=lambda _name: False) == "movies"
-    assert pending_scan.detect_external_category(release.name, release) == "movies"
+    assert classify_content.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Movie"
+    assert classify_content.detect_auto_category(release, anime_lookup=lambda _name: False) == "movies"
+    assert classify_content.detect_external_category(release.name, release) == "movies"
 
 
 def test_track_numbered_mp3_folder_remains_unresolved_without_book_evidence(tmp_path) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
 
     release = tmp_path / "Brandon Sanderson - The Way of Kings"
     for number in range(1, 6):
         _touch(release / f"Track {number:02d}.mp3", b"x")
 
-    assert pending_scan.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Misc"
-    assert pending_scan.detect_auto_category(release, anime_lookup=lambda _name: False) == "misc"
-    assert pending_snapshot_mod._directory_extension_first_category(release) == ""
+    assert classify_content.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Misc"
+    assert classify_content.detect_auto_category(release, anime_lookup=lambda _name: False) == "misc"
+    assert classify_content._directory_extension_first_category(release) == ""
 
 
 @pytest.mark.parametrize(
@@ -2192,15 +2185,14 @@ def test_mp3_audiobook_evidence_classifies_as_audiobook(
     folder_name,
     file_pattern,
 ) -> None:
-    from logic import pending_snapshot as pending_snapshot_mod
 
     release = tmp_path / folder_name
     for number in range(1, 4):
         _touch(release / file_pattern.format(number=number), b"x")
 
-    assert pending_scan.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Audiobook"
-    assert pending_scan.detect_auto_category(release, anime_lookup=lambda _name: False) == "audiobooks"
-    assert pending_snapshot_mod._directory_extension_first_category(release) == "audiobooks"
+    assert classify_content.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Audiobook"
+    assert classify_content.detect_auto_category(release, anime_lookup=lambda _name: False) == "audiobooks"
+    assert classify_content._directory_extension_first_category(release) == "audiobooks"
 
 
 def test_album_hint_keeps_track_numbered_mp3_folder_as_music(tmp_path) -> None:
@@ -2208,8 +2200,8 @@ def test_album_hint_keeps_track_numbered_mp3_folder_as_music(tmp_path) -> None:
     for number in range(1, 4):
         _touch(release / f"Track {number:02d}.mp3", b"x")
 
-    assert pending_scan.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Music"
-    assert pending_scan.detect_auto_category(release, anime_lookup=lambda _name: False) == "music"
+    assert classify_content.detect_auto_itype(release, anime_lookup=lambda _name: False) == "Music"
+    assert classify_content.detect_auto_category(release, anime_lookup=lambda _name: False) == "music"
 
 
 def test_pending_scan_category_folder_filtering(tmp_path) -> None:
@@ -2228,10 +2220,10 @@ def test_pending_scan_category_folder_filtering(tmp_path) -> None:
             {"category": "tv", "path": str(tmp_path / "missing-tv")},
         ]
 
-    categories = pending_scan.get_configured_category_folders(_Conf(), include_external=False, must_exist=True)
+    categories = pending_roots.get_configured_category_folders(_Conf(), include_external=False, must_exist=True)
     assert categories == [("movies", movies)]
 
-    all_categories = pending_scan.get_configured_category_folders(_Conf(), include_external=True, must_exist=False)
+    all_categories = pending_roots.get_configured_category_folders(_Conf(), include_external=True, must_exist=False)
     assert all_categories == [
         ("movies", movies),
         ("external", ext),

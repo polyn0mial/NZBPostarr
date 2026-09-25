@@ -44,15 +44,10 @@ from core.utils import (
     update_job_progress,
     wait_for_job_resume,
 )
-from logic.pending_scan import (
-    _tv_pack_episode_rejection_reason,
-    find_configured_root,
-    get_configured_folders,
-    has_clear_movie_year,
-    looks_like_tv_name,
-    resolve_explicit_path,
-    scan_configured_items,
-)
+from logic.classify.explicit import resolve_explicit_path
+from logic.classify.names import has_clear_movie_year, looks_like_tv_name
+from logic.classify.tv_packs import _tv_pack_episode_rejection_reason
+from logic.pending.roots import find_configured_root, get_configured_folders, scan_configured_items
 from logic.uploaders import submit_api, upload_item
 _ONE_GIB: int = humanfriendly.parse_size("1 GiB")
 _APP_EXTENSIONS = {

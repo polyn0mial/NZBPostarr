@@ -24,7 +24,7 @@ from core.utils import (
     reset_thread_job,
     set_thread_job,
 )
-from logic.pending_scan import looks_like_generic_tv_season_folder
+from logic.classify.names import looks_like_generic_tv_season_folder
 from logic import usenet_stream
 _QUEUE_SOURCE_TOKEN_RE = re.compile(
     r"(?<![A-Za-z0-9])(?:WEB(?:[.\s_-]?DL|[.\s_-]?Rip|[.\s_-]?HD)?|WEBDL|WEBRip|WEBHD|BluRay|BDRip|BRRip|REMUX|HDRip|PDRip|HDTV|PDTV|"

@@ -35,7 +35,7 @@ class _QueueServiceMixinPart1:
         path_text = str(item.get("path") or "").strip()
         if path_text:
             try:
-                from logic.pending_scan import resolve_explicit_path
+                from logic.classify.explicit import resolve_explicit_path
 
                 resolved = resolve_explicit_path(
                     Path(path_text),
@@ -67,7 +67,7 @@ class _QueueServiceMixinPart1:
 
     @classmethod
     def _prepare_queue_start_items(cls, items: list[dict[str, Any]]) -> QueueStartSummary:
-        from logic.pending_scan import begin_scan_cache, end_scan_cache
+        from logic.classify.walk import begin_scan_cache, end_scan_cache
 
         runnable_items: list[dict[str, Any]] = []
         skipped_items: list[tuple[dict[str, Any], str]] = []
@@ -541,7 +541,7 @@ class _QueueServiceMixinPart1:
             return manual_category
 
         try:
-            from logic.pending_scan import resolve_explicit_path
+            from logic.classify.explicit import resolve_explicit_path
 
             resolved = resolve_explicit_path(path)
         except Exception as exc:  # pylint: disable=broad-exception-caught
@@ -621,7 +621,7 @@ class _QueueServiceMixinPart1:
             return request
 
         try:
-            from logic.pending_scan import resolve_explicit_path
+            from logic.classify.explicit import resolve_explicit_path
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.debug(f"Queue pack expansion unavailable: {exc}")
             return request
