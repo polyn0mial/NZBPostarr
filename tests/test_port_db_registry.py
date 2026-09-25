@@ -1,10 +1,25 @@
-# ruff: noqa: F403,F405
-
 """Regression tests for the db-registry fixes ported from the live server."""
 
 from loguru import logger
+from sqlalchemy import text
 
-from tests.support import *
+from datetime import datetime
+import os
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import yaml
+
+from core.db import engine as db_engine, ledger as db_ledger
+from core.db.engine import session_scope
+from core.db.models import Upload, UploadResult
+from core.db.uploads import record_nntp_success, update_db_destination
+from core.indexers import categories as categories_mod, http_submit as http_submit_mod, models as models_mod, registry as registry_mod
+from core.indexers.http_submit import submit_to_indexer
+from core.indexers.models import AuthConfig, IndexerDefinition
+
+from tests.conftest import _DummySubmitConfig, _make_sample_nzb
 
 from core.db.uploads import pin_folder_ts_to_children
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from tests.characterization._snapshot import HERE, assert_json_snapshot
-from tests.support import _make_queue_service_stub
+from tests.conftest import _make_queue_service_stub
 
 FIXTURE = HERE / "job_queue_state.json"
 EXPECTED = HERE / "job_queue_state.restored.json"

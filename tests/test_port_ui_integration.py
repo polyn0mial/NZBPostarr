@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from tests.support import _read_repo_text
+from tests.conftest import _read_repo_text
 
 
 def _page_base_js() -> str:

@@ -1,5 +1,3 @@
-# ruff: noqa: F403,F405
-
 """Frontend/backend API contract tests.
 
 The queue page's "Mark Uploaded" action and the history page's group expansion
@@ -10,7 +8,14 @@ turns that class of bug into a test failure.
 
 import re
 
-from tests.support import *
+from fastapi import HTTPException
+import pytest
+
+from api import history as history_api, pending as pending_api
+import app as app_mod
+from core.db import history as db_history, issues as db_issues, uploads as db_uploads
+
+from tests.conftest import REPO_ROOT, _run_async
 
 # Frontend sources that may contain /api/... calls.
 _JS_ROOT = REPO_ROOT / "webui" / "assets" / "js"

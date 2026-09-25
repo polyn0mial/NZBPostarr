@@ -1,8 +1,19 @@
-# ruff: noqa: F403,F405
-
 """NZBPostarr frontend tests."""
 
-from tests.support import *
+import pytest
+
+import app as app_mod
+from logic.classify import content as classify_content
+
+from tests.conftest import (
+    Page,
+    _expect_title,
+    _page_smoke_locator,
+    _path_matches,
+    _playwright_browsers_available,
+    _touch,
+    expect,
+)
 
 
 @pytest.mark.skipif(

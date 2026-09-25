@@ -1,10 +1,15 @@
-# ruff: noqa: F403,F405
-
 """Tests for indexer profile ergonomics: the opt-in 'profile: newznab' shortcut,
 closed-set validation of method/auth.method, and example/template file
 exclusion from the live indexer loader."""
 
-from tests.support import *
+import pytest
+import yaml
+
+from core.indexers import models as models_mod, registry as registry_mod
+from core.indexers.http_submit import submit_to_indexer
+from core.indexers.models import AuthConfig, IndexerDefinition
+
+from tests.conftest import _DummySubmitConfig, _capture_submit_request, _make_sample_nzb, _read_repo_text
 
 def test_shipped_indexers_load_with_unchanged_auth_method_and_categories() -> None:
     expected = {

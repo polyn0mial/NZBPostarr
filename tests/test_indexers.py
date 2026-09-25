@@ -1,8 +1,28 @@
-# ruff: noqa: F403,F405
-
 """NZBPostarr indexers tests."""
 
-from tests.support import *
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from api import pending as pending_api
+from core.config import Config
+from core.indexers import categories as categories_mod, models as models_mod, registry as registry_mod
+from core.indexers.http_submit import submit_to_indexer
+from core.indexers.models import AuthConfig, IndexerDefinition, SubmitResult, resolve_indexer_api_key, resolve_indexer_username
+from logic.pending import view as pending_view
+
+from tests.conftest import (
+    REPO_ROOT,
+    _DummySubmitConfig,
+    _capture_submit_request,
+    _make_pending_index_manager,
+    _make_pending_snapshot,
+    _make_sample_nzb,
+    _read_repo_text,
+    _run_async,
+    _write_valid_test_nzb,
+)
 from logic import settings as settings_service
 
 def test_indexer_secret_resolution() -> None:
@@ -277,7 +297,7 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
 
 
 def test_books_mapping_advertises_only_books_for_all_jobs(monkeypatch) -> None:
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     indexer = IndexerDefinition(
         id="books-check",
@@ -669,7 +689,7 @@ def test_force_upload_items_keeps_mixed_categories_in_one_request(tmp_path):
     assert captured["kwargs"] == {"source": "pending-force-upload", "reuse_running": False}
 
 def test_submit_api_batch_isolates_indexer_exceptions(tmp_path, monkeypatch) -> None:
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     nzb_file = tmp_path / "sample.nzb"
     nzb_file.write_bytes(b"x")

@@ -1,8 +1,40 @@
-# ruff: noqa: F403,F405
-
 """NZBPostarr system tests."""
 
-from tests.support import *
+import asyncio
+import json
+from pathlib import Path
+
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+import pytest
+
+from api import assets as assets_api, deps as deps_api, pages as pages_api, settings as settings_api
+from cli import run as cli_run
+from cli.commands import stats as cli_stats
+from core import config as config_mod, redaction
+from core.config import Config
+from core.db.schema import init_database
+from core.db.stats import get_system_stats_history, record_system_stats
+from core.indexers import registry as registry_mod
+from core.logging import ConsoleBuffer, console
+from logic import autoupload
+from logic.classify import content as classify_content
+from logic.pending import roots as pending_roots
+from logic.stats.collector import format_seconds, parse_speed_to_bps
+
+from tests.conftest import (
+    _fake_success_response,
+    _make_force_test_indexer,
+    _make_force_test_indexer_map,
+    _make_force_test_server,
+    _make_processing_conf,
+    _make_request,
+    _make_success_indexer,
+    _run_async,
+    _set_duplicate_checking,
+    _touch,
+    patch_hit,
+)
 
 def test_stats_engine_parsing_and_formatting() -> None:
     """Verify speed parsing and duration formatting edge cases."""
@@ -267,7 +299,7 @@ def test_console_buffer_operations() -> None:
 def test_oversized_folder_still_processes_inner_files(tmp_path, monkeypatch):
     from unittest.mock import patch
 
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
     from logic.pending.roots import PendingScanItem
 
     monkeypatch.setenv("NZBPOSTARR_VALIDATE_ISOLATE", "0")
@@ -337,7 +369,7 @@ def test_oversized_folder_still_processes_inner_files(tmp_path, monkeypatch):
 def test_check_tools_honors_configured_commands(tmp_path) -> None:
     from types import SimpleNamespace
 
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     rar = tmp_path / "rar.exe"
     parpar = tmp_path / "parpar.exe"
@@ -372,7 +404,7 @@ def test_run_command_handles_carriage_return_progress() -> None:
     assert parsed == ["10%", "20%", "Done"]
 
 def test_runtime_checkpoint_keeps_uploading_item_when_prefetch_finishes(tmp_path) -> None:
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     uploading_path = tmp_path / "Uploading.Movie.mkv"
     prefetched_path = tmp_path / "Prefetched.Movie.mkv"
@@ -390,7 +422,7 @@ def test_runtime_checkpoint_keeps_uploading_item_when_prefetch_finishes(tmp_path
     assert persisted == [True]
 
 def test_generate_mediainfo_uses_one_cli_pass(tmp_path, monkeypatch) -> None:
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     source = tmp_path / "Movie.Name.2026.mkv"
     source.write_bytes(b"video")
@@ -412,7 +444,7 @@ def test_generate_mediainfo_uses_one_cli_pass(tmp_path, monkeypatch) -> None:
     assert calls == [["mediainfo", "--Full", str(source)]]
 
 def test_generate_mediainfo_reuses_current_sidecar(tmp_path, monkeypatch) -> None:
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     source = tmp_path / "Movie.Name.2026.mkv"
     source.write_bytes(b"video")
@@ -512,7 +544,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
     assert "disabled" in str(exc_info.value.detail).lower()
 
 def test_scan_item_support_assets_prefers_largest_video_and_primary_nfo(tmp_path) -> None:
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     release_dir = tmp_path / "Release.Dir"
     large_video = _touch(release_dir / "CD1" / "movie.part01.mkv", b"b" * 25)

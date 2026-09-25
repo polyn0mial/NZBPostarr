@@ -1,8 +1,9 @@
-# ruff: noqa: F403,F405
-
 """Public-release and self-update tests."""
 
-from tests.support import *
+from api import auth as auth_api
+from logic.system import lifecycle, updater
+
+from tests.conftest import REPO_ROOT, load_repo_script
 
 release = load_repo_script("release")
 

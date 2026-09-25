@@ -1,8 +1,6 @@
-# ruff: noqa: F403,F405
-
 """History page fixes ported from the live server (area history-ui)."""
 
-from tests.support import *
+from tests.conftest import _read_repo_text
 
 
 def _history_html() -> str:

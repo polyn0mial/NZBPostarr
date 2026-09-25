@@ -1,8 +1,11 @@
-# ruff: noqa: F403,F405
-
 """The runtime owns the job engine: building it starts nothing, first use starts it once."""
 
-from tests.support import *
+import json
+from types import SimpleNamespace
+
+from cli import run as cli_run
+from core import config as config_mod
+from core.db import queue_items as db_queue_items
 
 from logic import runtime
 from logic.jobs import engine as engine_mod

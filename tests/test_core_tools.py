@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from core import tools
-from tests.support import _run_async
+from tests.conftest import _run_async
 
 
 def _fake_tools(tmp_path):

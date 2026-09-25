@@ -1,8 +1,15 @@
-# ruff: noqa: F403,F405
-
 """Guards for the W2-B1 deletions: removed routes, config keys and shims stay removed without breaking callers."""
 
-from tests.support import *
+from pathlib import Path
+
+import yaml
+
+from core import config as config_mod
+from core.config import Config
+from logic.classify import names as classify_names
+from logic.pending import roots as pending_roots
+
+from tests.conftest import REPO_ROOT
 
 import importlib.util
 

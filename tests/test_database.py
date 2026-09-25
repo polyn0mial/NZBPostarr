@@ -1,8 +1,19 @@
-# ruff: noqa: F403,F405
-
 """NZBPostarr database tests."""
 
-from tests.support import *
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
+import threading
+from types import SimpleNamespace
+
+import pytest
+
+from core.db import engine as db_engine, history as db_history, issues as db_issues, job_history as db_job_history, ledger as db_ledger, stats as db_stats, uploads as db_uploads
+from core.db.engine import DatabaseOperationalError, session_scope
+from core.db.models import JobHistory, SystemStat, Upload, UploadResult
+from core.db.schema import init_database
+from core.db.uploads import record_nntp_success, update_db_destination
+
+from tests.conftest import _configure_pending_snapshot_environment
 
 def test_database_models_initialize_expected_tables() -> None:
     assert init_database() is True
@@ -168,7 +179,7 @@ def test_scan_pending_snapshot_marks_indexer_status_unavailable_on_db_error(tmp_
     assert payload["items"]["movies"][0]["indexers"] == {}
 
 def test_processing_db_type_supports_anime_and_media_categories(tmp_path) -> None:
-    from tests.support import pipeline_facade as processing
+    from tests.conftest import pipeline_facade as processing
 
     video = tmp_path / "item.mkv"
     video.write_bytes(b"x")

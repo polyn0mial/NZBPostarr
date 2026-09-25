@@ -7,7 +7,9 @@ import subprocess
 import pytest
 import yaml
 
-from tests.support import IndexerDefinition, _read_repo_text
+from core.indexers.models import IndexerDefinition
+
+from tests.conftest import _read_repo_text
 
 
 def _page_base_js() -> str:

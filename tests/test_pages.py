@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 import app as app_mod
 from api import deps as deps_api
 from api import pages as pages_api
-from tests.support import _read_repo_text, patch_hit
+from tests.conftest import _read_repo_text, patch_hit
 
 
 @pytest.fixture()

@@ -11,7 +11,6 @@ from core.db import schema as db_schema
 from core.db.engine import session_scope
 from core.db.models import Upload, UploadResult
 from core.db.uploads import update_db_destination
-from tests.support import isolated_sqlite_db  # noqa: F401  (fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
 IDS = ["geek", "in"]

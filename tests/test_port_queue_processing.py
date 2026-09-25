@@ -1,16 +1,23 @@
-# ruff: noqa: F403,F405
-
 """Regression tests for the queue-backend and processing fixes ported from the live server."""
 
 import subprocess
 from collections import deque
 
-from tests.support import *
+from datetime import datetime, timezone
+import json
+from pathlib import Path
+import sys
+import threading
+import time
+from types import SimpleNamespace
+
+from logic.classify import explicit as classify_explicit, tv_packs as classify_tv_packs
+
+from tests.conftest import _make_queue_service_stub, pipeline_facade as processing
 
 from logic.pending import completion as pending_completion
 from logic.pending import rules as pending_rules
 from logic.pending import tree as pending_tree
-from tests.support import pipeline_facade as processing
 from logic.pipeline.plan import _iter_work_items
 from logic.jobs import models as job_models
 from logic.jobs import requests as job_requests

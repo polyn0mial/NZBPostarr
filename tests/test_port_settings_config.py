@@ -1,8 +1,14 @@
-# ruff: noqa: F403,F405
-
 """Settings/config keys ported from the live server (settings-config area)."""
 
-from tests.support import *
+from pathlib import Path
+
+import pytest
+import yaml
+
+from core import config as config_mod
+from core.config import Config
+
+from tests.conftest import _read_repo_text
 
 
 def _load_config_from(tmp_path: Path, monkeypatch, overrides: dict | None = None) -> Config:

@@ -1,8 +1,21 @@
-# ruff: noqa: F403,F405
-
 """NZBPostarr streaming tests."""
 
-from tests.support import *
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from cli import run as cli_run
+from core.indexers import http_submit as http_submit_mod, models as models_mod
+from core.indexers.http_submit import submit_to_indexer
+from core.indexers.models import AuthConfig, IndexerDefinition
+
+from tests.conftest import (
+    _DummySubmitConfig,
+    _capture_submit_request,
+    _make_sample_nzb,
+    _write_valid_test_nzb,
+)
 
 def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
     from logic import runtime

@@ -1,11 +1,21 @@
-# ruff: noqa: F403,F405
-
 """NZBPostarr headless CLI tests."""
 
 import shutil
 
 from logic import runtime as runtime_mod
-from tests.support import *
+import json
+from types import SimpleNamespace
+
+import pytest
+
+from cli import parser as cli_parser, run as cli_run
+from cli.commands import config as cli_config, history as cli_history, logs as cli_logs, pending as cli_pending, queue as cli_queue, status as cli_status, system as cli_system, upload as cli_upload
+from core import config as config_mod
+from core.db import issues as db_issues, job_history as db_job_history, ledger as db_ledger, stats as db_stats
+from core.indexers import categories as categories_mod, models as models_mod, registry as registry_mod
+from core.logging import console
+from logic.pending import roots as pending_roots
+from logic.system import updater
 
 
 class _FakeQueueService:

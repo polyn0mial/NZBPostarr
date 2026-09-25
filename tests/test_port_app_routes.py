@@ -1,10 +1,23 @@
-# ruff: noqa: F403,F405
-
 """App route fixes ported from the live server (area app-routes)."""
 
 import tarfile
 
-from tests.support import *
+import os
+from pathlib import Path
+import threading
+from types import SimpleNamespace
+
+from fastapi import HTTPException
+import pytest
+
+from api import history as history_api, jobs as jobs_api, pages as pages_api, pending as pending_api, system as system_api
+from core import config as config_mod
+from core.db import history as db_history, issues as db_issues, job_history as db_job_history, uploads as db_uploads
+from core.db.engine import DatabaseOperationalError
+from logic.pending import index as pending_index
+from logic.system import backup as system_backup
+
+from tests.conftest import _make_pending_snapshot, _run_async, patch_hit
 
 from logic.pending import overrides as pending_overrides
 from logic.jobs.models import ProcessingJobRequest as _RealProcessingJobRequest

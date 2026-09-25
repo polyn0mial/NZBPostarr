@@ -1,12 +1,17 @@
-# ruff: noqa: F403,F405
-
 """MCP endpoint tests.
 
 The `mcp` package is an optional extra, so everything here runs without it
 installed. Tests that genuinely need the SDK skip cleanly.
 """
 
-from tests.support import *
+from types import SimpleNamespace
+
+from fastapi import Request
+import pytest
+
+from api import auth as auth_api, mcp as mcp_api
+
+from tests.conftest import patch_hit
 
 
 _READ_TOOLS = {

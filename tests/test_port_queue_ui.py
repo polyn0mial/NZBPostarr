@@ -1,10 +1,10 @@
-# ruff: noqa: F403,F405
-
 """Queue page fixes ported from the live server (queue-ui area)."""
 
 import re
 
-from tests.support import *
+from tests.webui._source import _queue_source
+
+from tests.conftest import REPO_ROOT, _read_repo_text
 
 PAGES = REPO_ROOT / "webui" / "assets" / "js" / "pages"
 

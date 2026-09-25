@@ -4,7 +4,7 @@ import importlib.util
 import sys
 
 from tests.characterization._snapshot import HERE, updating
-from tests.support import REPO_ROOT
+from tests.conftest import REPO_ROOT
 
 TREE = HERE / "classify_tree"
 

@@ -18,7 +18,7 @@ from logic.system import lifecycle, updater
 from logic.stream import monitors as stream_monitors
 from logic.pending import overrides as pending_overrides
 from logic.classify import anime as anime_cache
-from tests.support import _run_async
+from tests.conftest import _run_async
 
 APP_ROOT = config_mod.APP_ROOT
 
