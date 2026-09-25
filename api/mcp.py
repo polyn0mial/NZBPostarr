@@ -25,9 +25,12 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
+from fastapi import FastAPI
 from loguru import logger
 
+from core.config import get_config
 from core.redaction import redact_mapping
+from version import __version__
 
 MCP_PATH = "/mcp"
 
@@ -92,7 +95,7 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
         conf = get_config()
         service = _service()
         return {
-            "version": _version(),
+            "version": __version__,
             "host": getattr(conf, "host", ""),
             "port": getattr(conf, "port", 0),
             "indexers": [
@@ -212,15 +215,6 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
     }
 
 
-def _version() -> str:
-    try:
-        from version import __version__
-
-        return str(__version__)
-    except Exception:
-        return "unknown"
-
-
 def build_mcp_asgi_app(conf: Any) -> Optional[Any]:
     """Build the streamable-HTTP ASGI app, or None when unavailable.
 
@@ -274,3 +268,16 @@ def build_mcp_asgi_app(conf: Any) -> Optional[Any]:
     mode = "read+write" if allow_mutations else "read-only"
     logger.info(f"MCP endpoint mounted at {MCP_PATH} ({registered} tools, {mode})")
     return server.streamable_http_app()
+
+
+def mount_mcp_endpoint(app: FastAPI) -> Optional[Any]:
+    """Mount the optional MCP endpoint and return its ASGI app. None unless enabled, tokenized and installed."""
+    try:
+        mcp_app = build_mcp_asgi_app(get_config())
+    except Exception as exc:  # never let an optional extra break startup
+        logger.warning(f"MCP endpoint could not be built: {exc}")
+        return None
+    if mcp_app is None:
+        return None
+    app.mount(MCP_PATH, mcp_app)
+    return mcp_app

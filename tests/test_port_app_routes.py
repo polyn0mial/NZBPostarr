@@ -6,7 +6,6 @@ import tarfile
 
 from tests.support import *
 
-import app_base
 from logic import category_overrides
 from logic.queueing import ProcessingJobRequest as _RealProcessingJobRequest
 from logic.services import UploadService
@@ -31,9 +30,9 @@ class _ActiveJobService:
 
 def test_remove_active_job_item_route_removes_the_path() -> None:
     service = _ActiveJobService(removed=True, job={"status": "running"})
-    req = app_mod.RemoveQueuedJobItemRequest(path="/media/tv/Show.S01E02.mkv")
+    req = jobs_api.RemoveQueuedJobItemRequest(path="/media/tv/Show.S01E02.mkv")
 
-    result = _run_async(app_mod.remove_active_job_item_route("job-1", req, service=service))
+    result = _run_async(jobs_api.remove_active_job_item_route("job-1", req, service=service))
 
     assert result == {"status": "removed", "job_id": "job-1", "path": "/media/tv/Show.S01E02.mkv"}
     assert service.calls == [("job-1", "/media/tv/Show.S01E02.mkv")]
@@ -47,9 +46,9 @@ def test_remove_active_job_item_route_reports_why_it_failed() -> None:
         ("/x", _ActiveJobService(removed=False, job={"status": "paused"}), 404, "Path not found in active job"),
     ]
     for path, service, status, detail in cases:
-        req = app_mod.RemoveQueuedJobItemRequest(path=path)
+        req = jobs_api.RemoveQueuedJobItemRequest(path=path)
         with pytest.raises(HTTPException) as exc:
-            _run_async(app_mod.remove_active_job_item_route("job-1", req, service=service))
+            _run_async(jobs_api.remove_active_job_item_route("job-1", req, service=service))
         assert (exc.value.status_code, exc.value.detail) == (status, detail)
 
 
@@ -89,7 +88,7 @@ def test_create_full_backup_archives_state_owner_only(monkeypatch, tmp_path) -> 
     monkeypatch.setattr(config_mod, "APP_ROOT", root)
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
 
-    result = _run_async(app_mod.create_full_backup(app_mod.CreateBackupRequest()))
+    result = _run_async(system_api.create_full_backup(system_api.CreateBackupRequest()))
 
     archive = Path(result["archive_path"])
     assert archive.parent == backup_folder
@@ -127,7 +126,7 @@ def test_create_full_backup_can_include_tmp_contents(monkeypatch, tmp_path) -> N
     monkeypatch.setattr(config_mod, "APP_ROOT", root)
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
 
-    result = app_mod._create_full_backup_archive(skip_tmp_contents=False)
+    result = system_api._create_full_backup_archive(skip_tmp_contents=False)
 
     with tarfile.open(result["archive_path"], "r:gz") as tar:
         assert "nzbpostarr/data/tmp/work.part01.rar" in tar.getnames()
@@ -137,11 +136,10 @@ def test_create_full_backup_failure_is_a_readable_500(monkeypatch) -> None:
     def _boom(**_kwargs):
         raise OSError("disk full")
 
-    monkeypatch.setattr(app_mod, "_create_full_backup_archive", _boom)
-    monkeypatch.setattr(sys.modules["app_g2"], "_create_full_backup_archive", _boom)
+    monkeypatch.setattr(system_api, "_create_full_backup_archive", _boom)
 
     with pytest.raises(HTTPException) as exc:
-        _run_async(app_mod.create_full_backup(app_mod.CreateBackupRequest(skip_tmp_contents=False)))
+        _run_async(system_api.create_full_backup(system_api.CreateBackupRequest(skip_tmp_contents=False)))
     assert exc.value.status_code == 500
     assert exc.value.detail == "Failed to create backup: disk full"
 
@@ -159,30 +157,30 @@ def _override_store(monkeypatch, tmp_path):
 
 
 def test_category_override_round_trip_persists_under_data(_override_store) -> None:
-    saved = app_mod.set_category_override(app_mod.CategoryOverrideRequest(key=" ext:Movies:Some.Show.S01 ", category=" TV "))
+    saved = pending_api.set_category_override(pending_api.CategoryOverrideRequest(key=" ext:Movies:Some.Show.S01 ", category=" TV "))
 
     assert saved == {"status": "success", "key": "ext:Movies:Some.Show.S01", "category": "tv"}
     stored = _override_store / "data" / "category_overrides.json"
     assert json.loads(stored.read_text(encoding="utf-8")) == {"ext:Movies:Some.Show.S01": "tv"}
-    assert app_mod.get_category_overrides() == {"overrides": {"ext:Movies:Some.Show.S01": "tv"}}
+    assert pending_api.get_category_overrides() == {"overrides": {"ext:Movies:Some.Show.S01": "tv"}}
 
-    cleared = app_mod.set_category_override(app_mod.CategoryOverrideRequest(key="ext:Movies:Some.Show.S01", category=None))
+    cleared = pending_api.set_category_override(pending_api.CategoryOverrideRequest(key="ext:Movies:Some.Show.S01", category=None))
 
     assert cleared == {"status": "success", "key": "ext:Movies:Some.Show.S01", "category": None}
-    assert app_mod.get_category_overrides() == {"overrides": {}}
+    assert pending_api.get_category_overrides() == {"overrides": {}}
     assert json.loads(stored.read_text(encoding="utf-8")) == {}
 
 
 def test_category_override_rejects_a_blank_key(_override_store) -> None:
     with pytest.raises(HTTPException) as exc:
-        app_mod.set_category_override(app_mod.CategoryOverrideRequest(key="  ", category="tv"))
+        pending_api.set_category_override(pending_api.CategoryOverrideRequest(key="  ", category="tv"))
     assert (exc.value.status_code, exc.value.detail) == (400, "Missing item key")
 
 
 def test_category_overrides_read_the_legacy_root_file(_override_store) -> None:
     (_override_store / "category_overrides.json").write_text(json.dumps({"ext:A:b": "anime"}), encoding="utf-8")
 
-    assert app_mod.get_category_overrides() == {"overrides": {"ext:A:b": "anime"}}
+    assert pending_api.get_category_overrides() == {"overrides": {"ext:A:b": "anime"}}
 
 
 # app-routes-06: Refresh rebuilds the pending snapshot synchronously
@@ -208,11 +206,11 @@ def test_pending_refresh_returns_the_fresh_scan(monkeypatch) -> None:
     fresh = _make_pending_snapshot(summary={"total": 2})
     fresh["cached_at"] = 999.0
     index = _SyncIndex(stale)
-    monkeypatch.setattr(app_mod, "_pending_index", index)
-    monkeypatch.setattr(app_mod, "_scan_pending_all", lambda: fresh)
-    monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(enable_anime_checking=False))
+    monkeypatch.setattr(pending_api, "_pending_index", index)
+    monkeypatch.setattr(pending_api, "_scan_pending_all", lambda: fresh)
+    patch_hit(monkeypatch, pending_api, "get_config", lambda: SimpleNamespace(enable_anime_checking=False))
 
-    result = app_mod.get_pending_items(refresh=True)
+    result = pending_api.get_pending_items(refresh=True)
 
     assert result["cached_at"] == 999.0
     assert index.reasons == []
@@ -221,16 +219,16 @@ def test_pending_refresh_returns_the_fresh_scan(monkeypatch) -> None:
 def test_pending_refresh_waits_for_an_in_flight_rebuild(monkeypatch) -> None:
     fresh = _make_pending_snapshot()
     fresh["cached_at"] = 42.0
-    monkeypatch.setattr(app_mod, "_pending_index", _SyncIndex(_make_pending_snapshot()))
-    monkeypatch.setattr(app_mod, "_scan_pending_all", lambda: fresh)
+    monkeypatch.setattr(pending_api, "_pending_index", _SyncIndex(_make_pending_snapshot()))
+    monkeypatch.setattr(pending_api, "_scan_pending_all", lambda: fresh)
     lock = threading.Lock()
-    monkeypatch.setattr(app_mod, "_pending_refresh_lock", lock)
+    monkeypatch.setattr(pending_api, "_pending_refresh_lock", lock)
 
     lock.acquire()
     releaser = threading.Timer(0.2, lock.release)
     releaser.start()
     try:
-        result = app_mod._refresh_pending_snapshot_now(reason="test")
+        result = pending_api._refresh_pending_snapshot_now(reason="test")
     finally:
         releaser.join()
 
@@ -254,8 +252,8 @@ def test_force_upload_passes_force_and_skip_pack_expansion(monkeypatch, tmp_path
 
     for force, expected in ((None, None), (True, True), (False, False)):
         captured.clear()
-        req = app_mod.ForceUploadRequest(items=items, force=force)
-        _run_async(app_mod.force_upload_items(req, service=_Service()))
+        req = pending_api.ForceUploadRequest(items=items, force=force)
+        _run_async(pending_api.force_upload_items(req, service=_Service()))
         assert captured[0].force is expected
         assert captured[0].skip_pack_expansion is True
 
@@ -281,8 +279,8 @@ def test_anime_check_has_no_cooldown_after_an_empty_batch(monkeypatch) -> None:
             return False
 
     data = _make_pending_snapshot()
-    monkeypatch.setattr(app_mod, "_pending_index", _SyncIndex(data))
-    monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(enable_anime_checking=True))
+    monkeypatch.setattr(pending_api, "_pending_index", _SyncIndex(data))
+    patch_hit(monkeypatch, pending_api, "get_config", lambda: SimpleNamespace(enable_anime_checking=True))
     uncached_calls: list[object] = []
     monkeypatch.setattr(
         pending_snapshot_mod,
@@ -290,25 +288,25 @@ def test_anime_check_has_no_cooldown_after_an_empty_batch(monkeypatch) -> None:
         lambda _data: uncached_calls.append(_data) or ["Some Title"],
     )
     monkeypatch.setattr("logic.anime_cache.check_titles_batch", lambda names: {n: None for n in names})
-    monkeypatch.setattr(app_mod.threading, "Thread", _Thread)
-    monkeypatch.setattr(app_mod, "_anime_check_thread", None)
-    monkeypatch.setattr(app_mod, "_anime_check_inflight", False)
+    monkeypatch.setattr(threading, "Thread", _Thread)
+    monkeypatch.setattr(pending_api, "_anime_check_thread", None)
+    monkeypatch.setattr(pending_api, "_anime_check_inflight", False)
 
-    app_mod._background_anime_check(data)
-    app_mod.get_pending_items()
+    pending_api._background_anime_check(data)
+    pending_api.get_pending_items()
 
     assert started == ["pending-anime-check"]
     assert uncached_calls, "the patched pending_snapshot owner was never consulted"
-    assert not hasattr(app_base, "_ANIME_CHECK_COOLDOWN_S")
+    assert not hasattr(pending_api, "_ANIME_CHECK_COOLDOWN_S")
 
 
 # /api/pending/children payload shape used by the queue page
 
 
 def test_pending_children_returns_children_and_child_count(monkeypatch) -> None:
-    monkeypatch.setattr(app_mod, "_pending_index", _SyncIndex(_make_pending_snapshot()))
+    monkeypatch.setattr(pending_api, "_pending_index", _SyncIndex(_make_pending_snapshot()))
 
-    assert app_mod.get_pending_children(key="ext:missing:x", path="") == {"children": [], "child_count": 0}
+    assert pending_api.get_pending_children(key="ext:missing:x", path="") == {"children": [], "child_count": 0}
 
 
 # History/delete routes turn DB errors into a readable 503
@@ -336,15 +334,15 @@ def test_history_routes_report_database_errors_as_503(monkeypatch) -> None:
             return {"job_ids": ["job-1"]}
 
     calls = [
-        lambda: app_mod.get_recent(),
-        lambda: app_mod.get_grouped(),
-        lambda: app_mod.get_grouped_items("show"),
-        lambda: app_mod.get_grouped_errors(),
-        lambda: _run_async(app_mod.get_history()),
-        lambda: _run_async(app_mod.get_job_uploads("job-1")),
-        lambda: _run_async(app_mod.delete_job_history(_Request())),
-        lambda: _run_async(app_mod.delete_upload_item("Some.Item")),
-        lambda: _run_async(app_mod.bulk_delete_upload_items(app_mod.BulkDeleteRequest(item_names=["a"]))),
+        lambda: history_api.get_recent(),
+        lambda: history_api.get_grouped(),
+        lambda: history_api.get_grouped_items("show"),
+        lambda: history_api.get_grouped_errors(),
+        lambda: _run_async(history_api.get_history()),
+        lambda: _run_async(history_api.get_job_uploads("job-1")),
+        lambda: _run_async(history_api.delete_job_history(_Request())),
+        lambda: _run_async(history_api.delete_upload_item("Some.Item")),
+        lambda: _run_async(history_api.bulk_delete_upload_items(history_api.BulkDeleteRequest(item_names=["a"]))),
     ]
     for call in calls:
         with pytest.raises(HTTPException) as exc:
@@ -359,9 +357,9 @@ def test_history_routes_report_database_errors_as_503(monkeypatch) -> None:
 
 def test_queue_error_beacon_logs_one_line_and_returns_204(monkeypatch) -> None:
     messages: list[str] = []
-    monkeypatch.setattr(app_mod.logger, "warning", lambda msg, *a, **k: messages.append(msg))
+    monkeypatch.setattr(pages_api.logger, "warning", lambda msg, *a, **k: messages.append(msg))
 
-    response = _run_async(app_mod.queue_error_beacon(title="Boom\nforged line", detail="x" * 5000, rev="abc"))
+    response = _run_async(pages_api.queue_error_beacon(title="Boom\nforged line", detail="x" * 5000, rev="abc"))
 
     assert response.status_code == 204
     assert len(messages) == 1

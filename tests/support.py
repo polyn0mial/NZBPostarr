@@ -50,6 +50,18 @@ except ImportError:  # pragma: no cover - optional dependency for local E2E smok
 
 import app as app_mod
 
+from api import assets as assets_api
+from api import auth as auth_api
+from api import deps as deps_api
+from api import history as history_api
+from api import jobs as jobs_api
+from api import mcp as mcp_api
+from api import pages as pages_api
+from api import pending as pending_api
+from api import settings as settings_api
+from api import staging as staging_api
+from api import system as system_api
+
 from core import config as config_mod
 
 from core import database as db
@@ -97,6 +109,23 @@ from logic.uploaders import SubmitResult
 from tests.webui._source import _queue_source
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Retargeted patches that must be hit; tests/conftest.py fails a test that leaves any of them unhit.
+PATCH_SENTINELS: list[tuple[str, list[int]]] = []
+
+
+def patch_hit(monkeypatch, target, name: str, value):
+    """monkeypatch.setattr of a callable that the test must reach: fails the test if it is never called."""
+    hits: list[int] = []
+
+    def _sentinel(*args, **kwargs):
+        hits.append(1)
+        return value(*args, **kwargs)
+
+    monkeypatch.setattr(target, name, _sentinel)
+    PATCH_SENTINELS.append((f"{getattr(target, '__name__', target)}.{name}", hits))
+    return hits
 
 
 def load_repo_script(name: str):
@@ -496,10 +525,11 @@ def _configure_pending_scan_all(
         def all(self):
             return list(indexers or [])
 
-    monkeypatch.setattr(app_mod, "get_config", lambda: _Conf())
-    monkeypatch.setattr(app_mod.database, "get_dashboard_data", lambda _ids: _as_dashboard_data(dashboard_data))
-    monkeypatch.setattr(
-        app_mod,
+    patch_hit(monkeypatch, pending_api, "get_config", lambda: _Conf())
+    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: _as_dashboard_data(dashboard_data))
+    patch_hit(
+        monkeypatch,
+        pending_api,
         "get_configured_category_folders",
         lambda _conf, include_external=True, must_exist=True: [(folder_category, folder_path)],
     )
@@ -507,7 +537,7 @@ def _configure_pending_scan_all(
     monkeypatch.setattr(registry_mod, "get_registry", lambda: _Registry())
     monkeypatch.setattr(registry_mod, "get_available_categories", lambda: list(available_categories or []))
 
-    return app_mod._scan_pending_all()
+    return pending_api._scan_pending_all()
 
 def _get_pending_top_item(result: dict[str, object], location: str) -> dict[str, object]:
     if location == "external":
@@ -597,14 +627,14 @@ def _run_pending_items_anime_check(monkeypatch, *, cached_lookup_result) -> tupl
         def start(self):
             started.append((self._target, self._args, self._daemon))
 
-    monkeypatch.setattr(app_mod, "_pending_index", _FakeIndex())
-    monkeypatch.setattr(app_mod, "get_config", lambda: _Conf())
-    monkeypatch.setattr(app_mod.threading, "Thread", _DummyThread)
-    monkeypatch.setattr(app_mod, "_anime_check_inflight", False)
-    monkeypatch.setattr(app_mod, "_anime_check_thread", None)
+    monkeypatch.setattr(pending_api, "_pending_index", _FakeIndex())
+    patch_hit(monkeypatch, pending_api, "get_config", lambda: _Conf())
+    monkeypatch.setattr(threading, "Thread", _DummyThread)
+    monkeypatch.setattr(pending_api, "_anime_check_inflight", False)
+    monkeypatch.setattr(pending_api, "_anime_check_thread", None)
     monkeypatch.setattr("logic.anime_cache.get_cached", lambda _name: cached_lookup_result)
 
-    _ = app_mod.get_pending_items()
+    _ = pending_api.get_pending_items()
 
     return started, snapshot
 
