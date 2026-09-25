@@ -1,0 +1,29 @@
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<!--  ACTION BAR (always in content area, never in header)          -->
+<!-- â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• -->
+<div class="flex flex-wrap items-center gap-2 mb-4">
+    <!-- Selection actions remain available; they enable when rows are selected. -->
+    <button @click="addToQueue()" :disabled="selectedCount === 0" class="action-btn action-btn--default action-btn--accent disabled:opacity-40 disabled:cursor-not-allowed">
+        <lucide-icon name="list-plus" icon-class="w-3.5 h-3.5"></lucide-icon>
+        Add to Staging ({{ selectedActionCount }})
+    </button>
+    <div class="relative">
+        <button @click.stop="openForceUploadMenu('bulk', $event)" :disabled="selectedCount === 0" class="action-btn action-btn--default action-btn--accent-solid disabled:opacity-40 disabled:cursor-not-allowed">
+            <lucide-icon name="zap" icon-class="w-3.5 h-3.5"></lucide-icon>
+            Force Upload ({{ selectedActionCount }})
+            <lucide-icon name="chevron-down" icon-class="w-3 h-3 opacity-70"></lucide-icon>
+        </button>
+    </div>
+    <button @click="showMarkModal = true" :disabled="selectedCount === 0" class="action-btn action-btn--default action-btn--success gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+        <lucide-icon name="check-circle" icon-class="w-3.5 h-3.5"></lucide-icon>
+        Mark Uploaded ({{ selectedActionCount }})
+    </button>
+    <button @click="ignoreSelectedItems()" :disabled="selectedCount === 0" class="action-btn action-btn--default action-btn--warning gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+        <lucide-icon name="eye-off" icon-class="w-3.5 h-3.5"></lucide-icon>
+        Ignore Selected ({{ selectedActionCount }})
+    </button>
+    <button v-if="queueItems.length > 0" @click="clearQueueItems()" class="action-btn action-btn--default action-btn--error gap-2" title="Clear the staging area only. Existing upload jobs are not removed.">
+        <lucide-icon name="trash-2" icon-class="w-3.5 h-3.5"></lucide-icon>
+        Clear Staging ({{ queueItems.length }})
+    </button>
+</div>
