@@ -10,7 +10,8 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from core.utils import atomic_write_text, log_info
+from core.fs import atomic_write_text
+from core.logging import log_info
 from logic.jobs.models import (
     _FINISHED_JOB_RETENTION_COUNT,
     _FINISHED_JOB_RETENTION_DAYS,

@@ -246,7 +246,7 @@ def connections_tracking_enabled(conf: Optional[Any] = None) -> bool:
 
 def sync_collector_schedule() -> None:
     """Keep the periodic stats prune job aligned with the dedicated stats page setting."""
-    from logic.process_reaper import get_scheduler
+    from core.scheduler import get_scheduler
 
     scheduler = get_scheduler()
     job_id = "prune_system_stats"
@@ -548,7 +548,7 @@ async def stop_collector() -> None:
         _STATS_TASK = None
 
     try:
-        from logic.process_reaper import get_scheduler
+        from core.scheduler import get_scheduler
 
         get_scheduler().remove_job("prune_system_stats")
     except Exception:

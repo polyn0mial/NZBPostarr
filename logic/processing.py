@@ -5,6 +5,8 @@ Unified module for batch processing and orchestration.
 Includes RAR/PAR2 pre-processing and media info extraction.
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
+from core import tools as core_tools
+from core.paths import path_key
 from logic.processing_base import (
     AUDIOBOOK_EXTENSIONS as AUDIOBOOK_EXTENSIONS, Any as Any, Callable as Callable, Dict as Dict, EBOOK_EXTENSIONS as EBOOK_EXTENSIONS,
     FutureTimeoutError as FutureTimeoutError, Iterator as Iterator, List as List, Lock as Lock, MUSIC_EXTENSIONS as MUSIC_EXTENSIONS,
@@ -16,7 +18,7 @@ from logic.processing_base import (
     get_config as get_config, get_configured_folders as get_configured_folders, get_thread_job as get_thread_job,
     has_clear_movie_year as has_clear_movie_year, has_multi_file_episode_pattern as has_multi_file_episode_pattern, humanfriendly as humanfriendly,
     log_completed as log_completed, log_info as log_info, log_success as log_success, log_verbose as log_verbose, logger as logger,
-    looks_like_tv_name as looks_like_tv_name, mp as mp, normalize_submission_category as normalize_submission_category, os as os,
+    looks_like_tv_name as looks_like_tv_name, mp as mp, normalize_category as normalize_category, os as os,
     pin_folder_ts_to_children as pin_folder_ts_to_children, purge_item_data as purge_item_data, re as re, record_nntp_success as record_nntp_success, resolve_explicit_path as resolve_explicit_path,
     run_command as run_command, scan_configured_items as scan_configured_items, set_thread_job as set_thread_job, should_skip_file as should_skip_file,
     shutil as shutil, stdlib_queue as stdlib_queue, submit_api as submit_api, subprocess as subprocess, update_db_destination as update_db_destination,
@@ -31,17 +33,16 @@ from logic.processing_g1 import (
     _folder_log_itype as _folder_log_itype, _has_enough_temp_space as _has_enough_temp_space, _has_tv_season_pack_name as _has_tv_season_pack_name,
     _is_movie_pack_release as _is_movie_pack_release, _is_tv_pack_release as _is_tv_pack_release,
     _iter_folder_ancestor_entries as _iter_folder_ancestor_entries, _link_or_copy_filtered_file as _link_or_copy_filtered_file,
-    _mediainfo_output_path as _mediainfo_output_path, _normalize_processing_category as _normalize_processing_category,
-    _normalize_processing_type as _normalize_processing_type, _normalize_runtime_path as _normalize_runtime_path,
+    _mediainfo_output_path as _mediainfo_output_path,
+    _normalize_processing_type as _normalize_processing_type,
     _normalize_runtime_target_paths as _normalize_runtime_target_paths, _persist_runtime_job_checkpoint as _persist_runtime_job_checkpoint,
-    _processing_tool_commands as _processing_tool_commands,
     _resolve_ambiguous_submission_category as _resolve_ambiguous_submission_category, _resolve_targeted_path as _resolve_targeted_path,
-    _runtime_checkpoint_path_key as _runtime_checkpoint_path_key, _safe_fs_component as _safe_fs_component, _safe_mtime as _safe_mtime,
+    _safe_fs_component as _safe_fs_component, _safe_mtime as _safe_mtime,
     _mediainfo_sidecar_has_escaped_names as _mediainfo_sidecar_has_escaped_names,
     _sanitize_mediainfo_output as _sanitize_mediainfo_output, _scan_release_media as _scan_release_media, _select_upload_server as _select_upload_server,
     _selected_indexers as _selected_indexers, _should_skip_completed_item as _should_skip_completed_item,
     _split_parallel_server_connections as _split_parallel_server_connections, _submission_category_label as _submission_category_label,
-    _summarize_preview_details as _summarize_preview_details, _tool_exists as _tool_exists, _upload_target_display as _upload_target_display,
+    _summarize_preview_details as _summarize_preview_details, _upload_target_display as _upload_target_display,
     get_tv_sort_key as get_tv_sort_key,
 )
 from logic.processing_g2 import (
@@ -197,7 +198,7 @@ def _create_filtered_tv_pack_entries_for_selection(
         staged_pack = _create_filtered_tv_pack_staging(source_dir, allowed_paths, conf, job)
         if staged_pack is None:
             return [], set()
-        episode_keys = {_normalize_runtime_path(path) for path in allowed_files}
+        episode_keys = {path_key(path) for path in allowed_files}
         return [(staged_pack, sorted(allowed_files, key=lambda path: path.name.lower()))], episode_keys
 
     entries: list[tuple[Path, list[Path]]] = []
@@ -209,7 +210,7 @@ def _create_filtered_tv_pack_entries_for_selection(
         staged_pack = _create_filtered_tv_pack_staging(child_dir, child_files, conf, job)
         if staged_pack is not None:
             entries.append((staged_pack, child_files))
-            episode_keys.update(_normalize_runtime_path(path) for path in child_files)
+            episode_keys.update(path_key(path) for path in child_files)
 
     if loose_files:
         log_info(f"TV parent selection {source_dir.name}: {len(loose_files)} loose episode file(s) queued as singles")
@@ -398,11 +399,11 @@ def prepare_item(
 def check_tools(conf: Optional[Any] = None) -> bool:
     """Verify that required external tools are available."""
     conf = conf or get_config()
-    commands = _processing_tool_commands(conf)
-    missing = []
-    for label, command in commands.items():
-        if not _tool_exists(command):
-            missing.append(f"{label} ({command})")
+    missing = [
+        f"{name} ({core_tools.tool_command(conf, name)})"
+        for name, executable in core_tools.check_tools(conf).items()
+        if not executable
+    ]
     if missing:
         msg = f"Missing required tools: {', '.join(missing)}"
         log_info(msg, "ERROR")
@@ -415,7 +416,7 @@ def _live_size_bytes(path: Path) -> int:
     return compute_size_uncached(path)
 
 def _folder_size_cached(folder_path: Path) -> int:
-    cache_key = _normalize_runtime_path(folder_path)
+    cache_key = path_key(folder_path)
     job = get_thread_job()
     if job is not None:
         cache = job.setdefault("_folder_size_cache", {})
@@ -472,7 +473,7 @@ def _plan_explicit_items(
     oversized_files: set[str] = set()
 
     def append_item(path: Path, category: str) -> None:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized in seen_paths:
             return
         seen_paths.add(normalized)
@@ -482,7 +483,7 @@ def _plan_explicit_items(
                 oversized_files.add(normalized)
 
     for path, category in raw_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized in seen_paths:
             continue
 
@@ -518,7 +519,7 @@ def _expand_oversized_category_items(
     season_packs_only: bool,
 ) -> list[Path]:
     expanded: list[Path] = []
-    seen = {_normalize_runtime_path(path) for path in cat_items}
+    seen = {path_key(path) for path in cat_items}
     for path in cat_items:
         if season_packs_only:
             if not is_season_pack(path):
@@ -528,13 +529,13 @@ def _expand_oversized_category_items(
         if _live_size_bytes(path) / _ONE_GIB <= folder_limit:
             continue
 
-        oversized_folders.add(_normalize_runtime_path(path))
+        oversized_folders.add(path_key(path))
         for child in _descendant_files(
             path,
             video_only=season_packs_only,
             sorted_names=season_packs_only,
         ):
-            child_key = _normalize_runtime_path(child)
+            child_key = path_key(child)
             if child_key in seen:
                 continue
             expanded.append(child)
@@ -543,7 +544,7 @@ def _expand_oversized_category_items(
     if not expanded:
         return cat_items
     retained = [
-        path for path in cat_items if _normalize_runtime_path(path) not in oversized_folders
+        path for path in cat_items if path_key(path) not in oversized_folders
     ]
     return [*retained, *expanded]
 
@@ -572,7 +573,7 @@ def _plan_sorted_items(
     by_cat: dict[str, list[Path]] = defaultdict(list)
     seen_paths: set[str] = set()
     for path, cat in raw_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized in seen_paths:
             continue
         seen_paths.add(normalized)
@@ -616,7 +617,7 @@ def _plan_sorted_items(
                     continue
                 file_size = _live_size_bytes(path) / _ONE_GIB
                 if file_size > file_limit:
-                    oversized_files.add(_normalize_runtime_path(path))
+                    oversized_files.add(path_key(path))
 
         sorted_items.extend((path, cat) for path in cat_items)
 
@@ -805,7 +806,7 @@ def preview_processing_items(
         if reject_reason:
             append_detail(path=display_path, name=name, category=category, outcome=outcome, reason=reject_reason)
             continue
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         seen_paths.add(normalized)
         raw_items.append((path, category))
 
@@ -837,9 +838,9 @@ def preview_processing_items(
         file_enabled=bool(getattr(conf, "file_size_limit_enabled", True)),
     )
 
-    planned_keys = {_normalize_runtime_path(path) for path, _category in sorted_items}
+    planned_keys = {path_key(path) for path, _category in sorted_items}
     for path, category in raw_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized not in planned_keys:
             reason = "Pack processing is disabled" if skip_packs and category in {"tv", "anime"} else "Excluded by processing rules"
             append_detail(
@@ -870,7 +871,7 @@ def preview_processing_items(
     skip_enabled = isinstance(skip_config, dict) and bool(skip_config.get("enabled", False))
 
     for path, category in sorted_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         item_db_key = prefetched_item_db_keys.get(normalized)
         dest_status = prefetched_dupes.get(item_db_key) if item_db_key else None
         base_folder = prefetched_source_root_for(path) if prefetched_source_root_for is not None else None
@@ -1556,23 +1557,23 @@ def _append_targeted_resolution_items(
         )
         skip_parent_series_folder = bool(pack_entries)
         if pack_entries:
-            staged_pack_source_dirs.add(_normalize_runtime_path(selected_path))
+            staged_pack_source_dirs.add(path_key(selected_path))
         for staged_pack, pack_episode_paths in pack_entries:
             raw_items.append((staged_pack, resolution.category))
             if process_tv_episodes:
                 raw_items.extend((episode_path, resolution.category) for episode_path in pack_episode_paths)
 
-    selected_key = _normalize_runtime_path(selected_path)
+    selected_key = path_key(selected_path)
     for resolved_path in resolved_paths:
         if (
             skip_parent_series_folder
             and resolved_path.is_dir()
-            and _normalize_runtime_path(resolved_path) == selected_key
+            and path_key(resolved_path) == selected_key
         ):
             continue
         if resolution.category in {"tv", "anime"} and not process_tv_episodes and resolved_path.is_file():
             continue
-        if _normalize_runtime_path(resolved_path) in episode_paths_added_with_packs:
+        if path_key(resolved_path) in episode_paths_added_with_packs:
             continue
         raw_items.append((resolved_path, resolution.category))
 
@@ -1606,7 +1607,7 @@ def _collect_targeted_job_items(
         if selected_path.name.startswith("."):
             continue
 
-        hint = item_hint_map.get(_normalize_runtime_path(selected_path), {})
+        hint = item_hint_map.get(path_key(selected_path), {})
         category_hint = str(hint.get("manual_category") or "")
         itype_hint = str(hint.get("itype") or "") if category_hint else ""
         resolution = resolve_explicit_path(

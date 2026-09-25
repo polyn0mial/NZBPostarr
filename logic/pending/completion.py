@@ -11,7 +11,7 @@ from loguru import logger
 
 from core import database
 from core.config import get_config
-from core.utils import should_skip_file
+from core.fs import should_skip_file
 
 
 def stamp_skip_flags(result: Dict[str, Any], skip_config: Optional[Dict[str, Any]]) -> None:

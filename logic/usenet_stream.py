@@ -31,6 +31,8 @@ from loguru import logger
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
+from core.media import stream_itype
+from core.paths import path_key, resolve_path
 from core.config import NNTPServer, get_config
 from core.database import (
     check_duplicate_dynamic,
@@ -38,14 +40,10 @@ from core.database import (
     update_db_destination,
 )
 from core.registry import get_enabled_indexers
-from core.utils import (
-    get_thread_job,
-    log_info,
-    run_command,
-    start_watchdog_observer,
-    stop_watchdog_observer,
-    update_job_progress,
-)
+from core.fs import start_watchdog_observer, stop_watchdog_observer
+from core.logging import log_info
+from core.proc import run_command
+from logic.jobs.context import get_thread_job, update_job_progress
 from logic.uploaders import (
     _build_nyuu_command,
     _parse_nyuu_completion_stats,
@@ -124,22 +122,9 @@ def normalize_stream_request(
     )
 
 
-def _path_compare_key(path: str | Path) -> str:
-    text = str(path)
-    return text.casefold() if os.name == "nt" else text
-
-
-def normalize_source_path(raw_path: str | Path) -> Path:
-    path = Path(str(raw_path)).expanduser()
-    try:
-        return path.resolve(strict=False)
-    except OSError:
-        return path.absolute()
-
-
 def resolve_source_nzb_paths(raw_path: str | Path) -> list[Path]:
     """Resolve a server-side NZB file or directory into concrete NZB file paths."""
-    source = normalize_source_path(raw_path)
+    source = resolve_path(raw_path)
     if not source.exists():
         raise StreamError(f"Source path does not exist: {source}")
 
@@ -266,7 +251,7 @@ def _load_stream_monitors_locked() -> None:
             if not folder_path:
                 continue
             entry = _serialize_monitor(
-                {**row, "id": monitor_id, "folder_path": str(normalize_source_path(folder_path))}
+                {**row, "id": monitor_id, "folder_path": str(resolve_path(folder_path))}
             )
             _stream_monitor_entries[monitor_id] = entry
 
@@ -292,7 +277,7 @@ def add_stream_monitor(
     enable_duplicate_check: bool = True,
     test_mode: bool = False,
 ) -> dict[str, Any]:
-    folder = normalize_source_path(folder_path)
+    folder = resolve_path(folder_path)
     if not folder.exists() or not folder.is_dir():
         raise StreamError(f"Monitor path must be an existing folder: {folder}")
 
@@ -305,7 +290,7 @@ def add_stream_monitor(
             (
                 monitor_id
                 for monitor_id, entry in _stream_monitor_entries.items()
-                if _path_compare_key(entry.get("folder_path", "")) == _path_compare_key(folder)
+                if path_key(entry.get("folder_path", "")) == path_key(folder)
             ),
             None,
         )
@@ -371,7 +356,7 @@ def _scan_monitor_nzb_files(folder_path: str) -> set[str]:
                 rel_parts = path.parts
             if any(part.startswith(".") for part in rel_parts):
                 continue
-            results.add(str(normalize_source_path(path)))
+            results.add(str(resolve_path(path)))
     except OSError:
         return set()
     return results
@@ -381,10 +366,10 @@ class _StreamMonitorEventHandler(FileSystemEventHandler):  # type: ignore[misc]
     def __init__(self, monitor_id: str, folder_path: str):
         super().__init__()
         self.monitor_id = monitor_id
-        self.folder_path = normalize_source_path(folder_path)
+        self.folder_path = resolve_path(folder_path)
 
     def _record_path(self, raw_path: str) -> None:
-        path = normalize_source_path(raw_path)
+        path = resolve_path(raw_path)
         if path.suffix.lower() != ".nzb":
             return
         try:
@@ -943,15 +928,6 @@ def _safe_output_name(name: str) -> str:
     return clean or "stream"
 
 
-def _stream_itype(category: str) -> str:
-    normalized = str(category or "misc").strip().lower()
-    if normalized == "movies":
-        return "Movie"
-    if normalized == "tv":
-        return "TV Show"
-    return normalized.replace("_", " ").title() or "Misc"
-
-
 def _target_indexers(target_indexer_id: Optional[str]) -> list[str]:
     conf = get_config()
     indexers = get_enabled_indexers(conf)
@@ -1051,7 +1027,7 @@ def stream_nzb_upload(
     submit_mode = normalize_submit_mode(submit_mode)
     primary_server = resolve_posting_server(posting_server_name, servers)
     chosen_release = (release_name or source_path.stem).strip() or source_path.stem
-    itype = _stream_itype(category)
+    itype = stream_itype(category)
     target_ids = [] if submit_mode == "post_only" else _target_indexers(target_indexer_id)
     manifest_path = manifest_path or build_stream_manifest_path(chosen_release)
     generated_nzb: Optional[Path] = None

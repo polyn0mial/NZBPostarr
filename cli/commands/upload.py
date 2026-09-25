@@ -65,7 +65,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
         print("\nStop requested - finishing current item...")
         stop_event.set()
         # Signal the job via the thread-local job dict
-        from core.utils import get_thread_job
+        from logic.jobs.context import get_thread_job
 
         job = get_thread_job()
         if job:

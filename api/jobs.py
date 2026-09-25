@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -12,12 +11,11 @@ from pydantic import BaseModel, Field
 from api.deps import (
     _bulk_selection_excluded_roots,
     _normalize_request_strings,
-    _path_is_at_or_below,
-    _resolved_policy_path,
 )
+from core.media import default_itype
+from core.paths import is_at_or_below, path_key, resolve_path
 from core.config import get_config
 from logic.pending.roots import scan_configured_items
-from logic.pending.selection import category_upload_itype
 from logic.jobs.models import ProcessingJobRequest
 from logic.services import get_upload_service, UploadService
 
@@ -28,7 +26,7 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
     """Resolve one upload request into the canonical bulk-selection candidates."""
     requested_categories = _normalize_upload_categories(req.categories or [req.category])
     selected_folder_keys = {
-        _normalize_selection_path(path)
+        path_key(path)
         for path in _normalize_request_strings(req.folder_paths)
     }
     selected_items: List[Dict[str, str]] = []
@@ -38,7 +36,7 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
     matched_count = 0
 
     if req.file_path:
-        resolved_file_path = _resolved_policy_path(req.file_path)
+        resolved_file_path = resolve_path(req.file_path)
         if not resolved_file_path.exists():
             raise HTTPException(status_code=400, detail="The requested file path was not found")
 
@@ -67,7 +65,7 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
             configured_items = [
                 item
                 for item in configured_items
-                if _normalize_selection_path(str(item.folder)) in selected_folder_keys
+                if path_key(str(item.folder)) in selected_folder_keys
             ]
         if requested_categories != ["all"]:
             configured_items = [
@@ -78,10 +76,10 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
         seen_paths: Set[str] = set()
         for item in configured_items:
             raw_path = str(item.path)
-            if excluded_roots and any(_path_is_at_or_below(item.path, root) for root in excluded_roots):
+            if excluded_roots and any(is_at_or_below(item.path, root) for root in excluded_roots):
                 excluded_count += 1
                 continue
-            key = _normalize_selection_path(raw_path)
+            key = path_key(raw_path)
             if key in seen_paths:
                 duplicate_path_count += 1
                 continue
@@ -188,7 +186,7 @@ class QueueRevalidateRequest(BaseModel):
     include_paused: bool = True
 
 def _default_itype_for_category(path: Path, category: str) -> str:
-    return category_upload_itype(category, is_dir=path.is_dir())
+    return default_itype(category, is_dir=path.is_dir())
 
 @router.get("/jobs")
 def get_jobs(
@@ -391,10 +389,6 @@ def _normalize_upload_categories(values: List[str]) -> List[str]:
                 seen.add(category)
                 normalized.append(category)
     return normalized or ["all"]
-
-def _normalize_selection_path(value: Any) -> str:
-    normalized = str(_resolved_policy_path(value))
-    return normalized.casefold() if os.name == "nt" else normalized
 
 @router.patch("/jobs/{job_id}/name")
 async def rename_upload_job(

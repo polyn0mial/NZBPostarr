@@ -20,16 +20,10 @@ from loguru import logger
 
 from core.config import Config, NNTPServer, get_config
 from core.registry import get_indexer, submit_to_indexer
-from core.utils import (
-    extract_percentage,
-    extract_speed,
-    get_priority_label,
-    get_thread_job,
-    is_priority_key,
-    log_info,
-    run_command,
-    update_job_progress,
-)
+from core.format import get_priority_label, is_priority_key
+from core.logging import log_info
+from core.proc import extract_percentage, extract_speed, run_command
+from logic.jobs.context import get_thread_job, update_job_progress
 
 
 @dataclass(frozen=True, slots=True)

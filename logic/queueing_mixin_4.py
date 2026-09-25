@@ -330,7 +330,7 @@ class _QueueServiceMixinPart4:
                     del self._processes[job_id]
                 self._persist_jobs_locked()
 
-                from logic.process_reaper import get_scheduler
+                from core.scheduler import get_scheduler
 
                 get_scheduler().add_job(
                     self._try_start_queued,

@@ -348,7 +348,7 @@ def test_check_tools_honors_configured_commands(tmp_path) -> None:
     assert processing.check_tools(conf) is True
 
 def test_run_command_handles_carriage_return_progress() -> None:
-    from core.utils import run_command
+    from core.proc import run_command
 
     parsed: list[str] = []
     script = (
@@ -523,7 +523,7 @@ def test_scan_item_support_assets_prefers_largest_video_and_primary_nfo(tmp_path
     assert scan.mediainfo_source_path == large_video
 
 def test_start_watchdog_observer_starts_only_existing_directories(tmp_path) -> None:
-    from core import utils as utils_mod
+    from core import fs
 
     watched = tmp_path / "watched"
     watched.mkdir()
@@ -549,7 +549,7 @@ def test_start_watchdog_observer_starts_only_existing_directories(tmp_path) -> N
             _ = timeout
             self.joined = True
 
-    observer, scheduled = utils_mod.start_watchdog_observer(
+    observer, scheduled = fs.start_watchdog_observer(
         [(object(), watched, True), (object(), missing, True)],
         observer_factory=_FakeObserver,
     )
@@ -559,57 +559,32 @@ def test_start_watchdog_observer_starts_only_existing_directories(tmp_path) -> N
     assert observer.started is True
     assert observer.scheduled == [(str(watched), True)]
 
-    utils_mod.stop_watchdog_observer(observer)
+    fs.stop_watchdog_observer(observer)
 
     assert observer.stopped is True
     assert observer.joined is True
 
-def test_dynamic_cache_bust_updates_from_watchdog_events(tmp_path, monkeypatch) -> None:
-    assets_dir = tmp_path / "assets"
-    assets_dir.mkdir()
-    asset_file = assets_dir / "app.js"
-    asset_file.write_text("console.log('a');", encoding="utf-8")
+def test_asset_cache_token_changes_when_a_dist_file_changes(tmp_path) -> None:
+    dist = tmp_path / "js" / "dist" / "pages"
+    dist.mkdir(parents=True)
+    (tmp_path / "css").mkdir()
+    bundle = dist / "queue.js"
+    bundle.write_text("console.log('a');", encoding="utf-8")
+    (tmp_path / "css" / "core.css").write_text("body{}", encoding="utf-8")
+    (tmp_path / "js" / "notes.txt").write_text("outside the bundle", encoding="utf-8")
 
-    class _FakeObserver:
-        def __init__(self) -> None:
-            self.handler = None
-            self.started = False
-            self.stopped = False
+    initial = assets_api.compute_asset_token(tmp_path)
+    assert assets_api.compute_asset_token(tmp_path) == initial
 
-        def schedule(self, handler, _path: str, recursive: bool) -> None:
-            _ = recursive
-            self.handler = handler
+    (tmp_path / "js" / "notes.txt").write_text("still outside", encoding="utf-8")
+    assert assets_api.compute_asset_token(tmp_path) == initial
 
-        def start(self) -> None:
-            self.started = True
+    bundle.write_text("console.log('bb');", encoding="utf-8")
+    assert assets_api.compute_asset_token(tmp_path) != initial
 
-        def stop(self) -> None:
-            self.stopped = True
-
-        def join(self, timeout: float = 5.0) -> None:
-            _ = timeout
-
-    monkeypatch.setattr(assets_api, "ASSETS_DIR", assets_dir)
-    monkeypatch.setattr(assets_api, "Observer", _FakeObserver)
-
-    token = assets_api._DynamicCacheBust(ttl_seconds=0.1, reconcile_interval_s=60.0)
-    token.start()
-    initial = str(token)
-
-    observer = token._observer
-    assert observer is not None
-    assert observer.started is True
-    assert observer.handler is not None
-
-    asset_file.write_text("console.log('b');", encoding="utf-8")
-    observer.handler.on_modified(SimpleNamespace(is_directory=False, src_path=str(asset_file)))
-
-    monkeypatch.setattr(token, "_compute_value", lambda: (_ for _ in ()).throw(AssertionError("unexpected rescan")))
-
-    assert str(token) != initial
-
-    token.stop()
-    assert observer.stopped is True
+def test_asset_cache_token_is_a_template_global() -> None:
+    assert assets_api.templates.env.globals["cache_bust"] == assets_api.asset_cache_bust
+    assert assets_api.asset_cache_bust
 
 def test_update_settings_reports_partial_success_when_monitor_restart_fails(monkeypatch) -> None:
     monkeypatch.setattr(config_mod, "save_config", lambda _updates: True)

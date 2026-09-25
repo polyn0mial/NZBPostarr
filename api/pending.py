@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from api.deps import _filter_bulk_selectable_items, _log_selected_payload
 from core import database
 from core.config import get_config
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.pending import children as pending_children
 from logic.pending import index as pending_index
 from logic.pending import tree as pending_tree

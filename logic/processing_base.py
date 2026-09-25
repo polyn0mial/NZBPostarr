@@ -22,28 +22,19 @@ from core.database import (
     record_nntp_success,
     update_db_destination,
 )
-from core.utils import (
+from core.fs import compute_size_uncached, should_skip_file
+from core.logging import log_completed, log_info, log_success, log_verbose
+from core.media import (
     AUDIOBOOK_EXTENSIONS,
     EBOOK_EXTENSIONS,
     MUSIC_EXTENSIONS,
+    normalize_category,
     VIDEO_EXTENSIONS,
-    compute_size_uncached,
-    extract_percentage,
-    extract_speed,
-    get_thread_job,
-    has_multi_file_episode_pattern,
-    log_completed,
-    log_info,
-    log_success,
-    log_verbose,
-    normalize_submission_category,
-    purge_item_data,
-    run_command,
-    set_thread_job,
-    should_skip_file,
-    update_job_progress,
-    wait_for_job_resume,
 )
+from core.proc import extract_percentage, extract_speed, run_command
+from logic.classify.patterns import has_multi_file_episode_pattern
+from logic.jobs.context import get_thread_job, set_thread_job, update_job_progress, wait_for_job_resume
+from logic.pipeline.cleanup import purge_item_data
 from logic.classify.explicit import resolve_explicit_path
 from logic.classify.names import has_clear_movie_year, looks_like_tv_name
 from logic.classify.tv_packs import _tv_pack_episode_rejection_reason
@@ -80,7 +71,7 @@ __all__ = [
     'as_completed', 'cast', 'compute_size_uncached', 'copy', 'dataclass', 'defaultdict', 'extract_percentage',
     'extract_speed', 'field', 'find_configured_root', 'get_config', 'get_configured_folders', 'get_thread_job',
     'has_clear_movie_year', 'has_multi_file_episode_pattern', 'humanfriendly', 'log_completed', 'log_info',
-    'log_success', 'log_verbose', 'logger', 'looks_like_tv_name', 'mp', 'normalize_submission_category', 'os',
+    'log_success', 'log_verbose', 'logger', 'looks_like_tv_name', 'mp', 'normalize_category', 'os',
     'pin_folder_ts_to_children', 'purge_item_data', 're', 'record_nntp_success', 'resolve_explicit_path', 'run_command',
     'scan_configured_items', 'set_thread_job', 'should_skip_file', 'shutil', 'stdlib_queue', 'submit_api',
     'subprocess', 'update_db_destination', 'update_job_progress', 'upload_item', 'uuid', 'wait_for_job_resume',

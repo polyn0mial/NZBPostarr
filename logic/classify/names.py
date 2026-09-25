@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Callable, Optional, Tuple
 
 from core.release_name import parse_release_name
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.classify.anime import _lookup_anime_status
 from logic.classify.hints import _coerce_category_hint, _hint_category_from_itype
 from logic.classify.patterns import (

@@ -16,6 +16,7 @@ from pydantic import BaseModel
 
 from core import database
 from core.config import get_config
+from core.tools import check_tools
 from logic import updater
 from logic.pending.roots import get_configured_folders
 from logic.services import get_upload_service
@@ -30,10 +31,8 @@ router = APIRouter(prefix="/api/system", tags=["system"])
 @dashboard_router.get("/health")
 async def health_check() -> Dict[str, Any]:
     """Check the health of tools and directory structure."""
-    import shutil
-
     conf = get_config()
-    tools = {t: bool(shutil.which(t)) for t in ["rar", "parpar", "nyuu"]}
+    tools = {name: bool(executable) for name, executable in check_tools(conf).items()}
     configured_folders = get_configured_folders(conf)
     folders = {
         "configured": any(folder.exists() for folder in configured_folders),

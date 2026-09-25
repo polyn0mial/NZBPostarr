@@ -14,7 +14,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Set, Tuple
 import requests
 from loguru import logger
 
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.classify.patterns import (
     _ANIME_EXTRA_RE,
     _ANIME_LOOKUP_CLEAN_RE,

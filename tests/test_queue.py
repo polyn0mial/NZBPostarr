@@ -6,6 +6,7 @@ import psutil
 
 from logic import usenet_stream
 from logic.jobs.models import ProcessingJobRequest
+from core.paths import path_key
 from tests.support import *
 
 def test_job_names_use_category_and_item_count(tmp_path) -> None:
@@ -58,7 +59,7 @@ def test_upload_service_passes_target_paths_to_processing_run_job():
     assert called["paths"] == ["/tmp/example.mkv"]
 
 def test_run_command_stop_is_responsive_for_quiet_process() -> None:
-    from core.utils import run_command
+    from core.proc import run_command
 
     job = {"stop_requested": False}
     stop_timer = threading.Timer(0.2, lambda: job.__setitem__("stop_requested", True))
@@ -80,7 +81,7 @@ def test_run_command_stop_is_responsive_for_quiet_process() -> None:
 def test_run_job_marks_missing_tools_as_failed(monkeypatch) -> None:
     from types import SimpleNamespace
 
-    from core.utils import set_thread_job
+    from logic.jobs.context import set_thread_job
     from logic import processing
 
     job = {"job_id": "job-tools", "status": "running", "progress": "Starting..."}
@@ -95,7 +96,7 @@ def test_run_job_marks_missing_tools_as_failed(monkeypatch) -> None:
 
 def test_validation_stop_request_preserves_current_item_for_resume(tmp_path, monkeypatch) -> None:
     from core import registry
-    from core.utils import reset_thread_job, set_thread_job
+    from logic.jobs.context import reset_thread_job, set_thread_job
     from logic import processing
 
     item_path = _touch(tmp_path / "Current.Movie.2026.mkv")
@@ -465,7 +466,7 @@ def test_pausing_one_job_keeps_scheduler_lane(tmp_path, monkeypatch) -> None:
     assert launched == []
 
 def test_paused_python_job_holds_at_item_boundary_until_resumed(tmp_path, monkeypatch) -> None:
-    from core.utils import wait_for_job_resume
+    from logic.jobs.context import wait_for_job_resume
 
     service = _make_queue_service_stub(tmp_path)
     service._jobs = {
@@ -1372,7 +1373,7 @@ def test_api_start_upload_builds_processing_request(monkeypatch, tmp_path) -> No
 
 def test_run_job_uses_runtime_target_path_order(tmp_path, monkeypatch) -> None:
     import logic.processing as processing
-    from core.utils import set_thread_job
+    from logic.jobs.context import set_thread_job
 
     cases = [
         (
@@ -1434,7 +1435,7 @@ def test_run_job_uses_runtime_target_path_order(tmp_path, monkeypatch) -> None:
 
 def test_run_job_targeted_validation_uses_prefetched_duplicate_state(tmp_path, monkeypatch) -> None:
     import logic.processing as processing
-    from core.utils import set_thread_job
+    from logic.jobs.context import set_thread_job
 
     movies_dir = tmp_path / "movies"
     movies_dir.mkdir()
@@ -1448,7 +1449,7 @@ def test_run_job_targeted_validation_uses_prefetched_duplicate_state(tmp_path, m
     captured: list[tuple[str, dict[str, str | None] | None, Path | None]] = []
 
     def fake_build_duplicate_prefetch_state(_conf, sorted_items, _configured_folders, **_kwargs):
-        keys = {processing._normalize_runtime_path(path): f"db::{path.name}" for path, _cat in sorted_items}
+        keys = {path_key(path): f"db::{path.name}" for path, _cat in sorted_items}
         dupes = {
             f"db::{first.name}": {"geek": "2026-04-10T00:00:00Z"},
             f"db::{second.name}": {"geek": None},
@@ -1514,7 +1515,7 @@ def test_run_job_rejects_relative_target_paths(tmp_path, monkeypatch) -> None:
 def test_run_job_fails_when_targeted_selection_resolves_to_zero_items(tmp_path, monkeypatch) -> None:
     import logic.classify.explicit as classify_explicit
     import logic.processing as processing
-    from core.utils import set_thread_job
+    from logic.jobs.context import set_thread_job
 
     item = tmp_path / "Unknown.Release.mkv"
     item.write_bytes(b"x")
@@ -2002,8 +2003,8 @@ def test_preview_processing_items_reports_ready_and_duplicate_destinations(tmp_p
         lambda _conf: [SimpleNamespace(id="geek", name="NZBGeek", enabled=True)],
     )
     monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _indexer, _conf: True)
-    first_key = processing._normalize_runtime_path(first)
-    second_key = processing._normalize_runtime_path(second)
+    first_key = path_key(first)
+    second_key = path_key(second)
     monkeypatch.setattr(
         processing,
         "_build_duplicate_prefetch_state",

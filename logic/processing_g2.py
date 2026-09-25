@@ -4,7 +4,9 @@ from logic.processing_base import (
     Any, Callable, Dict, Iterator, List, Optional, Path, dataclass, defaultdict, find_configured_root, get_thread_job, log_completed, log_info,
     log_success, logger, looks_like_tv_name, re, shutil, update_job_progress, uuid,
 )
-from logic.processing_g1 import (QueueItemValidation, _append_cleanup_path, _build_item_key, _has_tv_season_pack_name, _link_or_copy_filtered_file, _mediainfo_output_path, _normalize_processing_category, _normalize_processing_type, _normalize_runtime_path, _normalize_runtime_target_paths, _persist_runtime_job_checkpoint, _resolve_ambiguous_submission_category, _runtime_checkpoint_path_key, _safe_fs_component, _scan_release_media, _select_upload_server, _selected_indexers, _submission_category_label)  # noqa: F401
+from core.media import normalize_category
+from core.paths import checkpoint_key, path_key
+from logic.processing_g1 import (QueueItemValidation, _append_cleanup_path, _build_item_key, _has_tv_season_pack_name, _link_or_copy_filtered_file, _mediainfo_output_path, _normalize_processing_type, _normalize_runtime_target_paths, _persist_runtime_job_checkpoint, _resolve_ambiguous_submission_category, _safe_fs_component, _scan_release_media, _select_upload_server, _selected_indexers, _submission_category_label)  # noqa: F401
 
 def _find_mediainfo_path(path: Path, conf: Any) -> Optional[Path]:
     """Return the generated mediainfo sidecar for an item when present."""
@@ -103,7 +105,7 @@ def _inject_inferred_tv_pack_entries(
 ) -> list[tuple[Path, str]]:
     """Infer selected season-pack folders when the UI sent only child episode paths."""
     existing_dirs = {
-        _normalize_runtime_path(path)
+        path_key(path)
         for path, cat in raw_items
         if cat in {"tv", "anime"} and path.is_dir()
     }
@@ -122,10 +124,10 @@ def _inject_inferred_tv_pack_entries(
     pack_parents = {
         parent
         for parent, episode_paths in episodes_by_parent.items()
-        if _normalize_runtime_path(parent) not in existing_dirs
+        if path_key(parent) not in existing_dirs
         and (
             already_staged_source_dirs is None
-            or _normalize_runtime_path(parent) not in already_staged_source_dirs
+            or path_key(parent) not in already_staged_source_dirs
         )
         and parent.name not in existing_dir_names
         and _looks_like_tv_season_pack_folder(parent, episode_paths)
@@ -185,7 +187,7 @@ def is_season_pack(path: Path) -> bool:
 
 def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
     """Validate and preserve the detected category used for indexer submission."""
-    normalized_category = _normalize_processing_category(category)
+    normalized_category = normalize_category(category)
     normalized_itype = _normalize_processing_type(itype)
     media_counts, _video_names = _scan_release_media(path)
 
@@ -249,7 +251,7 @@ def _build_duplicate_prefetch_state(
     source_root_cache: Dict[str, Optional[Path]] = {}
 
     def source_root_for(item_path: Path) -> Optional[Path]:
-        item_key = _normalize_runtime_path(item_path)
+        item_key = path_key(item_path)
         if item_key not in source_root_cache:
             source_root_cache[item_key] = find_configured_root(item_path, configured_folders)
         return source_root_cache[item_key]
@@ -264,18 +266,18 @@ def _build_duplicate_prefetch_state(
 
     item_db_keys: Dict[str, str] = {}
     for item, _cat in sorted_items:
-        item_db_keys[_normalize_runtime_path(item)] = _build_item_key(item, source_root_for(item))
+        item_db_keys[path_key(item)] = _build_item_key(item, source_root_for(item))
 
     prefetched_dupes: Dict[str, Dict[str, Optional[str]]] = {}
     if eligible_indexer_ids:
         from logic.processing import _live_size_bytes
 
-        item_keys = [item_db_keys[_normalize_runtime_path(item)] for item, _cat in sorted_items]
+        item_keys = [item_db_keys[path_key(item)] for item, _cat in sorted_items]
         # Current on-disk size per item key -- lets get_duplicate_status_batch tell
         # a genuine re-upload of the same name apart from a locally-replaced file
         # (same name, different size) instead of treating every name match as done.
         item_filesizes: Dict[str, int] = {
-            item_db_keys[_normalize_runtime_path(item)]: _live_size_bytes(item)
+            item_db_keys[path_key(item)]: _live_size_bytes(item)
             for item, _cat in sorted_items
         }
         prefetched_dupes = get_duplicate_status_batch(item_keys, eligible_indexer_ids, filesizes=item_filesizes)
@@ -294,7 +296,7 @@ def _iter_work_items(
         yield from enumerate(sorted_items)
         return
 
-    targeted_lookup = {_normalize_runtime_path(item): (item, cat) for item, cat in sorted_items}
+    targeted_lookup = {path_key(item): (item, cat) for item, cat in sorted_items}
     if runtime_job is None:
         yield from enumerate(sorted_items)
         return
@@ -304,13 +306,13 @@ def _iter_work_items(
         # Items removed from the active job (QueueService.remove_active_job_item)
         # are dropped here, so a removal is honoured and not only hidden.
         for removed_path in list(runtime_job.get("_removed_item_paths") or []):
-            targeted_lookup.pop(_normalize_runtime_path(Path(str(removed_path))), None)
+            targeted_lookup.pop(path_key(Path(str(removed_path))), None)
         if not targeted_lookup:
             break
         runtime_paths = _normalize_runtime_target_paths(runtime_job, paths)
         next_key = None
         for raw_path in runtime_paths:
-            resolved = _normalize_runtime_path(Path(raw_path))
+            resolved = path_key(Path(raw_path))
             if resolved in targeted_lookup:
                 next_key = resolved
                 break
@@ -319,7 +321,7 @@ def _iter_work_items(
             break
 
         runtime_job["target_paths"] = [
-            raw_path for raw_path in runtime_paths if _normalize_runtime_path(Path(raw_path)) != next_key
+            raw_path for raw_path in runtime_paths if path_key(Path(raw_path)) != next_key
         ]
         item, item_cat = targeted_lookup.pop(next_key)
         idx = total - len(targeted_lookup) - 1
@@ -334,13 +336,13 @@ def _begin_runtime_item_checkpoint(
     if job is None:
         return
     path_text = str(path)
-    path_key = _runtime_checkpoint_path_key(path_text)
+    path_key = checkpoint_key(path_text)
     inflight = [
         str(value)
         for value in (job.get("_inflight_item_paths") or [])
         if str(value).strip()
     ]
-    if path_key and all(_runtime_checkpoint_path_key(value) != path_key for value in inflight):
+    if path_key and all(checkpoint_key(value) != path_key for value in inflight):
         inflight.append(path_text)
     job["_inflight_item_paths"] = inflight
     if make_current:
@@ -350,13 +352,13 @@ def _begin_runtime_item_checkpoint(
 def _complete_runtime_item_checkpoint(job: Optional[dict[str, Any]], path: Path) -> None:
     if job is None:
         return
-    path_key = _runtime_checkpoint_path_key(path)
+    path_key = checkpoint_key(path)
     job["_inflight_item_paths"] = [
         str(value)
         for value in (job.get("_inflight_item_paths") or [])
-        if _runtime_checkpoint_path_key(value) != path_key
+        if checkpoint_key(value) != path_key
     ]
-    if _runtime_checkpoint_path_key(job.get("_current_item_path")) == path_key:
+    if checkpoint_key(job.get("_current_item_path")) == path_key:
         job.pop("_current_item_path", None)
     _persist_runtime_job_checkpoint(job)
 
@@ -382,7 +384,7 @@ def _classify_preview_source_item(
         return path, path_text, name, category, "Source path was not found", "invalid"
     if not category or category in {"all", "both", "mixed", "selected", "external"}:
         return path, str(path), name, category, "A concrete upload category is required", "invalid"
-    normalized = _normalize_runtime_path(path)
+    normalized = path_key(path)
     if normalized in seen_paths:
         return path, str(path), name, category, "Duplicate source path in selection", "excluded"
     return path, str(path), name, category, None, "valid"
@@ -548,7 +550,7 @@ def _build_item_hint_map(item_hints: Optional[List[Dict[str, Any]]]) -> dict[str
     for item in item_hints or []:
         raw_path = item.get("path")
         if raw_path:
-            hints[_normalize_runtime_path(Path(str(raw_path)))] = dict(item)
+            hints[path_key(Path(str(raw_path)))] = dict(item)
     return hints
 
 @dataclass
@@ -640,7 +642,7 @@ def _prefetched_validation_state(
     item: Path,
 ) -> tuple[Optional[Dict[str, Optional[str]]], Optional[Path]]:
     destination_status = None
-    normalized_item = _normalize_runtime_path(item)
+    normalized_item = path_key(item)
     if context.prefetched_item_db_keys:
         item_db_key = context.prefetched_item_db_keys.get(normalized_item)
         if item_db_key:

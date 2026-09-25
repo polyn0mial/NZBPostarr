@@ -16,11 +16,9 @@ from loguru import logger
 
 from core import config as config_mod
 from core import database
+from core import proc
 from core.config import get_config
-from core.utils import (
-    reset_thread_job,
-    set_thread_job,
-)
+from logic.jobs.context import reset_thread_job, set_thread_job
 from logic import processing, usenet_stream
 from logic.pending.index import get_pending_index_manager
 from logic.pending.view import build_dashboard_summary
@@ -145,8 +143,8 @@ def init_app() -> None:
     """
     from core.database import init_database
     from core.registry import get_registry
-    from core.utils import run_global_purge
-    from logic.process_reaper import get_scheduler
+    from logic.pipeline.cleanup import run_global_purge
+    from core.scheduler import get_scheduler
 
     logger.info("Initializing database...")
     init_database()
@@ -432,3 +430,7 @@ def get_recent_errors(limit: int = 25) -> list[dict[str, Any]]:
 
     errors.sort(key=lambda entry: str(entry.get("when") or ""), reverse=True)
     return errors[:capped]
+
+
+# core.proc records each job's tool processes here so stop/clear can terminate them.
+proc.set_process_registry(UploadService)

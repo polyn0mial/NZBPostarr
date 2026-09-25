@@ -2,7 +2,7 @@
 
 from logic.processing_base import (
     AUDIOBOOK_EXTENSIONS, Any, Dict, EBOOK_EXTENSIONS, List, Lock, MUSIC_EXTENSIONS, Optional, Path, VIDEO_EXTENSIONS, _APP_EXTENSIONS, _ONE_GIB, copy,
-    dataclass, field, has_clear_movie_year, has_multi_file_episode_pattern, humanfriendly, log_verbose, logger, normalize_submission_category, os, re,
+    dataclass, field, has_clear_movie_year, has_multi_file_episode_pattern, humanfriendly, log_verbose, logger, normalize_category, os, re,
     shutil, update_job_progress,
 )
 
@@ -26,24 +26,6 @@ class SupportAssetScan:
 
     nfo_path: Optional[Path] = None
     mediainfo_source_path: Optional[Path] = None
-
-def _tool_exists(tool_cmd: str) -> bool:
-    """Return True when a configured executable is directly present or resolvable on PATH."""
-    text = str(tool_cmd or "").strip()
-    if not text:
-        return False
-    candidate = Path(text)
-    if candidate.is_absolute() or candidate.parent != Path("."):
-        return candidate.exists()
-    return shutil.which(text) is not None
-
-def _processing_tool_commands(conf: Any) -> dict[str, str]:
-    """Resolve the command strings used for prep/upload tooling."""
-    return {
-        "rar": str(getattr(conf, "rar_path", "") or "rar"),
-        "parpar": str(getattr(conf, "parpar_path", "") or "parpar"),
-        "nyuu": str(getattr(conf, "nyuu_path", "") or "nyuu"),
-    }
 
 def _mediainfo_output_path(path: Path, conf: Any) -> Path:
     """Return the canonical mediainfo sidecar path for an item."""
@@ -112,14 +94,6 @@ def _resolve_targeted_path(raw_path: str) -> Optional[Path]:
         return None
     path = Path(str(raw_path))
     return path if path.is_absolute() else None
-
-def _normalize_runtime_path(path: Path) -> str:
-    """Normalize a filesystem path for stable comparisons."""
-    try:
-        resolved = str(path.resolve())
-    except OSError:
-        resolved = str(path)
-    return resolved.casefold() if os.name == "nt" else resolved
 
 def _safe_fs_component(value: str, *, fallback: str = "item", max_length: int = 120) -> str:
     """Return a stable path component safe for temporary workspace names."""
@@ -246,10 +220,6 @@ def _iter_folder_ancestor_entries(path: Path, base_folder: Optional[Path]) -> li
         entries.append((rel_key, folder_path))
     return entries
 
-def _normalize_processing_category(raw: str) -> str:
-    """Normalize queue/display categories into canonical submission categories."""
-    return normalize_submission_category(raw)
-
 def _normalize_processing_type(raw: str) -> str:
     """Normalize DB/display item types for strict submission-category decisions."""
     key = str(raw or "").strip().lower()
@@ -262,7 +232,7 @@ def _normalize_processing_type(raw: str) -> str:
     }
     if key in special_types:
         return special_types[key]
-    normalized = normalize_submission_category(key)
+    normalized = normalize_category(key)
     return "movie" if normalized == "movies" else normalized
 
 def _scan_release_media(path: Path) -> tuple[dict[str, int], list[str]]:
@@ -462,10 +432,6 @@ def _persist_runtime_job_checkpoint(job: Optional[dict[str, Any]]) -> None:
         callback()
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.warning(f"Could not persist runtime job checkpoint: {exc}")
-
-def _runtime_checkpoint_path_key(path: Any) -> str:
-    text = str(path or "").strip()
-    return os.path.normpath(text).replace("\\", "/") if text else ""
 
 def _selected_indexers(
     conf: Any, target_indexer_id: Optional[str], target_indexer_ids: Optional[List[str]]

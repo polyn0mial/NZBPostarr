@@ -19,7 +19,8 @@ from loguru import logger
 from pydantic import BaseModel, Field, field_validator
 
 from core.redaction import redact_mapping, redact_text, redact_url
-from core.utils import log_success, log_verbose, normalize_submission_category
+from core.logging import log_success, log_verbose
+from core.media import normalize_category
 
 # Singleton instance and lock
 _REGISTRY = None
@@ -89,7 +90,7 @@ class CategoryMapping(BaseModel):
         cleaned = str(category or "").strip().lower()
         if cleaned in _INDEXER_CATEGORY_ALIASES:
             return _INDEXER_CATEGORY_ALIASES[cleaned]
-        normalized = normalize_submission_category(cleaned)
+        normalized = normalize_category(cleaned)
         return "movie" if normalized == "movies" else normalized
 
     def resolve_code(self, category: str) -> tuple[Optional[str], Optional[str], bool]:

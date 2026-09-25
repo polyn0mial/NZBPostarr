@@ -15,7 +15,9 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from core.utils import atomic_write_text, normalize_submission_category
+from core import logging as _logging  # noqa: F401  (registers the custom log levels and the log file sink)
+from core.fs import atomic_write_text
+from core.media import normalize_category
 
 # core/ lives directly under the project root.
 APP_ROOT = Path(__file__).resolve().parent.parent
@@ -68,7 +70,7 @@ def _normalize_folder_entry_category(raw: Any) -> str:
     cleaned = str(raw or "").strip().lower()
     if cleaned in {"", "auto", "external"}:
         return _AUTO_ROOT_CATEGORY
-    return normalize_submission_category(cleaned)
+    return normalize_category(cleaned)
 
 
 def _is_auto_root_category(raw: Any) -> bool:

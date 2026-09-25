@@ -1,5 +1,6 @@
 # Auto-split from processing.py - verbatim symbol bodies, synthesized imports.
 
+from core.media import processing_itype
 from logic.processing_base import (
     Any, Optional, Path, log_info, update_job_progress,
 )
@@ -8,21 +9,7 @@ from logic.processing_g2 import (_JobRunState, _complete_runtime_item_checkpoint
 
 def _processing_db_type(path: Path, category: str) -> str:
     """Map queue routing categories to the DB-facing item label."""
-    if category == "tv":
-        return "TV Show" if is_season_pack(path) else "TV Episode"
-    if category == "movies":
-        return "Movies"
-    if category == "anime":
-        return "Anime"
-    if category == "disc":
-        return "DISC"
-    if category == "music":
-        return "Music"
-    if category == "books":
-        return "Books"
-    if category == "apps":
-        return "Apps"
-    return "Misc"
+    return processing_itype(category, season_pack=category == "tv" and is_season_pack(path))
 
 def _handle_nonready_validation(
     validation: QueueItemValidation,
