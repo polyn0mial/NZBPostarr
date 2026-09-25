@@ -24,7 +24,7 @@ from logic.pending import view as pending_view
 from logic.pending.selection import stamp_upload_itype
 from logic.pending.index import get_pending_index_manager
 from logic.pending.roots import get_configured_folders
-from logic.queueing import ProcessingJobRequest
+from logic.jobs.models import ProcessingJobRequest
 from logic.services import get_upload_service, UploadService
 
 

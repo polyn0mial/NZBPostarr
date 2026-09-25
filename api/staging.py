@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from api.deps import _filter_bulk_selectable_items, _log_selected_payload, _normalize_request_strings
 from core.config import get_config
 from logic import processing
-from logic.queueing import ProcessingJobRequest
+from logic.jobs.models import ProcessingJobRequest
 from logic.services import get_upload_service, UploadService
 
 

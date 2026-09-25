@@ -24,11 +24,10 @@ from core.utils import (
 from logic import processing, usenet_stream
 from logic.pending.index import get_pending_index_manager
 from logic.pending.view import build_dashboard_summary
-from logic.queueing import (
-    ProcessingJobRequest,
-    QueueServiceMixin,
-    StreamJobRequest,
-)
+from logic.jobs.models import ProcessingJobRequest, StreamJobRequest
+from logic.jobs.requests import resolve_force_flag
+from logic.jobs.store import is_resumable_stopped
+from logic.queueing import QueueServiceMixin
 
 _WEB_CONSOLE_SUPPRESSED_PREFIXES = ("[Queue Update] Found ",)
 
@@ -183,30 +182,7 @@ class UploadService(QueueServiceMixin):
         force: Optional[bool] = None,
         test_mode: bool = False,
     ) -> bool:
-        """Single source of truth for duplicate-check/force resolution."""
-        conf = get_config()
-
-        # Explicit `force` wins (used by CLI/headless).
-        if force is not None:
-            force_v = bool(force)
-        else:
-            # WebUI uses the inverse of "enable duplicate check".
-            force_v = not bool(True if enable_duplicate_check is None else enable_duplicate_check)
-
-        # Global setting and test mode always bypass duplicate checks.
-        if not getattr(conf, "enable_duplicate_checking", True):
-            force_v = True
-        if test_mode:
-            force_v = True
-
-        logger.info(
-            "[FORCE-FLAG] enable_duplicate_check={!r}  force={!r}  test_mode={!r}  => skip_dupes={!r}",
-            enable_duplicate_check,
-            force,
-            test_mode,
-            force_v,
-        )
-        return force_v
+        return resolve_force_flag(enable_duplicate_check=enable_duplicate_check, force=force, test_mode=test_mode)
 
     def _get_statistics_cached(self, now: float, ttl_s: float) -> dict[str, Any]:
         if self._stats_cache and (now - self._stats_cache_ts) < ttl_s:
@@ -301,7 +277,7 @@ class UploadService(QueueServiceMixin):
                 )
                 return
             test_v = bool(request.test_mode)
-            force_v = self._resolve_force_flag(
+            force_v = resolve_force_flag(
                 enable_duplicate_check=request.enable_duplicate_check,
                 force=request.force,
                 test_mode=test_v,
@@ -336,7 +312,7 @@ class UploadService(QueueServiceMixin):
             self._mark_stream_job_started(job, request)
             test_v = bool(request.test_mode)
 
-            force_v = self._resolve_force_flag(
+            force_v = resolve_force_flag(
                 enable_duplicate_check=request.enable_duplicate_check,
                 test_mode=test_v,
             )
@@ -381,15 +357,6 @@ def get_upload_service() -> UploadService:
     return UploadService()
 
 
-def _is_resumable_stopped(job: dict[str, Any]) -> bool:
-    """A stopped processing job with explicit paths can be resumed, so it is still queued."""
-    if job.get("status") != "stopped":
-        return False
-    if str(job.get("job_type") or "processing") != "processing":
-        return False
-    return bool(job.get("has_explicit_paths"))
-
-
 def build_queue_snapshot(service: "UploadService") -> dict[str, Any]:
     """Bucket active jobs into running/queued/finished with the queue control state.
 
@@ -401,14 +368,14 @@ def build_queue_snapshot(service: "UploadService") -> dict[str, Any]:
 
     running = [j for j in all_jobs if j.get("status") in ("running", "stopping", "paused")]
     queued = sorted(
-        [j for j in all_jobs if j.get("status") == "queued" or _is_resumable_stopped(j)],
+        [j for j in all_jobs if j.get("status") == "queued" or is_resumable_stopped(j)],
         key=lambda j: (-int(j.get("priority") or 0), j.get("started_at", "")),
     )
     finished = [
         j
         for j in all_jobs
         if j.get("status") in ("completed", "failed", "cancelled")
-        or (j.get("status") == "stopped" and not _is_resumable_stopped(j))
+        or (j.get("status") == "stopped" and not is_resumable_stopped(j))
     ]
     return {
         "running": running,

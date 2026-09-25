@@ -1,7 +1,11 @@
 # Auto-split mixin from queueing.py - verbatim method bodies.
+# W11-B10: the process registry lives in logic/jobs/processes.py; the one-line delegations
+# below are removed with the mixins in W12-B12.
 
+from logic.jobs.processes import ProcessRegistry
+from logic.jobs.requests import build_retry_request
 from logic.queueing_base import (
-    Any, JobState, Optional, Path, datetime, log_info, logger, psutil, shutil, time, timedelta, timezone, usenet_stream, uuid,
+    Any, JobState, Optional, Path, datetime, log_info, logger, shutil, time, timedelta, timezone, usenet_stream, uuid,
 )
 
 class _QueueServiceMixinPart3:
@@ -31,89 +35,17 @@ class _QueueServiceMixinPart3:
 
         job["_artifacts_cleaned"] = True
 
+    def _process_registry(self) -> ProcessRegistry:
+        return ProcessRegistry(self._processes, self._lock)
+
     def register_process(self, job_id: str, process: Any) -> None:
-        with self._lock:
-            if job_id not in self._processes:
-                self._processes[job_id] = []
-            self._processes[job_id].append(process)
-
-    @staticmethod
-    def _collect_process_tree_pids(process: Any) -> list[int]:
-        pid = getattr(process, "pid", None)
-        if not pid:
-            return []
-        try:
-            root = psutil.Process(pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            return []
-
-        pids = [root.pid]
-        try:
-            pids.extend(child.pid for child in root.children(recursive=True))
-        except (psutil.Error, OSError):
-            pass
-        return pids
+        self._process_registry().register(job_id, process)
 
     def _terminate_job_processes_locked(self, job_id: str, *, kill_delay_s: float = 0.5) -> int:
-        """Terminate registered tool processes for a job, then schedule a quick kill fallback."""
-        processes = list(self._processes.get(job_id) or [])
-        if not processes:
-            return 0
-
-        pids: list[int] = []
-        seen: set[int] = set()
-        for process in processes:
-            for pid in self._collect_process_tree_pids(process):
-                if pid not in seen:
-                    seen.add(pid)
-                    pids.append(pid)
-
-        terminated = 0
-        for pid in reversed(pids):
-            try:
-                proc = psutil.Process(pid)
-                if proc.is_running():
-                    proc.terminate()
-                    terminated += 1
-            except (psutil.Error, OSError):
-                continue
-
-        if pids:
-            from logic.process_reaper import get_scheduler
-
-            sched = get_scheduler()
-
-            def kill_remaining(target_pids: list[int] = list(pids)) -> None:
-                for target_pid in reversed(target_pids):
-                    try:
-                        proc = psutil.Process(target_pid)
-                        if proc.is_running():
-                            proc.kill()
-                    except (psutil.Error, OSError):
-                        continue
-
-            sched.add_job(
-                kill_remaining,
-                "date",
-                run_date=datetime.now(timezone.utc) + timedelta(seconds=max(0.1, kill_delay_s)),
-                id=f"kill_{job_id}_tree",
-                replace_existing=True,
-            )
-
-        return terminated
+        return self._process_registry().terminate_locked(job_id, kill_delay_s=kill_delay_s)
 
     def unregister_process(self, job_id: str, process: Optional[Any] = None) -> None:
-        with self._lock:
-            if job_id in self._processes:
-                if process:
-                    try:
-                        self._processes[job_id].remove(process)
-                        if not self._processes[job_id]:
-                            del self._processes[job_id]
-                    except ValueError:
-                        pass
-                else:
-                    del self._processes[job_id]
+        self._process_registry().unregister(job_id, process)
 
     def pause_job(self, job_id: str) -> bool:
         """Mark a running job Paused at once without freezing its tools.
@@ -561,7 +493,7 @@ class _QueueServiceMixinPart3:
         job["_kwargs"] = kwargs
         self._set_job_target_paths(job, paths)
         if job_type == "processing":
-            job["_retry_request"] = self._build_retry_request(kwargs, paths)
+            job["_retry_request"] = build_retry_request(kwargs, paths)
         self._record_job_event(
             job,
             "created",

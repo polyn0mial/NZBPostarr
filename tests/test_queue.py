@@ -4,7 +4,8 @@
 
 import psutil
 
-from logic.queueing import ProcessingJobRequest
+from logic import usenet_stream
+from logic.jobs.models import ProcessingJobRequest
 from tests.support import *
 
 def test_job_names_use_category_and_item_count(tmp_path) -> None:
@@ -315,7 +316,7 @@ def test_queue_lifecycle_stop_and_restart_restores_manual_resume_state(tmp_path,
     monkeypatch.setattr(queueing.database, "db_load_queue", lambda: [])
     monkeypatch.setattr(queueing.database, "db_clear_queue", lambda: 0)
     monkeypatch.setattr(queueing.database, "save_job_history", lambda *args, **kwargs: None)
-    monkeypatch.setattr(queueing.usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     class DummyQueueService(queueing.QueueServiceMixin):
         def __init__(self) -> None:
@@ -747,7 +748,7 @@ def test_finalize_stopping_job_keeps_partial_job_stopped(tmp_path, monkeypatch) 
         "save_job_history",
         lambda job_id, **kwargs: saved.append((job_id, kwargs)),
     )
-    monkeypatch.setattr(queueing.usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     job = {
         "job_id": "job-partial",
@@ -804,7 +805,7 @@ def test_clear_queued_jobs_marks_stopping_job_for_removal(tmp_path, monkeypatch)
     )
 
     monkeypatch.setattr(queueing.database, "save_job_history", lambda *args, **kwargs: None)
-    monkeypatch.setattr(queueing.usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr(usenet_stream, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     assert service.clear_queued_jobs() == 1
     job = service._jobs["job-stop"]
@@ -914,7 +915,7 @@ def test_finished_job_items_are_available_for_the_current_session(tmp_path) -> N
 
 
 def test_resumed_job_keeps_prior_progress_when_processing_restarts(tmp_path) -> None:
-    from logic.queueing import ProcessingJobRequest
+    from logic.jobs.models import ProcessingJobRequest
 
     service = _make_upload_service_stub()
     job = {
@@ -1149,7 +1150,8 @@ def test_tv_path_rewrites_ignore_forged_client_category_hints(tmp_path, monkeypa
     from types import SimpleNamespace
 
     from logic.classify import explicit as classify_explicit
-    from logic.queueing import ProcessingJobRequest, QueueServiceMixin
+    from logic.jobs import requests as job_requests
+    from logic.jobs.models import ProcessingJobRequest
 
     monkeypatch.setattr(classify_explicit, "resolve_explicit_path", lambda _path: SimpleNamespace(category="movies"))
 
@@ -1168,7 +1170,7 @@ def test_tv_path_rewrites_ignore_forged_client_category_hints(tmp_path, monkeypa
         }
         for path in (first, second)
     )
-    expanded = QueueServiceMixin._with_inferred_tv_pack_request_paths(
+    expanded = job_requests.with_inferred_tv_pack_request_paths(
         ProcessingJobRequest(category="tv", paths=(str(first), str(second)), item_hints=forged_hints)
     )
 
@@ -1187,7 +1189,7 @@ def test_tv_path_rewrites_ignore_forged_client_category_hints(tmp_path, monkeypa
         }
         for path in (parent, child)
     )
-    collapsed = QueueServiceMixin._collapse_overlapping_tv_request_paths(
+    collapsed = job_requests.collapse_overlapping_tv_request_paths(
         ProcessingJobRequest(category="tv", paths=(str(parent), str(child)), item_hints=collapse_hints)
     )
 
@@ -2060,3 +2062,40 @@ def test_force_upload_request_resolves_force_from_duplicate_check(monkeypatch) -
         )
 
         assert force_value is expected_force, case_name
+
+
+def test_resumable_stopped_predicate_ui_list_matches_engine(tmp_path) -> None:
+    # W11-B10: build_queue_snapshot (UI/CLI list) and the engine share store.is_resumable_stopped.
+    # Engine rule wins: a stopped category-wide job (no explicit paths) resumes, so it lists as queued.
+    import copy
+
+    from logic.jobs import store as job_store
+    from logic.services import build_queue_snapshot
+
+    episode = str(tmp_path / "Show.S01E01.mkv")
+    cases = [
+        ("explicit-paths-remaining", {"status": "stopped", "_paths": [episode], "has_explicit_paths": True}, True),
+        ("interrupted-item-only", {"status": "stopped", "_paths": [], "has_explicit_paths": False,
+                                   "_current_item_path": episode}, True),
+        ("category-wide-run", {"status": "stopped"}, True),
+        ("stream-job", {"status": "stopped", "job_type": "usenet_stream"}, False),
+        ("queued", {"status": "queued"}, False),
+        ("cancelled", {"status": "cancelled"}, False),
+    ]
+    jobs: dict[str, dict] = {}
+    for index, (case_name, fields, expected) in enumerate(cases):
+        job = {"job_id": case_name, "category": "tv", "started_at": f"2026-01-01T00:00:0{index}+00:00", **fields}
+        jobs[case_name] = job
+        engine_verdict = job_store.preserve_stopped_processing_job(copy.deepcopy(job))
+        assert job_store.is_resumable_stopped(job) is expected, case_name
+        assert engine_verdict is expected, case_name
+
+    service = _make_upload_service_stub(jobs=jobs)
+    service.get_queue_control_state = lambda: {"paused": False}
+    snapshot = build_queue_snapshot(service)
+    listed_queued = {job["job_id"] for job in snapshot["queued"]}
+    listed_finished = {job["job_id"] for job in snapshot["finished"]}
+    for case_name, fields, expected in cases:
+        if fields["status"] == "stopped":
+            assert (case_name in listed_queued) is expected, case_name
+            assert (case_name in listed_finished) is not expected, case_name

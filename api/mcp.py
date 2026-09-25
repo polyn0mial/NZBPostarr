@@ -162,7 +162,7 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
         Non-blocking on purpose: a real upload runs far longer than any MCP client
         tool-call timeout. Poll get_job with the returned id for progress.
         """
-        from logic.queueing import ProcessingJobRequest
+        from logic.jobs.models import ProcessingJobRequest
 
         service = _service()
         request = ProcessingJobRequest(category=category, limit=int(limit) or None, test_mode=bool(test))

@@ -759,11 +759,11 @@ def preview_processing_items(
     detail_limit: int = 500,
 ) -> Dict[str, Any]:
     """Plan and validate explicit items without creating a job or staging data."""
-    from logic.services import UploadService
+    from logic.jobs.requests import resolve_force_flag
 
     conf = get_config()
     configured_folders = get_configured_folders(conf, must_exist=True)
-    resolved_force = UploadService._resolve_force_flag(
+    resolved_force = resolve_force_flag(
         enable_duplicate_check=enable_duplicate_check,
         force=force,
         test_mode=test_mode,

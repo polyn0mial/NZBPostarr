@@ -1,14 +1,9 @@
-from logic.queueing_base import (
-    Any as Any, BaseModel as BaseModel, ConfigDict as ConfigDict, Field as Field, JobState as JobState, Optional as Optional, Path as Path,
-    ProcessingJobRequest as ProcessingJobRequest, QueueStartSummary as QueueStartSummary, StreamJobRequest as StreamJobRequest,
-    _FINISHED_JOB_RETENTION_COUNT as _FINISHED_JOB_RETENTION_COUNT, _FINISHED_JOB_RETENTION_DAYS as _FINISHED_JOB_RETENTION_DAYS,
-    _QUEUE_SOURCE_TOKEN_RE as _QUEUE_SOURCE_TOKEN_RE, _TERMINAL_JOB_STATUSES as _TERMINAL_JOB_STATUSES, atomic_write_text as atomic_write_text,
-    database as database, dataclass as dataclass, datetime as datetime, get_config as get_config, json as json, log_info as log_info,
-    log_success as log_success, logger as logger, looks_like_generic_tv_season_folder as looks_like_generic_tv_season_folder,
-    normalize_submission_category as normalize_submission_category, os as os, psutil as psutil, re as re, reset_thread_job as reset_thread_job,
-    set_thread_job as set_thread_job, shutil as shutil, threading as threading, time as time, timedelta as timedelta, timezone as timezone,
-    usenet_stream as usenet_stream, uuid as uuid,
-)
+from typing import Any, Optional
+import threading
+
+from core import database
+from core.config import get_config
+from logic.jobs.models import INVALID_CATEGORY_VALUES, ProcessingJobRequest as ProcessingJobRequest
 from logic.queueing_mixin_1 import _QueueServiceMixinPart1
 from logic.queueing_mixin_2 import _QueueServiceMixinPart2
 from logic.queueing_mixin_3 import _QueueServiceMixinPart3
@@ -16,7 +11,7 @@ from logic.queueing_mixin_4 import _QueueServiceMixinPart4
 from logic.queueing_mixin_5 import _QueueServiceMixinPart5
 
 class QueueServiceMixin(_QueueServiceMixinPart1, _QueueServiceMixinPart2, _QueueServiceMixinPart3, _QueueServiceMixinPart4, _QueueServiceMixinPart5):
-    _QUEUE_INVALID_CATEGORY_VALUES = {"", "external", "null", "none", "unknown", "undefined"}
+    _QUEUE_INVALID_CATEGORY_VALUES = INVALID_CATEGORY_VALUES
     def _initialize_queue_state(self) -> None:
         self._jobs: dict[str, dict[str, Any]] = {}
         self._processes: dict[str, list[Any]] = {}

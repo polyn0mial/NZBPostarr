@@ -692,7 +692,7 @@ def _set_duplicate_checking(monkeypatch, enabled: bool) -> None:
         enable_duplicate_checking = enabled
 
     monkeypatch.setattr(
-        "logic.services.get_config",
+        "logic.jobs.requests.get_config",
         lambda: _Conf(),
     )
 

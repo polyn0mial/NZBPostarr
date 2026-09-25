@@ -1,5 +1,7 @@
 # Auto-split mixin from queueing.py - verbatim method bodies.
+# W11-B10: revalidation rules live in logic/jobs/revalidate.py.
 
+from logic.jobs.revalidate import revalidated_plan, revalidation_candidates, revalidation_targets
 from logic.queueing_base import (
     Any, Optional, Path, database, datetime, log_info, logger, threading, time, timedelta, timezone, usenet_stream,
 )
@@ -217,84 +219,13 @@ class _QueueServiceMixinPart4:
         return True, new_job_id, "queued"
 
     def _snapshot_revalidation_targets(self, include_paused: bool) -> list[dict[str, Any]]:
-        """Collect snapshots of queued/paused processing jobs. Caller holds self._lock."""
-        snapshots: list[dict[str, Any]] = []
-        for job in self._jobs.values():
-            status = str(job.get("status") or "")
-            if status not in ("queued", "paused"):
-                continue
-            if not include_paused and status == "paused":
-                continue
-            # A paused job restored after a restart is left alone until the user resumes it.
-            if status == "paused" and str(job.get("progress") or "").startswith("Recovered after restart"):
-                continue
-            if str(job.get("job_type") or "processing") != "processing":
-                continue
-            snapshots.append(
-                {
-                    "job_id": str(job.get("job_id") or ""),
-                    "status": status,
-                    "category": str(job.get("category") or "misc"),
-                    "display_name": job.get("display_name"),
-                    "paths": self._get_job_target_paths(job),
-                    "kwargs": dict(job.get("_kwargs") or {}),
-                }
-            )
-        return snapshots
-
-    def _revalidation_hint_map(self, snapshot: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        hint_map: dict[str, dict[str, Any]] = {}
-        for hint in snapshot.get("kwargs", {}).get("item_hints") or []:
-            if not isinstance(hint, dict):
-                continue
-            identity = self._normalize_job_path_identity(hint.get("path"))
-            if not identity:
-                continue
-            hint_map[identity] = {
-                k: v
-                for k, v in dict(hint).items()
-                if k
-                not in {
-                    "auto_select_ignored",
-                    "skipped",
-                    "completed",
-                    "indexers",
-                    "indexer_errors",
-                }
-            }
-        return hint_map
-
-    def _build_revalidation_candidates(self, snapshot: dict[str, Any]) -> list[dict[str, Any]]:
-        current_paths = [p for p in snapshot.get("paths", []) if str(p or "").strip()]
-        hint_map = self._revalidation_hint_map(snapshot)
-        candidates: list[dict[str, Any]] = []
-        for path_text in current_paths:
-            identity = self._normalize_job_path_identity(path_text)
-            hint = dict(hint_map.get(identity, {}))
-            hint["path"] = path_text
-            if "category" not in hint and snapshot.get("category"):
-                hint["category"] = snapshot["category"]
-            candidates.append(hint)
-        return candidates
+        return revalidation_targets(self._jobs.values(), include_paused)
 
     def _apply_revalidation_result(
         self, snapshot: dict[str, Any], prepared: Any
     ) -> Optional[tuple[str, dict[str, Any]]]:
         """Apply one job's revalidation outcome. Returns ("updated"|"cancelled", job_update) or None."""
-        new_paths = [
-            str(item.get("path") or "").strip()
-            for item in prepared.runnable_items
-            if str(item.get("path") or "").strip()
-        ]
-        new_hints = [dict(item) for item in prepared.runnable_items if isinstance(item, dict)]
-        new_categories = sorted(
-            {
-                str(item.get("category") or "").strip().lower()
-                for item in new_hints
-                if str(item.get("category") or "").strip()
-            }
-        )
-        new_category = new_categories[0] if len(new_categories) == 1 else ("mixed" if new_categories else "")
+        new_paths, new_hints, new_category = revalidated_plan(prepared)
 
         with self._lock:
             job = self._jobs.get(snapshot["job_id"])
@@ -367,7 +298,7 @@ class _QueueServiceMixinPart4:
         try:
             for snapshot in snapshots:
                 inspected += 1
-                candidates = self._build_revalidation_candidates(snapshot)
+                candidates = revalidation_candidates(snapshot)
                 prepared = self._prepare_queue_start_items(candidates)
                 outcome = self._apply_revalidation_result(snapshot, prepared)
                 if outcome is None:

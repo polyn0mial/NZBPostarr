@@ -18,7 +18,7 @@ from api.deps import (
 from core.config import get_config
 from logic.pending.roots import scan_configured_items
 from logic.pending.selection import category_upload_itype
-from logic.queueing import ProcessingJobRequest
+from logic.jobs.models import ProcessingJobRequest
 from logic.services import get_upload_service, UploadService
 
 

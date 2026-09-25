@@ -1,15 +1,21 @@
 # Auto-split mixin from queueing.py - verbatim method bodies.
+# W11-B10: request shaping lives in logic/jobs/requests.py and job fields in logic/jobs/models.py;
+# the one-line delegations below are removed with the mixins in W12-B12.
 
+from core.utils import VIDEO_EXTENSIONS
+from logic.classify.tv_packs import has_season_pack_name, is_season_pack_folder
+from logic.jobs import models as job_models
+from logic.jobs import requests as job_requests
 from logic.queueing_base import (
-    Any, Optional, Path, ProcessingJobRequest, QueueStartSummary, StreamJobRequest, _QUEUE_SOURCE_TOKEN_RE, datetime, json, logger,
-    looks_like_generic_tv_season_folder, normalize_submission_category, os, re, timezone,
+    Any, Optional, Path, ProcessingJobRequest, QueueStartSummary, StreamJobRequest, datetime, logger,
+    normalize_submission_category, os, timezone,
 )
 
 class _QueueServiceMixinPart1:
     @staticmethod
     def _normalize_job_source(source: Any) -> str:
-        cleaned = " ".join(str(source or "").strip().split())
-        return cleaned[:80] if cleaned else "unknown"
+        return job_models.normalize_job_source(source)
+
 
     @classmethod
     def _normalize_queue_category(cls, value: Any) -> str:
@@ -132,25 +138,6 @@ class _QueueServiceMixinPart1:
     def _queue_item_path_text(item: dict[str, Any]) -> str:
         return str(item.get("path") or "").strip()
 
-    @classmethod
-    def _has_queue_source_token(cls, text: str) -> bool:
-        return bool(_QUEUE_SOURCE_TOKEN_RE.search(str(text or "")))
-
-    @classmethod
-    def _looks_like_queue_tv_pack_folder(cls, path: Path, episode_paths: list[Path]) -> bool:
-        if not path.is_dir() or len(episode_paths) < 2:
-            return False
-        folder_name = path.name.lower()
-        if not cls._has_queue_source_token(folder_name):
-            return False
-        if looks_like_generic_tv_season_folder(folder_name):
-            return False
-        if re.search(r"(?:^|[^a-z0-9])s\d{1,2}(?:[^a-z0-9]|$)", folder_name):
-            return True
-        if any(token in folder_name for token in ("season", "complete")):
-            return True
-        return False
-
     @staticmethod
     def _normalize_queue_overlap_path(path: Any) -> str:
         text = str(path or "").strip()
@@ -172,10 +159,9 @@ class _QueueServiceMixinPart1:
         if item_type in {"tv show", "anime"}:
             return True
 
-        video_suffixes = {".mkv", ".mp4", ".avi", ".mov", ".wmv", ".m4v", ".ts"}
         try:
             direct_video_count = sum(
-                1 for child in raw_path.iterdir() if child.is_file() and child.suffix.lower() in video_suffixes
+                1 for child in raw_path.iterdir() if child.is_file() and child.suffix.lower() in VIDEO_EXTENSIONS
             )
         except OSError:
             direct_video_count = 0
@@ -184,7 +170,7 @@ class _QueueServiceMixinPart1:
 
         try:
             recursive_video_count = sum(
-                1 for child in raw_path.rglob("*") if child.is_file() and child.suffix.lower() in video_suffixes
+                1 for child in raw_path.rglob("*") if child.is_file() and child.suffix.lower() in VIDEO_EXTENSIONS
             )
         except OSError:
             recursive_video_count = 0
@@ -192,12 +178,7 @@ class _QueueServiceMixinPart1:
         if recursive_video_count < 2:
             return False
 
-        folder_name = raw_path.name.lower()
-        if cls._looks_like_queue_tv_pack_folder(raw_path, [raw_path / "placeholder.mkv", raw_path / "placeholder2.mkv"]):
-            return True
-        return any(token in folder_name for token in ("season", "complete")) or bool(
-            re.search(r"(?:^|[^a-z0-9])s\d{1,2}(?:[^a-z0-9]|$)", folder_name)
-        )
+        return has_season_pack_name(raw_path.name)
 
     @classmethod
     def _collapse_overlapping_queue_start_items(cls, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -273,7 +254,7 @@ class _QueueServiceMixinPart1:
             parent
             for parent, episode_paths in episodes_by_parent.items()
             if os.path.normpath(str(parent)) not in existing_dirs
-            and cls._looks_like_queue_tv_pack_folder(parent, episode_paths)
+            and is_season_pack_folder(parent, episode_paths, require_source_token=True)
         }
         if not pack_parents:
             return items
@@ -284,7 +265,7 @@ class _QueueServiceMixinPart1:
             path = Path(cls._queue_item_path_text(item))
             parent = path.parent if path.is_file() else None
             if parent in pack_parents and parent not in inserted:
-                injected.append(cls._build_inferred_pack_row(parent))
+                injected.append(job_requests.inferred_pack_row(parent))
                 inserted.add(parent)
             injected.append(item)
 
@@ -292,45 +273,8 @@ class _QueueServiceMixinPart1:
         return injected
 
     @staticmethod
-    def _build_inferred_pack_row(parent: Path) -> dict[str, Any]:
-        return {
-            "path": str(parent),
-            "name": parent.name,
-            "category": "tv",
-            "detected_category": "tv",
-            "itype": "TV Show",
-            "is_dir": True,
-            "queue_category_source": "inferred-season-pack",
-        }
-
-    @staticmethod
     def _build_processing_request(category: str, kwargs: dict[str, Any], paths: list[str]) -> ProcessingJobRequest:
-        return ProcessingJobRequest(
-            category=category,
-            limit=kwargs.get("limit"),
-            skip_packs=bool(kwargs.get("skip_packs", False)),
-            skip_episodes=bool(kwargs.get("skip_episodes", False)),
-            test_mode=bool(kwargs.get("test_mode", False)),
-            target_indexer_id=kwargs.get("indexer_id"),
-            target_indexer_ids=tuple(str(value) for value in (kwargs.get("indexer_ids") or []) if str(value).strip()),
-            paths=tuple(paths),
-            item_hints=tuple(dict(item) for item in (kwargs.get("item_hints") or []) if isinstance(item, dict)),
-            enable_duplicate_check=kwargs.get("enable_duplicate_check", True),
-            force=kwargs.get("force"),
-        )
-
-    @staticmethod
-    def _build_stream_request(category: str, kwargs: dict[str, Any]) -> StreamJobRequest:
-        return StreamJobRequest(
-            category=category,
-            source_path=kwargs.get("stream_source_path"),
-            release_name=kwargs.get("release_name"),
-            test_mode=bool(kwargs.get("test_mode", False)),
-            target_indexer_id=kwargs.get("indexer_id"),
-            posting_server_name=kwargs.get("posting_server_name"),
-            submit_mode=str(kwargs.get("submit_mode", "post_and_submit") or "post_and_submit"),
-            enable_duplicate_check=kwargs.get("enable_duplicate_check", True),
-        )
+        return job_requests.build_processing_request(category, kwargs, paths)
 
     def _consume_job_launch_state_locked(self, job: dict[str, Any]) -> tuple[str, Any, list[str], Optional[str]]:
         stored_kwargs = job.get("_kwargs", {})
@@ -354,9 +298,9 @@ class _QueueServiceMixinPart1:
             job["source_monitor_id"] = source_monitor_id
 
         if job_type == "usenet_stream":
-            request = self._build_stream_request(str(job.get("category") or "misc"), kwargs)
+            request = job_requests.build_stream_request(str(job.get("category") or "misc"), kwargs)
         else:
-            request = self._build_processing_request(str(job.get("category") or "misc"), kwargs, paths)
+            request = job_requests.build_processing_request(str(job.get("category") or "misc"), kwargs, paths)
 
         return job_type, request, cleanup_paths, source_monitor_id
 
@@ -373,18 +317,6 @@ class _QueueServiceMixinPart1:
             }
         )
         job["events"] = events[-30:]
-
-    @staticmethod
-    def _build_retry_request(kwargs: dict[str, Any], paths: list[str]) -> dict[str, Any]:
-        retry_kwargs = {
-            key: value
-            for key, value in kwargs.items()
-            if key not in {"cleanup_paths", "source_monitor_id", "manifest_path"}
-        }
-        # The job-state file is JSON, so normalize Path/tuple/model-like values
-        # at creation instead of discovering an unserializable retry later.
-        normalized_kwargs = json.loads(json.dumps(retry_kwargs, default=str))
-        return {"kwargs": normalized_kwargs, "paths": list(paths)}
 
     def _set_job_running_state_locked(self, job: dict[str, Any]) -> None:
         job["status"] = "running"
@@ -410,16 +342,7 @@ class _QueueServiceMixinPart1:
 
     @staticmethod
     def _normalize_paths(paths: Any) -> list[str]:
-        if not paths:
-            return []
-        if isinstance(paths, (str, Path)):
-            return [str(paths)]
-        normalized: list[str] = []
-        for value in paths:
-            text = str(value).strip()
-            if text:
-                normalized.append(text)
-        return normalized
+        return job_models.normalize_paths(paths)
 
     def start_path_jobs(self, grouped_paths: dict[str, list[str]], **kwargs: Any) -> list[dict[str, Any]]:
         """Start one queued job per category for a grouped set of explicit paths."""
@@ -455,30 +378,14 @@ class _QueueServiceMixinPart1:
         return started
 
     def _get_job_target_paths(self, job: dict[str, Any]) -> list[str]:
-        raw_paths = job.get("_paths")
-        if raw_paths is None:
-            raw_paths = job.get("target_paths")
-        return self._normalize_paths(raw_paths)
+        return job_models.job_target_paths(job)
 
     def _set_job_target_paths(self, job: dict[str, Any], paths: Any) -> None:
-        normalized = self._normalize_paths(paths)
-        job["_paths"] = normalized
-        job["has_explicit_paths"] = bool(normalized)
-        if normalized:
-            job["target_paths"] = normalized
-        else:
-            job.pop("target_paths", None)
+        job_models.set_job_target_paths(job, paths)
 
     @staticmethod
     def _normalize_job_path_identity(path: Any) -> Optional[str]:
-        text = str(path or "").strip()
-        if not text:
-            return None
-        normalized = os.path.normpath(text)
-        if not os.path.isabs(normalized):
-            normalized = os.path.abspath(normalized)
-        normalized = normalized.replace('\\', '/')
-        return normalized.casefold() if os.name == "nt" else normalized
+        return job_models.normalize_job_path_identity(path)
 
     @classmethod
     def _normalize_job_path_mapping(cls, paths: Any) -> tuple[list[str], dict[str, str]]:
@@ -534,329 +441,9 @@ class _QueueServiceMixinPart1:
         )
 
     @classmethod
-    def _request_path_category(cls, path: Path, hint: dict[str, Any]) -> str:
-        """Resolve rewrite eligibility from the path, allowing a manual override only."""
-        manual_category = cls._normalize_queue_category(hint.get("manual_category"))
-        if manual_category and manual_category not in cls._QUEUE_INVALID_CATEGORY_VALUES:
-            return manual_category
-
-        try:
-            from logic.classify.explicit import resolve_explicit_path
-
-            resolved = resolve_explicit_path(path)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.debug(f"Queue path category resolution failed for {path}: {exc}")
-            return ""
-        return cls._normalize_queue_category(resolved.category)
-
-    @classmethod
     def _with_inferred_tv_pack_request_paths(cls, request: ProcessingJobRequest) -> ProcessingJobRequest:
-        """Insert season-folder paths into explicit TV episode-only job requests."""
-        paths = list(request.paths)
-        if not paths:
-            return request
-
-        hints_by_path: dict[str, dict[str, Any]] = {}
-        for hint in request.item_hints:
-            path_text = str(hint.get("path") or "").strip()
-            if path_text:
-                hints_by_path[path_text] = dict(hint)
-
-        existing = {os.path.normpath(path) for path in paths if str(path).strip()}
-        episodes_by_parent: dict[Path, list[Path]] = {}
-        for path_text in paths:
-            path = Path(str(path_text))
-            hint = hints_by_path.get(str(path_text), {})
-            if cls._request_path_category(path, hint) != "tv":
-                continue
-            if path.is_file():
-                episodes_by_parent.setdefault(path.parent, []).append(path)
-
-        pack_parents = {
-            parent
-            for parent, episode_paths in episodes_by_parent.items()
-            if os.path.normpath(str(parent)) not in existing
-            and cls._looks_like_queue_tv_pack_folder(parent, episode_paths)
-        }
-        if not pack_parents:
-            return request
-
-        expanded_paths: list[str] = []
-        expanded_hints: list[dict[str, Any]] = []
-        inserted: set[Path] = set()
-        for path_text in paths:
-            path = Path(str(path_text))
-            parent = path.parent if path.is_file() else None
-            if parent in pack_parents and parent not in inserted:
-                parent_text = str(parent)
-                expanded_paths.append(parent_text)
-                expanded_hints.append(
-                    {
-                        "path": parent_text,
-                        "name": parent.name,
-                        "category": "tv",
-                        "detected_category": "tv",
-                        "itype": "TV Show",
-                        "is_dir": True,
-                        "queue_category_source": "inferred-season-pack",
-                    }
-                )
-                inserted.add(parent)
-            expanded_paths.append(str(path_text))
-            hint = hints_by_path.get(str(path_text))
-            if hint is not None:
-                expanded_hints.append(hint)
-
-        if not inserted:
-            return request
-
-        logger.info(f"[QUEUE-CREATE] inferred {len(inserted)} TV season pack path(s) before job start")
-        return cls._clone_request_with_paths(request, expanded_paths, expanded_hints)
+        return job_requests.with_inferred_tv_pack_request_paths(request)
 
     @classmethod
     def _expand_explicit_pack_request_paths(cls, request: ProcessingJobRequest) -> ProcessingJobRequest:
-        """Expand selected TV/anime folders into pack rows plus nested item rows before job creation."""
-        paths = list(request.paths)
-        if not paths:
-            return request
-
-        try:
-            from logic.classify.explicit import resolve_explicit_path
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.debug(f"Queue pack expansion unavailable: {exc}")
-            return request
-
-        hints_by_path: dict[str, dict[str, Any]] = {}
-        for hint in request.item_hints:
-            path_text = str(hint.get("path") or "").strip()
-            if path_text:
-                hints_by_path[path_text] = dict(hint)
-
-        def build_hint(
-            path: Path,
-            category: str,
-            *,
-            is_dir: bool,
-            source: str,
-            base_hint: Optional[dict[str, Any]] = None,
-        ) -> dict[str, Any]:
-            hint = dict(base_hint or {})
-            hint.update(
-                {
-                    "path": str(path),
-                    "name": path.name,
-                    "category": category,
-                    "detected_category": category,
-                    "itype": "Anime" if category == "anime" else ("TV Show" if is_dir else "TV Episode"),
-                    "queue_category_source": source,
-                }
-            )
-            if is_dir:
-                hint["is_dir"] = True
-            else:
-                hint.pop("is_dir", None)
-            return hint
-
-        expanded_paths: list[str] = []
-        expanded_hints: list[dict[str, Any]] = []
-        seen_identities: set[str] = set()
-        expanded_groups = 0
-
-        def push_path(path_text: str, hint: Optional[dict[str, Any]] = None) -> None:
-            identity = cls._normalize_job_path_identity(path_text)
-            if not identity or identity in seen_identities:
-                return
-            seen_identities.add(identity)
-            expanded_paths.append(path_text)
-            if hint is not None:
-                expanded_hints.append(dict(hint))
-
-        def expand_pack_dir(
-            source_dir: Path,
-            category: str,
-            episode_paths: list[Path],
-            *,
-            parent_hint: Optional[dict[str, Any]],
-            source: str,
-        ) -> int:
-            if not episode_paths:
-                return 0
-
-            child_groups: dict[Path, list[Path]] = {}
-            direct_files: list[Path] = []
-            for episode_path in episode_paths:
-                try:
-                    rel = episode_path.relative_to(source_dir)
-                except ValueError:
-                    direct_files.append(episode_path)
-                    continue
-                if len(rel.parts) > 1:
-                    pack_dir = source_dir / rel.parts[0]
-                    if pack_dir.is_dir():
-                        child_groups.setdefault(pack_dir, []).append(episode_path)
-                        continue
-                direct_files.append(episode_path)
-
-            inserted = 0
-            for pack_dir in sorted(child_groups, key=lambda path: path.name.lower()):
-                push_path(
-                    str(pack_dir),
-                    build_hint(pack_dir, category, is_dir=True, source=source, base_hint=parent_hint),
-                )
-                inserted += 1
-                for child_file in sorted(child_groups[pack_dir], key=lambda path: path.name.lower()):
-                    push_path(
-                        str(child_file),
-                        hints_by_path.get(str(child_file))
-                        or build_hint(child_file, category, is_dir=False, source=f"{source}-child"),
-                    )
-                    inserted += 1
-
-            if direct_files:
-                push_path(
-                    str(source_dir),
-                    build_hint(source_dir, category, is_dir=True, source=source, base_hint=parent_hint),
-                )
-                inserted += 1
-                for direct_file in sorted(direct_files, key=lambda path: path.name.lower()):
-                    push_path(
-                        str(direct_file),
-                        hints_by_path.get(str(direct_file))
-                        or build_hint(direct_file, category, is_dir=False, source=f"{source}-child"),
-                    )
-                    inserted += 1
-            return inserted
-
-        for path_text in paths:
-            original_hint = hints_by_path.get(path_text)
-            path = Path(str(path_text))
-            if not path.exists() or not path.is_dir():
-                push_path(path_text, original_hint)
-                continue
-
-            category_hint = cls._normalize_queue_category(
-                (original_hint or {}).get("category") or (original_hint or {}).get("detected_category") or request.category
-            )
-            itype_hint = str((original_hint or {}).get("itype") or "")
-            try:
-                resolution = resolve_explicit_path(path, category_hint=category_hint, itype_hint=itype_hint)
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                logger.debug(f"Queue pack expansion failed for {path}: {exc}")
-                push_path(path_text, original_hint)
-                continue
-
-            resolved_category = cls._normalize_queue_category(getattr(resolution, "category", ""))
-            if resolved_category not in {"tv", "anime"}:
-                corrected_hint = dict(original_hint or {})
-                if resolved_category and resolved_category not in cls._QUEUE_INVALID_CATEGORY_VALUES:
-                    corrected_hint = build_hint(
-                        path,
-                        resolved_category,
-                        is_dir=True,
-                        source="resolved-directory",
-                        base_hint=corrected_hint,
-                    )
-                push_path(path_text, corrected_hint or None)
-                continue
-
-            queue_files = [
-                candidate
-                for candidate in getattr(resolution, "queue_paths", ())
-                if candidate.exists() and candidate.is_file()
-            ]
-            inserted = expand_pack_dir(
-                path,
-                resolved_category,
-                queue_files,
-                parent_hint=original_hint,
-                source="resolved-pack-selection",
-            )
-
-            if inserted == 0:
-                child_inserted = 0
-                try:
-                    child_dirs = sorted(
-                        (candidate for candidate in path.iterdir() if candidate.is_dir()),
-                        key=lambda item: item.name.lower(),
-                    )
-                except OSError:
-                    child_dirs = []
-                for child in child_dirs:
-                    try:
-                        child_resolution = resolve_explicit_path(
-                            child,
-                            category_hint=resolved_category,
-                            itype_hint="Anime" if resolved_category == "anime" else "TV Show",
-                        )
-                    except Exception:  # pylint: disable=broad-exception-caught
-                        continue
-                    child_category = cls._normalize_queue_category(getattr(child_resolution, "category", "")) or resolved_category
-                    child_files = [
-                        candidate
-                        for candidate in getattr(child_resolution, "queue_paths", ())
-                        if candidate.exists() and candidate.is_file()
-                    ]
-                    child_inserted += expand_pack_dir(
-                        child,
-                        child_category,
-                        child_files,
-                        parent_hint=build_hint(child, child_category, is_dir=True, source="resolved-child-pack"),
-                        source="resolved-child-pack",
-                    )
-                inserted = child_inserted
-
-            if inserted == 0:
-                push_path(
-                    path_text,
-                    build_hint(path, resolved_category, is_dir=True, source="resolved-directory", base_hint=original_hint),
-                )
-                continue
-
-            expanded_groups += 1
-
-        if not expanded_groups:
-            if tuple(expanded_paths) == request.paths:
-                return request
-            return cls._clone_request_with_paths(request, expanded_paths, expanded_hints)
-
-        logger.info(
-            f"[QUEUE-CREATE] expanded {expanded_groups} selected TV/anime folder(s) into pack + nested queue items"
-        )
-        return cls._clone_request_with_paths(request, expanded_paths, expanded_hints)
-
-    @staticmethod
-    def _clone_request_with_paths(
-        request: ProcessingJobRequest,
-        paths: list[str],
-        hints: list[dict[str, Any]],
-    ) -> ProcessingJobRequest:
-        return ProcessingJobRequest(
-            category=request.category,
-            limit=request.limit,
-            skip_packs=request.skip_packs,
-            skip_episodes=request.skip_episodes,
-            test_mode=request.test_mode,
-            target_indexer_id=request.target_indexer_id,
-            target_indexer_ids=request.target_indexer_ids,
-            paths=tuple(paths),
-            item_hints=tuple(hints),
-            enable_duplicate_check=request.enable_duplicate_check,
-            force=request.force,
-            skip_pack_expansion=request.skip_pack_expansion,
-        )
-
-    @classmethod
-    def _dedup_result_or_original(
-        cls,
-        request: ProcessingJobRequest,
-        original_paths: list[str],
-        deduped_paths: list[str],
-        deduped_hints: list[dict[str, Any]],
-    ) -> ProcessingJobRequest:
-        if len(deduped_paths) == len(original_paths):
-            return request
-        logger.info(
-            f"[QUEUE-CREATE] collapsed {len(original_paths) - len(deduped_paths)} duplicate path identity(s) before job start"
-        )
-        return cls._clone_request_with_paths(request, deduped_paths, deduped_hints)
-
+        return job_requests.expand_explicit_pack_request_paths(request)
