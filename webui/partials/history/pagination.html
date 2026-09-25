@@ -1,0 +1,38 @@
+<!-- Pagination -->
+<div v-if="viewMode !== 'jobs'" class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between text-sm">
+    <div class="text-notion-text-tertiary text-center sm:text-left">
+        Showing {{ showingStart }}-{{ showingEnd }} of {{ totalCount }}
+        <template v-if="viewMode === 'grouped'">groups</template>
+    </div>
+    <div class="flex flex-wrap items-center justify-center sm:justify-end gap-3 sm:gap-4">
+        <!-- Pagination Controls -->
+        <div class="flex items-center gap-1">
+            <button @click="goToPage(1)" :disabled="isFirstPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="First page">
+                <lucide-icon name="chevrons-left" icon-class="size-3.5"></lucide-icon>
+            </button>
+            <button @click="prevPage" :disabled="isFirstPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Previous page">
+                <lucide-icon name="chevron-left" icon-class="size-3.5"></lucide-icon>
+            </button>
+            <span class="px-2 text-xs text-notion-text-secondary">
+                Page
+                <span class="font-medium text-notion-text-primary">{{ currentPage }}</span>
+                of {{ totalPages }}
+            </span>
+            <button @click="nextPage" :disabled="isLastPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Next page">
+                <lucide-icon name="chevron-right" icon-class="size-3.5"></lucide-icon>
+            </button>
+            <button @click="goToPage(totalPages)" :disabled="isLastPage" class="p-1 bg-notion-bg-hover border border-notion-border text-notion-text-tertiary rounded hover:bg-notion-bg-active disabled:opacity-40 disabled:cursor-not-allowed transition-colors" title="Last page">
+                <lucide-icon name="chevrons-right" icon-class="size-3.5"></lucide-icon>
+            </button>
+        </div>
+        <!-- Page Size -->
+        <div class="flex items-center gap-2">
+            <select v-model.number="pageSize" class="px-2 py-1 bg-notion-bg-secondary border border-notion-border rounded text-xs text-notion-text-primary">
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+            </select>
+        </div>
+    </div>
+</div>
