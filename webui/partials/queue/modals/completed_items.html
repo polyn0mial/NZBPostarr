@@ -1,0 +1,44 @@
+<!-- Completed Job Items Modal -->
+<modal
+    :open="!!completedJobModalJob"
+    :title="`Job Items ${completedJobModalJob ? completedJobModalJob.job_id : ''}`"
+    icon="list"
+    icon-class="text-notion-success"
+    :badge="`${completedJobModalItems.length} items`"
+    max-width="max-w-4xl"
+    @close="closeCompletedJobModal()">
+    <div class="px-4 py-3 border-b border-notion-divider bg-notion-bg">
+        <div v-if="completedJobModalItems.length > 0" class="relative max-w-md">
+            <lucide-icon name="search" icon-class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-notion-text-tertiary"></lucide-icon>
+            <input type="text" v-model="completedJobModalSearch" placeholder="Search job paths..." class="pl-9 pr-3 py-1.5 w-full bg-notion-bg-secondary border border-notion-border rounded-md text-xs text-notion-text-primary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent/50">
+        </div>
+        <div v-if="completedJobModalJob" class="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-notion-text-tertiary mt-2">
+            <span>{{ completedJobModalJob.items_processed || 0 }}/{{ completedJobModalJob.items_total || 0 }} processed</span>
+            <template v-if="completedJobModalJob.items_skipped"><span class="opacity-60">&bull;</span><span>{{ completedJobModalJob.items_skipped }} skipped</span></template>
+            <template v-if="completedJobModalJob.summary && completedJobModalJob.summary.duration"><span class="opacity-60">&bull;</span><span>{{ completedJobModalJob.summary.duration }}</span></template>
+        </div>
+    </div>
+    <div class="overflow-y-auto">
+        <div v-if="completedJobModalLoading" class="px-4 py-10 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-circle" icon-class="w-6 h-6 mx-auto mb-2 animate-spin"></lucide-icon>
+            <span>Loading job items...</span>
+        </div>
+        <div v-else>
+            <div v-if="completedJobModalFilteredItems.length === 0" class="px-4 py-10 text-center text-notion-text-tertiary">
+                <lucide-icon name="inbox" icon-class="w-6 h-6 mx-auto mb-2 opacity-50"></lucide-icon>
+                <span v-if="completedJobModalItems.length === 0">No item list available. Item history is only retained in the current session.</span>
+                <span v-else>No items match this search.</span>
+            </div>
+            <div v-else class="divide-y divide-notion-divider">
+                <div v-for="(item, idx) in completedJobModalFilteredItems" :key="item.path" class="flex items-center gap-3 px-4 py-2 hover:bg-notion-bg/70 transition-colors">
+                    <span class="p-1 rounded text-notion-text-tertiary/50"><lucide-icon name="file" icon-class="w-3.5 h-3.5"></lucide-icon></span>
+                    <span class="w-8 text-right text-[10px] font-mono text-notion-text-tertiary shrink-0">#{{ item.index || (idx + 1) }}</span>
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs text-notion-text-primary truncate" :title="item.name">{{ item.name }}</p>
+                        <p class="text-[10px] text-notion-text-tertiary truncate" :title="item.path">{{ item.path }}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</modal>
