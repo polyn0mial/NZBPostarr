@@ -1,4 +1,4 @@
-"""Indexer submission category: map a routing category and item type onto the vocabulary indexers accept."""
+"""Indexer submission category: map a routing category and item type onto indexer vocabulary."""
 
 from __future__ import annotations
 
@@ -6,22 +6,18 @@ import os
 import re
 from pathlib import Path
 
-from core.utils import (
+from core.media import (
     AUDIOBOOK_EXTENSIONS,
     EBOOK_EXTENSIONS,
     MUSIC_EXTENSIONS,
     VIDEO_EXTENSIONS,
-    has_multi_file_episode_pattern,
-    normalize_submission_category,
+    normalize_category,
+    processing_itype,
 )
 from logic.classify.names import has_clear_movie_year, looks_like_tv_name
+from logic.classify.patterns import has_multi_file_episode_pattern
 from logic.classify.tv_packs import is_season_pack
 from logic.pipeline.prepare import _APP_EXTENSIONS
-
-
-def _normalize_processing_category(raw: str) -> str:
-    """Normalize queue/display categories into canonical submission categories."""
-    return normalize_submission_category(raw)
 
 
 def _normalize_processing_type(raw: str) -> str:
@@ -36,7 +32,7 @@ def _normalize_processing_type(raw: str) -> str:
     }
     if key in special_types:
         return special_types[key]
-    normalized = normalize_submission_category(key)
+    normalized = normalize_category(key)
     return "movie" if normalized == "movies" else normalized
 
 
@@ -181,7 +177,7 @@ def _resolve_ambiguous_submission_category(path: Path, normalized_category: str,
 
 def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
     """Validate and preserve the detected category used for indexer submission."""
-    normalized_category = _normalize_processing_category(category)
+    normalized_category = normalize_category(category)
     normalized_itype = _normalize_processing_type(itype)
     media_counts, _video_names = _scan_release_media(path)
 
@@ -233,18 +229,4 @@ def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
 
 def _processing_db_type(path: Path, category: str) -> str:
     """Map queue routing categories to the DB-facing item label."""
-    if category == "tv":
-        return "TV Show" if is_season_pack(path) else "TV Episode"
-    if category == "movies":
-        return "Movies"
-    if category == "anime":
-        return "Anime"
-    if category == "disc":
-        return "DISC"
-    if category == "music":
-        return "Music"
-    if category == "books":
-        return "Books"
-    if category == "apps":
-        return "Apps"
-    return "Misc"
+    return processing_itype(category, season_pack=category == "tv" and is_season_pack(path))

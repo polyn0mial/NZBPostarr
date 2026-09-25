@@ -30,7 +30,8 @@ def _filter_pending_scan_items(
 
 def cmd_pending(args: argparse.Namespace) -> int:
     """Show items pending upload across all categories."""
-    from core import database
+    from core.db import engine as db_engine
+    from core.db import ledger as db_ledger
     from core.config import get_config
     from core.indexers.registry import get_registry
     from logic.pending.roots import collect_configured_scan_items, relative_key
@@ -39,8 +40,8 @@ def cmd_pending(args: argparse.Namespace) -> int:
     registry = get_registry()
     active_ids = [idx.id for idx in registry.enabled(conf)]
     try:
-        uploaded_names, _, _, _ = database.get_dashboard_data(active_ids)
-    except database.DatabaseOperationalError as exc:
+        uploaded_names, _, _, _ = db_ledger.completion_index(active_ids)
+    except db_engine.DatabaseOperationalError as exc:
         if not args.json:
             print(f"WARNING: proceeding with empty upload snapshot due to DB error: {exc}")
         uploaded_names = set()

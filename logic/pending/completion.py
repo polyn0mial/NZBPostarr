@@ -9,9 +9,10 @@ from typing import Any, Dict, List, Optional, Set
 
 from loguru import logger
 
-from core import database
+from core.db import engine as db_engine
+from core.db import ledger as db_ledger
 from core.config import get_config
-from core.utils import should_skip_file
+from core.fs import should_skip_file
 
 
 def stamp_skip_flags(result: Dict[str, Any], skip_config: Optional[Dict[str, Any]]) -> None:
@@ -51,14 +52,6 @@ def _normalize_dashboard_lookup_values(values: Any) -> Set[str]:
         normalized.add(text.casefold())
         normalized.add(text.replace("\\", "/").casefold())
     return normalized
-
-def _coerce_int(value: Any) -> Optional[int]:
-    """Best-effort int conversion: some legacy filesize records were stored
-    as text, so a raw `==` against a real int would silently never match."""
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 def _lookup_upload_map_indexers(
     upload_map: Dict[str, Set[str]],
@@ -102,7 +95,7 @@ def _lookup_upload_map_indexers(
                 # inherit a stale indexer's completed status.
                 idx_ids = {
                     idx_id for idx_id in idx_ids
-                    if idx_id not in sizes or _coerce_int(sizes.get(idx_id)) == current_size
+                    if db_ledger.size_matches(sizes.get(idx_id), current_size) is not False
                 }
         matches.update(idx_ids)
 
@@ -422,9 +415,9 @@ def _get_pending_indexer_context_fresh() -> _IndexerContext:
     failed_map: Dict[str, Dict[str, str]] = {}
     filesize_by_indexer: Dict[str, Dict[str, int]] = {}
     try:
-        _fully_done, upload_map, failed_map, filesize_by_indexer = database.get_dashboard_data(active_ids)
+        _fully_done, upload_map, failed_map, filesize_by_indexer = db_ledger.completion_index(active_ids)
         completed_lookup = _normalize_dashboard_lookup_values(_fully_done)
-    except database.DatabaseOperationalError as exc:
+    except db_engine.DatabaseOperationalError as exc:
         db_error = str(exc)
         indexer_status_available = False
         logger.warning(f"Pending scan continuing without indexer completion state due to DB error: {exc}")

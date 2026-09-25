@@ -10,7 +10,7 @@ from typing import Any, Optional
 from loguru import logger
 
 from core.config import get_config
-from core.utils import normalize_submission_category
+from core.media import normalize_category
 from logic.classify.tv_packs import is_season_pack_folder
 from logic.jobs.models import (
     INVALID_CATEGORY_VALUES,
@@ -139,7 +139,7 @@ def _hints_by_path(request: ProcessingJobRequest) -> dict[str, dict[str, Any]]:
 
 def request_path_category(path: Path, hint: dict[str, Any]) -> str:
     """Resolve rewrite eligibility from the path, allowing a manual override only."""
-    manual_category = normalize_submission_category(hint.get("manual_category"))
+    manual_category = normalize_category(hint.get("manual_category"))
     if manual_category and manual_category not in INVALID_CATEGORY_VALUES:
         return str(manual_category)
 
@@ -150,7 +150,7 @@ def request_path_category(path: Path, hint: dict[str, Any]) -> str:
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.debug(f"Queue path category resolution failed for {path}: {exc}")
         return ""
-    return str(normalize_submission_category(resolved.category))
+    return str(normalize_category(resolved.category))
 
 
 def inferred_pack_row(parent: Path) -> dict[str, Any]:
@@ -330,7 +330,7 @@ def expand_explicit_pack_request_paths(request: ProcessingJobRequest) -> Process
             push_path(path_text, original_hint)
             continue
 
-        category_hint = normalize_submission_category(
+        category_hint = normalize_category(
             (original_hint or {}).get("category") or (original_hint or {}).get("detected_category") or request.category
         )
         itype_hint = str((original_hint or {}).get("itype") or "")
@@ -341,7 +341,7 @@ def expand_explicit_pack_request_paths(request: ProcessingJobRequest) -> Process
             push_path(path_text, original_hint)
             continue
 
-        resolved_category = normalize_submission_category(getattr(resolution, "category", ""))
+        resolved_category = normalize_category(getattr(resolution, "category", ""))
         if resolved_category not in {"tv", "anime"}:
             corrected_hint = dict(original_hint or {})
             if resolved_category and resolved_category not in INVALID_CATEGORY_VALUES:
@@ -386,7 +386,7 @@ def expand_explicit_pack_request_paths(request: ProcessingJobRequest) -> Process
                     )
                 except Exception:  # pylint: disable=broad-exception-caught
                     continue
-                child_category = normalize_submission_category(getattr(child_resolution, "category", "")) or resolved_category
+                child_category = normalize_category(getattr(child_resolution, "category", "")) or resolved_category
                 child_files = [
                     candidate
                     for candidate in getattr(child_resolution, "queue_paths", ())

@@ -7,7 +7,11 @@ from typing import Iterator
 import pytest
 
 from core import config as config_mod
-from core import database as db
+from core.db import engine as db_engine
+from core.db import history as db_history
+from core.db import ledger as db_ledger
+from core.db import models as db_models
+from core.db import schema as db_schema
 from tests.characterization._snapshot import HERE
 
 LIVE_SCHEMA = HERE / "live_schema.sql"
@@ -34,11 +38,11 @@ def _schema(path: Path) -> dict[str, object]:
 
 
 def _reset_engine() -> None:
-    engine = getattr(db, "_ENGINE", None)
+    engine = getattr(db_engine, "_ENGINE", None)
     if engine is not None:
         engine.dispose()
-    db._ENGINE = None
-    db._SESSION_FACTORY = None
+    db_engine._ENGINE = None
+    db_engine._SESSION_FACTORY = None
 
 
 @pytest.fixture()
@@ -71,9 +75,9 @@ def live_db(tmp_path, monkeypatch) -> Iterator[Path]:
 def test_init_database_keeps_the_live_schema(live_db: Path) -> None:
     before = _schema(live_db)
 
-    assert db.init_database() is True
+    assert db_schema.init_database() is True
     _reset_engine()
-    assert db.init_database() is True
+    assert db_schema.init_database() is True
     _reset_engine()
     after = _schema(live_db)
 
@@ -83,7 +87,7 @@ def test_init_database_keeps_the_live_schema(live_db: Path) -> None:
         for column, column_type in columns.items():
             assert after["columns"][table].get(column) == column_type, f"{table}.{column} changed"
 
-    model_tables = set(db.Base.metadata.tables)
+    model_tables = set(db_models.Base.metadata.tables)
     legacy = {key for key in before["objects"] if key[0] == "table" and key[1] not in model_tables}
     assert {name for _kind, name in legacy} == {
         "server_failures",
@@ -101,9 +105,9 @@ def test_init_database_keeps_the_live_schema(live_db: Path) -> None:
 
 
 def test_live_schema_serves_history_duplicate_and_dashboard_reads(live_db: Path) -> None:
-    assert db.init_database() is True
+    assert db_schema.init_database() is True
 
-    grouped = db.get_grouped_uploads()
+    grouped = db_history.get_grouped_uploads()
     assert grouped["total_groups"] == 1
     group = grouped["groups"][0]
     assert (group["show_name"], group["media_type"]) == ("The Matrix", "movie")
@@ -114,13 +118,13 @@ def test_live_schema_serves_history_duplicate_and_dashboard_reads(live_db: Path)
         ("geek", "failed", "HTTP 500"),
     ]
 
-    duplicate = db.check_duplicate_dynamic(ITEM, "Movie", ["in", "geek"])
+    duplicate = db_ledger.destinations_for(ITEM, "Movie", ["in", "geek"])
     assert duplicate == {"in": "2026-01-02T03:04:05", "geek": None}
-    batch = db.get_duplicate_status_batch([ITEM], ["in", "geek"])
+    batch = db_ledger.destinations_for_batch([ITEM], ["in", "geek"])
     assert batch[ITEM]["in"] is not None
     assert batch[ITEM]["geek"] is None
 
-    fully_done, success_map, failed_map, _filesizes = db.get_dashboard_data(["in", "geek"])
+    fully_done, success_map, failed_map, _filesizes = db_ledger.completion_index(["in", "geek"])
     assert fully_done == set()
     assert success_map[ITEM] == {"in"}
     assert failed_map[ITEM] == {"geek": "HTTP 500"}

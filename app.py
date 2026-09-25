@@ -14,7 +14,7 @@ from loguru import logger
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import ROUTERS
-from api.assets import ASSETS_DIR, _asset_cache_bust, add_cache_control_header
+from api.assets import ASSETS_DIR, add_cache_control_header
 from api.auth import session_auth_middleware
 from api.mcp import mount_mcp_endpoint
 from api.deps import _stats_collector_required, _sync_stats_collector_state
@@ -71,7 +71,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
     init_app()
     conf = get_config()
-    _asset_cache_bust.start()
 
     logger.info(f"  DB path: {conf.log_db}")
     logger.debug(f"  [1/2] Core systems ready ({time.time() - start:.3f}s)")
@@ -120,13 +119,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             await _mcp_stack.enter_async_context(_MCP_ASGI_APP.router.lifespan_context(_MCP_ASGI_APP))
         yield
 
-    from core.database import checkpoint_wal
+    from core.db.engine import checkpoint_wal
     from logic.autoupload import stop_folder_monitor
-    from logic.system.reaper import shutdown_scheduler
+    from core.scheduler import shutdown_scheduler
     from logic.stats.collector import stop_collector
 
     await _stop_startup_reaper()
-    _asset_cache_bust.stop()
     _pending_index.stop()
     await stream_monitors.stop_stream_monitors()
     await stop_folder_monitor()

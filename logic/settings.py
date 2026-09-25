@@ -15,7 +15,7 @@ import yaml
 from core import config as config_mod
 from core.config import APP_ROOT, DEFAULT_TV_PACK_IGNORE, Config
 from core.redaction import SECRET_MASK
-from core.utils import atomic_write_text
+from core.fs import atomic_write_text
 
 _SECRET_KEYS = frozenset({"api_keys", "usernames", "web_password", "password", "pass", "user", "username"})
 

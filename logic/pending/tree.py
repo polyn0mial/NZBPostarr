@@ -11,12 +11,15 @@ from typing import Any, Dict, List, Optional, Set
 
 from loguru import logger
 
-from core import database
+from core.db import engine as db_engine
+from core.db import ledger as db_ledger
 from core.config import get_config
-from core.utils import compute_size_uncached, log_backend_timing
+from core.fs import compute_size_uncached
+from core.logging import log_backend_timing
+from core.paths import path_key
 from logic.classify.anime import anime_lookup_candidates, cached_lookup
 from logic.classify.content import (
-    category_from_itype,
+    category_for_itype,
     classify_standalone_file_category,
     detect_content_itype,
 )
@@ -46,7 +49,7 @@ from logic.pending.rules import (
     _inherit_parent_valid_state,
     _validate_child_video_items,
 )
-from logic.pending.selection import _selection_path_identity, _stamp_tree_selection_state
+from logic.pending.selection import _stamp_tree_selection_state
 from logic.pending.view import (
     _compact_external_groups,
     _sort_external_groups,
@@ -115,7 +118,7 @@ def _exclude_ignored_deferred_children(item: Dict[str, Any], resolution: Any, ac
     per_child = item.get("_deferred_child_indexers")
     if not isinstance(per_child, dict) or not isinstance(item.get("_deferred_children_done"), dict) or not active_ids:
         return
-    ignored = {_selection_path_identity(entry.path) for entry in getattr(resolution, "ignored_paths", ()) or ()}
+    ignored = {path_key(entry.path) for entry in getattr(resolution, "ignored_paths", ()) or ()}
     required = [indexers for identity, indexers in per_child.items() if identity not in ignored]
     item["_deferred_children_done"] = {
         idx_id: bool(required) and all(idx_id in indexers for indexers in required) for idx_id in active_ids
@@ -287,7 +290,7 @@ def _scan_external_children(
                     filesize_by_indexer=filesize_by_indexer,
                     current_size=child_current_size,
                 )
-                deferred_child_indexers[_selection_path_identity(child)] = set(child_indexers)
+                deferred_child_indexers[path_key(child)] = set(child_indexers)
                 for idx_id in active_ids:
                     if idx_id not in child_indexers:
                         deferred_children_done[idx_id] = False
@@ -318,7 +321,7 @@ def _apply_nested_external_item_category(item: Dict[str, Any], node: Path, folde
         item["itype"] = detect_content_itype(node.name, node, folder_category_hint)
         # Nested rows keep their parent's category (as on the server) so a
         # child pill never falls back to another type.
-        nested_category = hint_category or category_from_itype(item["itype"])
+        nested_category = hint_category or category_for_itype(item["itype"])
     else:
         nested_category = hint_category or "misc"
     if nested_category in {"disc", "books", "ebooks", "audiobooks", "music"}:
@@ -560,7 +563,7 @@ def _scan_external_category_folder(
         "key": str(folder),
         "folder_name": folder.name,
         "folder_path": str(folder),
-        "allow_bulk_selection": bulk_selection_by_folder.get(_selection_path_identity(folder), True),
+        "allow_bulk_selection": bulk_selection_by_folder.get(path_key(folder), True),
         "items": folder_items,
     }
 
@@ -666,9 +669,9 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     failed_map: Dict[str, Dict[str, str]] = {}
     filesize_by_indexer: Dict[str, Dict[str, int]] = {}
     try:
-        _fully_done, upload_map, failed_map, filesize_by_indexer = database.get_dashboard_data(active_ids)
+        _fully_done, upload_map, failed_map, filesize_by_indexer = db_ledger.completion_index(active_ids)
         completed_lookup = _normalize_dashboard_lookup_values(_fully_done)
-    except database.DatabaseOperationalError as exc:
+    except db_engine.DatabaseOperationalError as exc:
         db_error = str(exc)
         indexer_status_available = False
         logger.warning(f"Pending scan continuing without indexer completion state due to DB error: {exc}")
@@ -703,7 +706,7 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
         folder_path = str(folder_entry.get("path") or "").strip()
         if not folder_path:
             continue
-        bulk_selection_by_folder[_selection_path_identity(folder_path)] = bool(
+        bulk_selection_by_folder[path_key(folder_path)] = bool(
             folder_entry.get("allow_bulk_selection", True)
         )
     for category, _folder in categories_cfg:

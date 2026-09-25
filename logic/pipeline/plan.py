@@ -8,11 +8,13 @@ from typing import Any, Dict, Iterator, List, Optional
 
 from loguru import logger
 
-from core.utils import log_info, log_verbose, update_job_progress, wait_for_job_resume
+from core.logging import log_info, log_verbose
+from core.paths import path_key
 from logic.classify.explicit import resolve_explicit_path
 from logic.classify.tv_packs import get_tv_sort_key, is_season_pack
+from logic.jobs.context import update_job_progress, wait_for_job_resume
 from logic.pending.roots import scan_configured_items
-from logic.pipeline.checkpoints import _normalize_runtime_path, _normalize_runtime_target_paths
+from logic.pipeline.checkpoints import _normalize_runtime_target_paths
 from logic.pipeline.pack_filter import _create_filtered_tv_pack_entries_for_selection, _inject_inferred_tv_pack_entries
 from logic.pipeline.prepare import _ONE_GIB, _descendant_files, _safe_mtime
 from logic.pipeline.record import _live_size_bytes
@@ -68,7 +70,7 @@ def _iter_work_items(
         yield from enumerate(sorted_items)
         return
 
-    targeted_lookup = {_normalize_runtime_path(item): (item, cat) for item, cat in sorted_items}
+    targeted_lookup = {path_key(item): (item, cat) for item, cat in sorted_items}
     if runtime_job is None:
         yield from enumerate(sorted_items)
         return
@@ -78,13 +80,13 @@ def _iter_work_items(
         # Items removed from the active job (QueueService.remove_active_job_item)
         # are dropped here, so a removal is honoured and not only hidden.
         for removed_path in list(runtime_job.get("_removed_item_paths") or []):
-            targeted_lookup.pop(_normalize_runtime_path(Path(str(removed_path))), None)
+            targeted_lookup.pop(path_key(Path(str(removed_path))), None)
         if not targeted_lookup:
             break
         runtime_paths = _normalize_runtime_target_paths(runtime_job, paths)
         next_key = None
         for raw_path in runtime_paths:
-            resolved = _normalize_runtime_path(Path(raw_path))
+            resolved = path_key(Path(raw_path))
             if resolved in targeted_lookup:
                 next_key = resolved
                 break
@@ -93,7 +95,7 @@ def _iter_work_items(
             break
 
         runtime_job["target_paths"] = [
-            raw_path for raw_path in runtime_paths if _normalize_runtime_path(Path(raw_path)) != next_key
+            raw_path for raw_path in runtime_paths if path_key(Path(raw_path)) != next_key
         ]
         item, item_cat = targeted_lookup.pop(next_key)
         idx = total - len(targeted_lookup) - 1
@@ -162,7 +164,7 @@ def _build_item_hint_map(item_hints: Optional[List[Dict[str, Any]]]) -> dict[str
     for item in item_hints or []:
         raw_path = item.get("path")
         if raw_path:
-            hints[_normalize_runtime_path(Path(str(raw_path)))] = dict(item)
+            hints[path_key(Path(str(raw_path)))] = dict(item)
     return hints
 
 
@@ -199,7 +201,7 @@ def _plan_explicit_items(
     oversized_files: set[str] = set()
 
     def append_item(path: Path, category: str) -> None:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized in seen_paths:
             return
         seen_paths.add(normalized)
@@ -209,7 +211,7 @@ def _plan_explicit_items(
                 oversized_files.add(normalized)
 
     for path, category in raw_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized in seen_paths:
             continue
 
@@ -246,7 +248,7 @@ def _expand_oversized_category_items(
     season_packs_only: bool,
 ) -> list[Path]:
     expanded: list[Path] = []
-    seen = {_normalize_runtime_path(path) for path in cat_items}
+    seen = {path_key(path) for path in cat_items}
     for path in cat_items:
         if season_packs_only:
             if not is_season_pack(path):
@@ -256,13 +258,13 @@ def _expand_oversized_category_items(
         if _live_size_bytes(path) / _ONE_GIB <= folder_limit:
             continue
 
-        oversized_folders.add(_normalize_runtime_path(path))
+        oversized_folders.add(path_key(path))
         for child in _descendant_files(
             path,
             video_only=season_packs_only,
             sorted_names=season_packs_only,
         ):
-            child_key = _normalize_runtime_path(child)
+            child_key = path_key(child)
             if child_key in seen:
                 continue
             expanded.append(child)
@@ -271,7 +273,7 @@ def _expand_oversized_category_items(
     if not expanded:
         return cat_items
     retained = [
-        path for path in cat_items if _normalize_runtime_path(path) not in oversized_folders
+        path for path in cat_items if path_key(path) not in oversized_folders
     ]
     return [*retained, *expanded]
 
@@ -301,7 +303,7 @@ def _plan_sorted_items(
     by_cat: dict[str, list[Path]] = defaultdict(list)
     seen_paths: set[str] = set()
     for path, cat in raw_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized in seen_paths:
             continue
         seen_paths.add(normalized)
@@ -345,7 +347,7 @@ def _plan_sorted_items(
                     continue
                 file_size = _live_size_bytes(path) / _ONE_GIB
                 if file_size > file_limit:
-                    oversized_files.add(_normalize_runtime_path(path))
+                    oversized_files.add(path_key(path))
 
         sorted_items.extend((path, cat) for path in cat_items)
 
@@ -380,23 +382,23 @@ def _append_targeted_resolution_items(
         )
         skip_parent_series_folder = bool(pack_entries)
         if pack_entries:
-            staged_pack_source_dirs.add(_normalize_runtime_path(selected_path))
+            staged_pack_source_dirs.add(path_key(selected_path))
         for staged_pack, pack_episode_paths in pack_entries:
             raw_items.append((staged_pack, resolution.category))
             if process_tv_episodes:
                 raw_items.extend((episode_path, resolution.category) for episode_path in pack_episode_paths)
 
-    selected_key = _normalize_runtime_path(selected_path)
+    selected_key = path_key(selected_path)
     for resolved_path in resolved_paths:
         if (
             skip_parent_series_folder
             and resolved_path.is_dir()
-            and _normalize_runtime_path(resolved_path) == selected_key
+            and path_key(resolved_path) == selected_key
         ):
             continue
         if resolution.category in {"tv", "anime"} and not process_tv_episodes and resolved_path.is_file():
             continue
-        if _normalize_runtime_path(resolved_path) in episode_paths_added_with_packs:
+        if path_key(resolved_path) in episode_paths_added_with_packs:
             continue
         raw_items.append((resolved_path, resolution.category))
 
@@ -431,7 +433,7 @@ def _collect_targeted_job_items(
         if selected_path.name.startswith("."):
             continue
 
-        hint = item_hint_map.get(_normalize_runtime_path(selected_path), {})
+        hint = item_hint_map.get(path_key(selected_path), {})
         category_hint = str(hint.get("manual_category") or "")
         itype_hint = str(hint.get("itype") or "") if category_hint else ""
         resolution = resolve_explicit_path(

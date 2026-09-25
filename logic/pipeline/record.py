@@ -5,9 +5,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from core.database import pin_folder_ts_to_children, record_nntp_success, update_db_destination
-from core.utils import compute_size_uncached, get_thread_job
-from logic.pipeline.checkpoints import _normalize_runtime_path
+from core.db.uploads import pin_folder_ts_to_children, record_nntp_success, update_db_destination
+from core.fs import compute_size_uncached
+from core.paths import path_key
+from logic.jobs.context import get_thread_job
 
 
 def _folder_log_itype(category: str) -> str:
@@ -48,7 +49,7 @@ def _live_size_bytes(path: Path) -> int:
 
 
 def _folder_size_cached(folder_path: Path) -> int:
-    cache_key = _normalize_runtime_path(folder_path)
+    cache_key = path_key(folder_path)
     job = get_thread_job()
     if job is not None:
         cache = job.setdefault("_folder_size_cache", {})
@@ -95,7 +96,7 @@ def _record_folder_hierarchy_rows(
 def refresh_pending_after_upload() -> None:
     """Drop the pending view's cached indexer ticks so a new upload shows at once, not after the cache TTL.
 
-    core.database no longer triggers this refresh when it records a destination; the pipeline does.
+    The DB layer no longer triggers this refresh when it records a destination; the pipeline does.
     """
     from logic.pending.completion import invalidate_pending_indexer_context
 

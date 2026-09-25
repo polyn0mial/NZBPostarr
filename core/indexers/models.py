@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from core.utils import normalize_submission_category
+from core.media import normalize_category
 
 SubmitStatus = Literal[
     "success", "duplicate", "misconfigured", "rejected", "network_error", "error"
@@ -78,7 +78,7 @@ class CategoryMapping(BaseModel):
         cleaned = str(category or "").strip().lower()
         if cleaned in _INDEXER_CATEGORY_ALIASES:
             return _INDEXER_CATEGORY_ALIASES[cleaned]
-        normalized = normalize_submission_category(cleaned)
+        normalized = normalize_category(cleaned)
         return "movie" if normalized == "movies" else normalized
 
     def resolve_code(self, category: str) -> tuple[Optional[str], Optional[str], bool]:

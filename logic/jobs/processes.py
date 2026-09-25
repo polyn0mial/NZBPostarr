@@ -77,7 +77,7 @@ class ProcessRegistry:
                 continue
 
         if pids:
-            from logic.system.reaper import get_scheduler
+            from core.scheduler import get_scheduler
 
             sched = get_scheduler()
 

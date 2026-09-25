@@ -15,12 +15,12 @@ from typing import Any, Dict, Optional
 from loguru import logger
 
 from core import config as config_mod
-from core import database
+from core import proc
+from core.db import history as db_history
+from core.db import job_history as db_job_history
+from core.db import stats as db_stats
 from core.config import get_config
-from core.utils import (
-    reset_thread_job,
-    set_thread_job,
-)
+from logic.jobs.context import reset_thread_job, set_thread_job
 from logic.pipeline import runner
 from logic.stream import manifest as stream_manifest, monitors as stream_monitors, repost as stream_repost
 from logic.pending.index import get_pending_index_manager
@@ -144,10 +144,10 @@ def init_app() -> None:
     Initializes database, indexer registry, console buffer, and
     runs a background cleanup of stale tmp data.
     """
-    from core.database import init_database
+    from core.db.schema import init_database
     from core.indexers.registry import get_registry
-    from core.utils import run_global_purge
-    from logic.system.reaper import get_scheduler
+    from logic.pipeline.cleanup import run_global_purge
+    from core.scheduler import get_scheduler
 
     logger.info("Initializing database...")
     init_database()
@@ -350,7 +350,7 @@ class UploadService(QueueServiceMixin):
 
     def get_statistics(self) -> dict[str, Any]:
         """Retrieve aggregated upload statistics from the database."""
-        return database.get_detailed_stats()
+        return db_stats.get_detailed_stats()
 
 
 def get_upload_service() -> UploadService:
@@ -400,7 +400,7 @@ def get_recent_errors(limit: int = 25) -> list[dict[str, Any]]:
     capped = max(1, min(int(limit), 200))
     errors: list[dict[str, Any]] = []
 
-    for job in database.get_job_history(limit=capped):
+    for job in db_job_history.get_job_history(limit=capped):
         message = job.get("error_message")
         if not message:
             continue
@@ -416,7 +416,7 @@ def get_recent_errors(limit: int = 25) -> list[dict[str, Any]]:
 
     # get_recent_uploads returns a paginated envelope; each item carries one
     # "destinations" entry per indexer, and that is where a failure is recorded.
-    page = database.get_recent_uploads(limit=capped)
+    page = db_history.get_recent_uploads(limit=capped)
     for row in page.get("items", []) if isinstance(page, dict) else []:
         for destination in row.get("destinations", []) or []:
             if str(destination.get("status", "")).lower() not in {"failed", "error"}:
@@ -433,3 +433,7 @@ def get_recent_errors(limit: int = 25) -> list[dict[str, Any]]:
 
     errors.sort(key=lambda entry: str(entry.get("when") or ""), reverse=True)
     return errors[:capped]
+
+
+# core.proc records each job's tool processes here so stop/clear can terminate them.
+proc.set_process_registry(UploadService)

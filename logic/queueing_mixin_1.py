@@ -2,13 +2,13 @@
 # W11-B10: request shaping lives in logic/jobs/requests.py and job fields in logic/jobs/models.py;
 # the one-line delegations below are removed with the mixins in W12-B12.
 
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.classify.tv_packs import has_season_pack_name, is_season_pack_folder
 from logic.jobs import models as job_models
 from logic.jobs import requests as job_requests
 from logic.queueing_base import (
     Any, Optional, Path, ProcessingJobRequest, QueueStartSummary, StreamJobRequest, datetime, logger,
-    normalize_submission_category, os, timezone,
+    normalize_category, os, timezone,
 )
 
 class _QueueServiceMixinPart1:
@@ -16,14 +16,6 @@ class _QueueServiceMixinPart1:
     def _normalize_job_source(source: Any) -> str:
         return job_models.normalize_job_source(source)
 
-
-    @classmethod
-    def _normalize_queue_category(cls, value: Any) -> str:
-        return normalize_submission_category(value)
-
-    @classmethod
-    def _queue_item_category_from_itype(cls, value: Any) -> str:
-        return cls._normalize_queue_category(value)
 
     @staticmethod
     def _queue_item_label(item: dict[str, Any], fallback_index: int) -> str:
@@ -37,7 +29,7 @@ class _QueueServiceMixinPart1:
 
     @classmethod
     def _derive_queue_item_category(cls, item: dict[str, Any]) -> tuple[str, str]:
-        manual_category = cls._normalize_queue_category(item.get("manual_category"))
+        manual_category = normalize_category(item.get("manual_category"))
         path_text = str(item.get("path") or "").strip()
         if path_text:
             try:
@@ -49,7 +41,7 @@ class _QueueServiceMixinPart1:
                     itype_hint=str(item.get("itype") or "") if manual_category else "",
                     respect_explicit_hint=bool(manual_category),
                 )
-                resolved_category = cls._normalize_queue_category(resolved.category)
+                resolved_category = normalize_category(resolved.category)
                 if resolved_category and resolved_category not in cls._QUEUE_INVALID_CATEGORY_VALUES:
                     source = "manual_category" if manual_category else f"path:{resolved.detection_method}"
                     return resolved_category, source
@@ -57,9 +49,9 @@ class _QueueServiceMixinPart1:
                 logger.debug(f"Queue item category recovery failed for {path_text}: {exc}")
             return "", ""
 
-        detected_category = cls._normalize_queue_category(item.get("detected_category"))
-        itype_category = cls._queue_item_category_from_itype(item.get("itype"))
-        explicit_category = cls._normalize_queue_category(item.get("category"))
+        detected_category = normalize_category(item.get("detected_category"))
+        itype_category = normalize_category(item.get("itype"))
+        explicit_category = normalize_category(item.get("category"))
         for candidate, source in (
             (manual_category, "manual_category"),
             (detected_category, "detected_category"),

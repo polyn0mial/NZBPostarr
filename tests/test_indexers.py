@@ -232,14 +232,14 @@ def test_submit_to_indexer_rejects_unknown_category_without_default_fallback(tmp
 
 
 def test_audiobook_category_mapping_prefers_direct_code_then_books_fallback() -> None:
-    from core.utils import normalize_submission_category
+    from core.media import normalize_category
 
     direct = models_mod.CategoryMapping(audiobooks="3030", books="7020")
     fallback = models_mod.CategoryMapping(books="7020")
     missing = models_mod.CategoryMapping(movie="2040")
 
-    assert normalize_submission_category("audiobook") == "audiobooks"
-    assert normalize_submission_category("audiobooks") == "audiobooks"
+    assert normalize_category("audiobook") == "audiobooks"
+    assert normalize_category("audiobooks") == "audiobooks"
     assert direct.resolve_code("audiobooks") == ("3030", "audiobooks", True)
     assert fallback.resolve_code("audiobooks") == ("7020", "books", False)
     assert missing.resolve_code("audiobooks") == (None, None, False)

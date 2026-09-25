@@ -11,23 +11,16 @@ from typing import Any, Callable, Dict, List, Optional, cast
 from loguru import logger
 
 from core.config import get_config
-from core.utils import (
-    get_thread_job,
-    log_completed,
-    log_info,
-    log_success,
-    purge_item_data,
-    set_thread_job,
-    update_job_progress,
-    wait_for_job_resume,
-)
+from core.logging import log_completed, log_info, log_success
+from core.paths import path_key
+from logic.jobs.context import get_thread_job, set_thread_job, update_job_progress, wait_for_job_resume
 from logic.pending.roots import get_configured_folders
 from logic.pipeline.checkpoints import (
     _begin_runtime_item_checkpoint,
     _complete_runtime_item_checkpoint,
-    _normalize_runtime_path,
     _persist_runtime_job_checkpoint,
 )
+from logic.pipeline.cleanup import purge_item_data
 from logic.pipeline.plan import (
     _collect_scanned_job_items,
     _collect_targeted_job_items,
@@ -165,7 +158,7 @@ def _prefetched_validation_state(
     item: Path,
 ) -> tuple[Optional[Dict[str, Optional[str]]], Optional[Path]]:
     destination_status = None
-    normalized_item = _normalize_runtime_path(item)
+    normalized_item = path_key(item)
     if context.prefetched_item_db_keys:
         item_db_key = context.prefetched_item_db_keys.get(normalized_item)
         if item_db_key:
@@ -268,7 +261,7 @@ def preview_processing_items(
         if reject_reason:
             append_detail(path=display_path, name=name, category=category, outcome=outcome, reason=reject_reason)
             continue
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         seen_paths.add(normalized)
         raw_items.append((path, category))
 
@@ -300,9 +293,9 @@ def preview_processing_items(
         file_enabled=bool(getattr(conf, "file_size_limit_enabled", True)),
     )
 
-    planned_keys = {_normalize_runtime_path(path) for path, _category in sorted_items}
+    planned_keys = {path_key(path) for path, _category in sorted_items}
     for path, category in raw_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         if normalized not in planned_keys:
             reason = "Pack processing is disabled" if skip_packs and category in {"tv", "anime"} else "Excluded by processing rules"
             append_detail(
@@ -333,7 +326,7 @@ def preview_processing_items(
     skip_enabled = isinstance(skip_config, dict) and bool(skip_config.get("enabled", False))
 
     for path, category in sorted_items:
-        normalized = _normalize_runtime_path(path)
+        normalized = path_key(path)
         item_db_key = prefetched_item_db_keys.get(normalized)
         dest_status = prefetched_dupes.get(item_db_key) if item_db_key else None
         base_folder = prefetched_source_root_for(path) if prefetched_source_root_for is not None else None
@@ -500,7 +493,7 @@ def process_single(
     validated_submission_category: Optional[str] = None,
 ) -> int:
     """Process a single item (orchestrated for dual uploads)."""
-    from core.database import check_duplicate_dynamic
+    from core.db.ledger import destinations_for
 
     conf = get_config()
     name = path.name
@@ -526,7 +519,7 @@ def process_single(
     key = _build_item_key(path, base_folder)
 
     if prefetched_dest_status is None:
-        dest_status = check_duplicate_dynamic(key, itype, indexer_ids, filesize=item_size_bytes)
+        dest_status = destinations_for(key, itype, indexer_ids, filesize=item_size_bytes)
     else:
         dest_status = {idx: prefetched_dest_status.get(idx) for idx in indexer_ids}
     is_new = all(v is None for v in dest_status.values())
@@ -929,7 +922,7 @@ def _log_job_completion(category: str, test_mode: bool, run_state: "_JobRunState
 
     Extracted from run_job to keep its own branching down.
     """
-    from core.database import get_all_upload_stats
+    from core.db.stats import get_all_upload_stats
 
     stats = get_all_upload_stats() or {}
     log_completed("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

@@ -10,10 +10,9 @@ def _read_repo_text(*parts: str) -> str:
 
 
 def _queue_source() -> str:
-    """The queue page source as one string. queue.js was split into sibling ES modules
-    (queue-methods-*.js / queue-computed-*.js) that esbuild bundles back together, so
-    the page's logic now spans several files - read them all so source-text assertions
-    still see the whole page."""
+    """The queue page source as one string. The page is split into feature modules under
+    pages/queue/ that esbuild bundles from pages/queue/index.js - read them all so
+    source-text assertions still see the whole page."""
     pages = REPO_ROOT / "webui" / "assets" / "js" / "pages"
-    parts = [pages / "queue.js"] + sorted(pages.glob("queue-*.js"))
+    parts = sorted((pages / "queue").glob("*.js"))
     return "\n".join(p.read_text(encoding="utf-8") for p in parts)

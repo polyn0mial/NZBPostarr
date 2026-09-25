@@ -14,9 +14,9 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from api.deps import _filter_bulk_selectable_items, _log_selected_payload
-from core import database
+from core.db import uploads as db_uploads
 from core.config import get_config
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.pending import children as pending_children
 from logic.pending import index as pending_index
 from logic.pending import tree as pending_tree
@@ -549,7 +549,7 @@ def _slim_pending_items(items: Any) -> Any:
 async def mark_items_uploaded(req: MarkUploadedRequest) -> Dict[str, Any]:
     """Record items as already uploaded without posting them.
 
-    Backs the queue page's "Mark Uploaded" action; database.mark_as_uploaded
+    Backs the queue page's "Mark Uploaded" action; core.db.uploads.mark_as_uploaded
     already existed but had no route, so the button 404'd.
     """
     if not req.item_keys:
@@ -557,7 +557,11 @@ async def mark_items_uploaded(req: MarkUploadedRequest) -> Dict[str, Any]:
     if not req.indexer_ids:
         raise HTTPException(status_code=400, detail="No indexers specified")
 
-    created = database.mark_as_uploaded(req.item_keys, req.indexer_ids, itype=req.itype)
+    created = db_uploads.mark_as_uploaded(req.item_keys, req.indexer_ids, itype=req.itype)
+    if created > 0:
+        from logic.queue_metrics import request_live_queue_refresh
+
+        request_live_queue_refresh(reason="manual-mark-uploaded")
     return {
         "status": "success",
         "records_created": created,

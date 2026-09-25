@@ -198,7 +198,7 @@ def test_stop_during_path_resolution_ends_the_job(tmp_path, monkeypatch) -> None
 
 def test_run_command_does_not_kill_a_running_tool_while_paused() -> None:
     # queue-backend-07: pause lets the current tool finish.
-    from core import utils as utils_mod
+    from core import proc
 
     process = subprocess.Popen(
         [sys.executable, "-c", "print('one'); print('two')"],
@@ -209,7 +209,7 @@ def test_run_command_does_not_kill_a_running_tool_while_paused() -> None:
     job = {"pause_requested": True, "status": "paused"}
     lines: deque = deque(maxlen=10)
 
-    reader, stopped = utils_mod._run_command_stream_output(process, job, lines, "test", None, True)
+    reader, stopped = proc._run_command_stream_output(process, job, lines, "test", None, True)
     process.wait(timeout=10)
     if reader is not None:
         reader.join(timeout=5)

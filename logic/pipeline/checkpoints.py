@@ -2,20 +2,12 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, List, Optional
 
 from loguru import logger
 
-
-def _normalize_runtime_path(path: Path) -> str:
-    """Normalize a filesystem path for stable comparisons."""
-    try:
-        resolved = str(path.resolve())
-    except OSError:
-        resolved = str(path)
-    return resolved.casefold() if os.name == "nt" else resolved
+from core.paths import checkpoint_key, path_key
 
 
 def _append_cleanup_path(job: Optional[dict[str, Any]], path: Path) -> None:
@@ -57,11 +49,6 @@ def _persist_runtime_job_checkpoint(job: Optional[dict[str, Any]]) -> None:
         logger.warning(f"Could not persist runtime job checkpoint: {exc}")
 
 
-def _runtime_checkpoint_path_key(path: Any) -> str:
-    text = str(path or "").strip()
-    return os.path.normpath(text).replace("\\", "/") if text else ""
-
-
 def _begin_runtime_item_checkpoint(
     job: Optional[dict[str, Any]],
     path: Path,
@@ -71,13 +58,13 @@ def _begin_runtime_item_checkpoint(
     if job is None:
         return
     path_text = str(path)
-    path_key = _runtime_checkpoint_path_key(path_text)
+    path_key = checkpoint_key(path_text)
     inflight = [
         str(value)
         for value in (job.get("_inflight_item_paths") or [])
         if str(value).strip()
     ]
-    if path_key and all(_runtime_checkpoint_path_key(value) != path_key for value in inflight):
+    if path_key and all(checkpoint_key(value) != path_key for value in inflight):
         inflight.append(path_text)
     job["_inflight_item_paths"] = inflight
     if make_current:
@@ -88,12 +75,12 @@ def _begin_runtime_item_checkpoint(
 def _complete_runtime_item_checkpoint(job: Optional[dict[str, Any]], path: Path) -> None:
     if job is None:
         return
-    path_key = _runtime_checkpoint_path_key(path)
+    path_key = checkpoint_key(path)
     job["_inflight_item_paths"] = [
         str(value)
         for value in (job.get("_inflight_item_paths") or [])
-        if _runtime_checkpoint_path_key(value) != path_key
+        if checkpoint_key(value) != path_key
     ]
-    if _runtime_checkpoint_path_key(job.get("_current_item_path")) == path_key:
+    if checkpoint_key(job.get("_current_item_path")) == path_key:
         job.pop("_current_item_path", None)
     _persist_runtime_job_checkpoint(job)

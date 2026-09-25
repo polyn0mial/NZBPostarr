@@ -1,13 +1,14 @@
 # Auto-split mixin from queueing.py - verbatim method bodies.
 
+from core.db import queue_items as db_queue_items
 from logic.queueing_base import (
-    Any, JobState, Optional, ProcessingJobRequest, database, datetime, log_info, logger, re, reset_thread_job, set_thread_job, time, timezone, uuid,
+    Any, JobState, Optional, ProcessingJobRequest, datetime, log_info, logger, re, reset_thread_job, set_thread_job, time, timezone, uuid,
 )
 
 class _QueueServiceMixinPart5:
     def _remove_started_queue_items(self, runnable_ids: set[int], job_id: str) -> None:
         try:
-            removed_count = database.db_remove_queue_items(sorted(runnable_ids))
+            removed_count = db_queue_items.db_remove_queue_items(sorted(runnable_ids))
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.warning(f"[QUEUE-START] Job {job_id} started but staged-item cleanup failed: {exc}")
             return

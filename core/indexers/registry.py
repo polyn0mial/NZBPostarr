@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 from loguru import logger
 
-from core.utils import log_verbose
+from core.logging import log_verbose
 from core.indexers.models import (
     IndexerDefinition,
     _requires_username,

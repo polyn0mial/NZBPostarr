@@ -1,4 +1,4 @@
-"""Posting: progress/ETA tracking, nyuu plans and commands, upload sets per server, the single-item upload flow."""
+"""Posting: progress/ETA tracking, nyuu plans and commands, upload sets per server, the single-item flow."""
 
 from __future__ import annotations
 
@@ -16,19 +16,12 @@ import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 
 from core.config import Config, NNTPServer, get_config
-from core.database import record_nntp_success
+from core.db.uploads import record_nntp_success
+from core.format import get_priority_label, is_priority_key
 from core.indexers.registry import get_indexer
-from core.utils import (
-    extract_percentage,
-    extract_speed,
-    get_priority_label,
-    get_thread_job,
-    is_priority_key,
-    log_info,
-    run_command,
-    set_thread_job,
-    update_job_progress,
-)
+from core.logging import log_info
+from core.proc import extract_percentage, extract_speed, run_command
+from logic.jobs.context import get_thread_job, set_thread_job, update_job_progress
 from logic.pipeline.record import _record_folder_hierarchy_rows
 from logic.pipeline.submit import submit_and_record
 from logic.stats.collector import format_seconds, parse_speed_to_bps
@@ -382,6 +375,7 @@ def _parse_nyuu_completion_stats(
 
     speed_match = re.search(r"\((\d+\.?\d*)\s*([KMG]?[iI]?[bB]/s)\)", output_text, re.I)
     if speed_match:
+        from logic.stats.collector import parse_speed_to_bps
 
         parsed_speed_bps = parse_speed_to_bps(f"{speed_match.group(1)} {speed_match.group(2)}")
 
@@ -580,6 +574,7 @@ def _split_parallel_server_connections(raw_sets: list[tuple[dict[str, Any], Any]
 
 def _upload_target_display(upload_set: dict[str, Any]) -> str:
     """Return the formatted display label for an upload set."""
+    from core.indexers.registry import get_indexer
 
     ids_part = upload_set["id"].split(" (")[0]
     resolved: list[str] = []

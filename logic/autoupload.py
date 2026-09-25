@@ -14,7 +14,7 @@ from loguru import logger
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from core.utils import start_watchdog_observer, stop_watchdog_observer
+from core.fs import start_watchdog_observer, stop_watchdog_observer
 from logic.classify.content import detect_auto_category
 from logic.classify.hints import infer_folder_category_hint
 

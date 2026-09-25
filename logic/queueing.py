@@ -1,7 +1,7 @@
 from typing import Any, Optional
 import threading
 
-from core import database
+from core.db import queue_items as db_queue_items
 from core.config import get_config
 from logic.jobs.models import INVALID_CATEGORY_VALUES, ProcessingJobRequest as ProcessingJobRequest
 from logic.queueing_mixin_1 import _QueueServiceMixinPart1
@@ -18,7 +18,7 @@ class QueueServiceMixin(_QueueServiceMixinPart1, _QueueServiceMixinPart2, _Queue
         self._queue_processing_paused = False
         self._queue_scheduler_stop = threading.Event()
         self._queue_scheduler_thread: Optional[threading.Thread] = None
-        self._queue_items: list[dict[str, Any]] = database.db_load_queue()
+        self._queue_items: list[dict[str, Any]] = db_queue_items.db_load_queue()
 
         state_dir = get_config().script_dir / "data" / "state"
         state_dir.mkdir(parents=True, exist_ok=True)

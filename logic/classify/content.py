@@ -7,13 +7,20 @@ import re
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
-from core.utils import (
+from core.media import (
     AUDIOBOOK_EXTENSIONS,
+    DISC_STRUCTURE_DIRS,
     EBOOK_EXTENSIONS,
-    has_multi_file_episode_pattern,
+    EXTENSION_FIRST_APP,
+    EXTENSION_FIRST_AUDIOBOOK,
+    EXTENSION_FIRST_EBOOK,
+    EXTENSION_FIRST_MUSIC,
+    EXTENSION_FIRST_VIDEO,
     MUSIC_EXTENSIONS,
     VIDEO_EXTENSIONS,
+    category_for_itype,
 )
+from logic.classify.patterns import has_multi_file_episode_pattern
 from logic.classify.anime import _lookup_anime_status, _series_signature, cached_lookup
 from logic.classify.hints import (
     _coerce_category_hint,
@@ -42,64 +49,6 @@ from logic.classify.patterns import (
 from logic.classify.tv_packs import _has_tv_episode_like_video
 from logic.classify.walk import _iter_leaf_files, _iter_video_candidates
 
-
-_DISC_IMAGE_EXTENSIONS = {".iso", ".img", ".mdf", ".mds", ".nrg"}
-
-_DISC_STRUCTURE_DIRS = {"bdmv", "certificate", "video_ts"}
-
-_APP_FILE_EXTENSIONS = {
-    ".exe",
-    ".msi",
-    ".apk",
-    ".dmg",
-    ".pkg",
-    ".deb",
-    ".rpm",
-    ".zip",
-    ".rar",
-    ".7z",
-} | _DISC_IMAGE_EXTENSIONS
-
-_ITYPE_TO_CATEGORY = {
-    "tv show": "tv",
-    "tv episode": "tv",
-    "tv pack": "tv",
-    "season pack": "tv",
-    "anime": "anime",
-    "movie": "movies",
-    "movie pack": "movies",
-    "music": "music",
-    "audiobook": "audiobooks",
-    "ebook": "books",
-    "app": "apps",
-    "disc": "disc",
-    "misc": "misc",
-    "unknown": "misc",
-}
-
-def category_from_itype(itype: str, default: str = "misc") -> str:
-    """Map a display item type to its canonical submission category."""
-    return _ITYPE_TO_CATEGORY.get(str(itype or "").strip().lower(), default)
-
-# Extension-first subsets: narrower than the core.utils sets on purpose (the Pending page's
-# standalone-file rule counts only these).
-EXTENSION_FIRST_VIDEO = {
-    ".mkv",
-    ".mp4",
-    ".avi",
-    ".mov",
-    ".m4v",
-    ".wmv",
-    ".ts",
-    ".m2ts",
-    ".mpg",
-    ".mpeg",
-    ".webm",
-    ".flv",
-}
-EXTENSION_FIRST_AUDIOBOOK = {".m4b"}
-EXTENSION_FIRST_MUSIC = {".m4a", ".mp3", ".flac", ".cue"}
-EXTENSION_FIRST_EBOOK = {".epub", ".pdf", ".mobi"}
 
 def is_anime_bonus_name(name: str) -> bool:
     """True for NCOP/NCED/creditless anime extras."""
@@ -276,7 +225,7 @@ def _non_video_media_category(entry: Path, leaf_files: Optional[Tuple[Path, ...]
         elif ext in MUSIC_EXTENSIONS:
             music_count += 1
             known_count += 1
-        elif ext in _APP_FILE_EXTENSIONS:
+        elif ext in EXTENSION_FIRST_APP:
             app_count += 1
             known_count += 1
 
@@ -323,7 +272,7 @@ def _detect_video_disc_leaf_files(entry: Path) -> Tuple[Path, ...]:
     structured_suffixes = {".bdmv", ".ifo", ".bup", ".vob", ".m2ts", ".mpls", ".clpi", ".ssif"}
     if any(
         path.suffix.lower() in structured_suffixes
-        and any(part.lower() in _DISC_STRUCTURE_DIRS for part in path.parts)
+        and any(part.lower() in DISC_STRUCTURE_DIRS for part in path.parts)
         for path in leaf_files
     ):
         return leaf_files
@@ -577,4 +526,4 @@ def detect_auto_category(
     if is_anime_bonus_name(entry.name):
         return "anime"
     itype = detect_auto_itype(entry, folder_category_hint, anime_lookup=anime_lookup)
-    return category_from_itype(itype)
+    return category_for_itype(itype)

@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 
-from core.utils import log_backend_timing
+from core.logging import log_backend_timing
+from core.paths import path_key
 from logic.classify.anime import cached_lookup
 from logic.classify.explicit import resolve_explicit_path
 from logic.pending.completion import (
@@ -17,7 +18,7 @@ from logic.pending.completion import (
     _mark_ignored_tree_nodes_completed,
 )
 from logic.pending.rules import _enforce_child_source_requirement
-from logic.pending.selection import _selection_path_identity, _stamp_lazy_children_selection, stamp_upload_itype
+from logic.pending.selection import _stamp_lazy_children_selection, stamp_upload_itype
 from logic.pending.tree import _build_external_tree_item, _has_filepart_path, _load_external_metadata
 from logic.pending.view import _strip_external_helper_fields
 
@@ -177,7 +178,7 @@ def build_external_children_for_request(data: Dict[str, Any], key: str, path: st
         for entry in entries:
             if entry.name.startswith("."):
                 continue
-            cached = compact_metadata.get(_selection_path_identity(entry))
+            cached = compact_metadata.get(path_key(entry))
             if cached is None:
                 missing_metadata = True
                 break

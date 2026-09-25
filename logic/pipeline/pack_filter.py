@@ -11,7 +11,9 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from core.utils import VIDEO_EXTENSIONS, log_info
+from core.logging import log_info
+from core.media import VIDEO_EXTENSIONS
+from core.paths import path_key
 from logic.classify.tv_packs import (
     _has_direct_child_season_pack_dirs,
     _tv_pack_episode_rejection_reason,
@@ -19,7 +21,7 @@ from logic.classify.tv_packs import (
     is_season_pack,
     is_season_pack_folder,
 )
-from logic.pipeline.checkpoints import _append_cleanup_path, _normalize_runtime_path
+from logic.pipeline.checkpoints import _append_cleanup_path
 from logic.pipeline.prepare import _ONE_GIB, _safe_fs_component
 from logic.pipeline.record import _live_size_bytes
 
@@ -101,7 +103,7 @@ def _inject_inferred_tv_pack_entries(
 ) -> list[tuple[Path, str]]:
     """Infer selected season-pack folders when the UI sent only child episode paths."""
     existing_dirs = {
-        _normalize_runtime_path(path)
+        path_key(path)
         for path, cat in raw_items
         if cat in {"tv", "anime"} and path.is_dir()
     }
@@ -120,10 +122,10 @@ def _inject_inferred_tv_pack_entries(
     pack_parents = {
         parent
         for parent, episode_paths in episodes_by_parent.items()
-        if _normalize_runtime_path(parent) not in existing_dirs
+        if path_key(parent) not in existing_dirs
         and (
             already_staged_source_dirs is None
-            or _normalize_runtime_path(parent) not in already_staged_source_dirs
+            or path_key(parent) not in already_staged_source_dirs
         )
         and parent.name not in existing_dir_names
         and is_season_pack_folder(parent, episode_paths, require_source_token=False)
@@ -230,7 +232,7 @@ def _create_filtered_tv_pack_entries_for_selection(
         staged_pack = _create_filtered_tv_pack_staging(source_dir, allowed_paths, conf, job)
         if staged_pack is None:
             return [], set()
-        episode_keys = {_normalize_runtime_path(path) for path in allowed_files}
+        episode_keys = {path_key(path) for path in allowed_files}
         return [(staged_pack, sorted(allowed_files, key=lambda path: path.name.lower()))], episode_keys
 
     entries: list[tuple[Path, list[Path]]] = []
@@ -242,7 +244,7 @@ def _create_filtered_tv_pack_entries_for_selection(
         staged_pack = _create_filtered_tv_pack_staging(child_dir, child_files, conf, job)
         if staged_pack is not None:
             entries.append((staged_pack, child_files))
-            episode_keys.update(_normalize_runtime_path(path) for path in child_files)
+            episode_keys.update(path_key(path) for path in child_files)
 
     if loose_files:
         log_info(f"TV parent selection {source_dir.name}: {len(loose_files)} loose episode file(s) queued as singles")

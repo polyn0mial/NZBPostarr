@@ -42,7 +42,7 @@ def test_queue_start_filters_misc_and_missing_category_but_runs_valid_items(tmp_
         return "job-fixed-queue"
 
     service.start_processing_job_request = fake_start_processing_job_request
-    monkeypatch.setattr(queueing.database, "db_remove_queue_items", lambda item_ids: len(item_ids))
+    monkeypatch.setattr(db_queue_items, "db_remove_queue_items", lambda item_ids: len(item_ids))
     service.get_queue_items = lambda: list(service._queue_items)
 
     result = service.start_queue_with_details(source="queue-start", enable_duplicate_check=True, test_mode=False)
@@ -1636,7 +1636,7 @@ def test_upload_service_dashboard_summary_uses_pending_index_state(monkeypatch) 
 def test_scan_pending_snapshot_lazy_tree_sizes_each_top_level_folder_once(tmp_path, monkeypatch) -> None:
     # queue-backend-16 (DECISIONS: lazy one-level pending tree): top-level folders are
     # scanned without children, so each is sized once with compute_size_uncached.
-    from core.utils import compute_size_uncached as real_compute_size
+    from core.fs import compute_size_uncached as real_compute_size
     from logic.pending import tree as pending_tree
 
     external_dir = tmp_path / "external"

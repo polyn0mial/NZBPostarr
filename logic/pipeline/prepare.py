@@ -1,4 +1,4 @@
-"""Item preparation: tool checks, RAR/PAR2 staging, MediaInfo/NFO sidecars, temp space and support assets."""
+"""Item preparation: tool checks, RAR/PAR2 staging, MediaInfo/NFO sidecars, temp space, support assets."""
 
 from __future__ import annotations
 
@@ -14,18 +14,13 @@ from typing import Any, Optional
 import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 
+from core import tools as core_tools
 from core.config import get_config
-from core.utils import (
-    VIDEO_EXTENSIONS,
-    compute_size_uncached,
-    extract_percentage,
-    extract_speed,
-    get_thread_job,
-    log_info,
-    log_verbose,
-    run_command,
-    update_job_progress,
-)
+from core.fs import compute_size_uncached
+from core.logging import log_info, log_verbose
+from core.media import VIDEO_EXTENSIONS
+from core.proc import extract_percentage, extract_speed, run_command
+from logic.jobs.context import get_thread_job, update_job_progress
 
 
 _ONE_GIB: int = humanfriendly.parse_size("1 GiB")
@@ -60,26 +55,6 @@ class SupportAssetScan:
 
     nfo_path: Optional[Path] = None
     mediainfo_source_path: Optional[Path] = None
-
-
-def _tool_exists(tool_cmd: str) -> bool:
-    """Return True when a configured executable is directly present or resolvable on PATH."""
-    text = str(tool_cmd or "").strip()
-    if not text:
-        return False
-    candidate = Path(text)
-    if candidate.is_absolute() or candidate.parent != Path("."):
-        return candidate.exists()
-    return shutil.which(text) is not None
-
-
-def _processing_tool_commands(conf: Any) -> dict[str, str]:
-    """Resolve the command strings used for prep/upload tooling."""
-    return {
-        "rar": str(getattr(conf, "rar_path", "") or "rar"),
-        "parpar": str(getattr(conf, "parpar_path", "") or "parpar"),
-        "nyuu": str(getattr(conf, "nyuu_path", "") or "nyuu"),
-    }
 
 
 def _mediainfo_output_path(path: Path, conf: Any) -> Path:
@@ -435,11 +410,11 @@ def prepare_item(
 def check_tools(conf: Optional[Any] = None) -> bool:
     """Verify that required external tools are available."""
     conf = conf or get_config()
-    commands = _processing_tool_commands(conf)
-    missing = []
-    for label, command in commands.items():
-        if not _tool_exists(command):
-            missing.append(f"{label} ({command})")
+    missing = [
+        f"{name} ({core_tools.tool_command(conf, name)})"
+        for name, executable in core_tools.check_tools(conf).items()
+        if not executable
+    ]
     if missing:
         msg = f"Missing required tools: {', '.join(missing)}"
         log_info(msg, "ERROR")

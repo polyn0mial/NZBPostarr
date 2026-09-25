@@ -10,6 +10,7 @@ from loguru import logger
 from fastapi import HTTPException
 
 from core.config import StatsFeatures, get_config
+from core.paths import is_at_or_below, resolve_path
 
 # The 404 detail each disabled stats feature answers with.
 _FEATURE_DISABLED_DETAIL: Dict[str, str] = {
@@ -57,13 +58,6 @@ async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
         await stop_collector()
     sync_collector_schedule()
 
-def _resolved_policy_path(value: Any) -> Path:
-    path = Path(str(value or "").strip())
-    try:
-        return path.resolve()
-    except OSError:
-        return path.absolute()
-
 def _normalize_request_strings(values: List[str]) -> List[str]:
     normalized: List[str] = []
     seen: Set[str] = set()
@@ -84,16 +78,8 @@ def _bulk_selection_excluded_roots(conf: Any) -> tuple[Path, ...]:
             continue
         raw_path = str(entry.get("path") or "").strip()
         if raw_path:
-            roots.append(_resolved_policy_path(raw_path))
+            roots.append(resolve_path(raw_path))
     return tuple(roots)
-
-def _path_is_at_or_below(path_value: Any, root: Path) -> bool:
-    candidate = _resolved_policy_path(path_value)
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        return False
-    return True
 
 def _log_selected_payload(prefix: str, items: List[Dict[str, Any]]) -> None:
     """Emit concise selection logs for queued/forced uploads."""
@@ -124,7 +110,7 @@ def _filter_bulk_selectable_items(
     excluded_count = 0
     for item in items:
         raw_path = str(item.get("path") or "").strip()
-        if raw_path and any(_path_is_at_or_below(raw_path, root) for root in excluded_roots):
+        if raw_path and any(is_at_or_below(raw_path, root) for root in excluded_roots):
             excluded_count += 1
             continue
         allowed.append(item)

@@ -13,9 +13,11 @@ from typing import Any, Callable, Dict, List, Optional, cast
 from loguru import logger
 
 from core.config import get_config
-from core.utils import log_verbose, set_thread_job, should_skip_file
+from core.fs import should_skip_file
+from core.logging import log_verbose
+from core.paths import path_key
+from logic.jobs.context import set_thread_job
 from logic.pending.roots import find_configured_root
-from logic.pipeline.checkpoints import _normalize_runtime_path
 from logic.pipeline.plan import _selected_indexers
 from logic.pipeline.prepare import _ONE_GIB
 from logic.pipeline.record import _live_size_bytes
@@ -180,13 +182,13 @@ def _build_duplicate_prefetch_state(
     target_indexer_ids: Optional[List[str]],
 ) -> tuple[Dict[str, str], Dict[str, Dict[str, Optional[str]]], Callable[[Path], Optional[Path]]]:
     """Resolve item DB keys and batch-prefetch duplicate state for the job queue."""
-    from core.database import get_duplicate_status_batch
+    from core.db.ledger import destinations_for_batch
     from core.indexers.registry import get_enabled_indexers
 
     source_root_cache: Dict[str, Optional[Path]] = {}
 
     def source_root_for(item_path: Path) -> Optional[Path]:
-        item_key = _normalize_runtime_path(item_path)
+        item_key = path_key(item_path)
         if item_key not in source_root_cache:
             source_root_cache[item_key] = find_configured_root(item_path, configured_folders)
         return source_root_cache[item_key]
@@ -201,20 +203,20 @@ def _build_duplicate_prefetch_state(
 
     item_db_keys: Dict[str, str] = {}
     for item, _cat in sorted_items:
-        item_db_keys[_normalize_runtime_path(item)] = _build_item_key(item, source_root_for(item))
+        item_db_keys[path_key(item)] = _build_item_key(item, source_root_for(item))
 
     prefetched_dupes: Dict[str, Dict[str, Optional[str]]] = {}
     if eligible_indexer_ids:
 
-        item_keys = [item_db_keys[_normalize_runtime_path(item)] for item, _cat in sorted_items]
-        # Current on-disk size per item key -- lets get_duplicate_status_batch tell
+        item_keys = [item_db_keys[path_key(item)] for item, _cat in sorted_items]
+        # Current on-disk size per item key -- lets destinations_for_batch tell
         # a genuine re-upload of the same name apart from a locally-replaced file
         # (same name, different size) instead of treating every name match as done.
         item_filesizes: Dict[str, int] = {
-            item_db_keys[_normalize_runtime_path(item)]: _live_size_bytes(item)
+            item_db_keys[path_key(item)]: _live_size_bytes(item)
             for item, _cat in sorted_items
         }
-        prefetched_dupes = get_duplicate_status_batch(item_keys, eligible_indexer_ids, filesizes=item_filesizes)
+        prefetched_dupes = destinations_for_batch(item_keys, eligible_indexer_ids, filesizes=item_filesizes)
 
     return item_db_keys, prefetched_dupes, source_root_for
 
@@ -241,7 +243,7 @@ def _classify_preview_source_item(
         return path, path_text, name, category, "Source path was not found", "invalid"
     if not category or category in {"all", "both", "mixed", "selected", "external"}:
         return path, str(path), name, category, "A concrete upload category is required", "invalid"
-    normalized = _normalize_runtime_path(path)
+    normalized = path_key(path)
     if normalized in seen_paths:
         return path, str(path), name, category, "Duplicate source path in selection", "excluded"
     return path, str(path), name, category, None, "valid"
@@ -294,7 +296,7 @@ def _validate_queue_item(
     prefetched_base_folder: Optional[Path] = None,
 ) -> QueueItemValidation:
     """Validate one queue item without blocking the rest of the job."""
-    from core.database import check_duplicate_dynamic
+    from core.db.ledger import destinations_for
 
     conf = get_config()
     name = path.name
@@ -352,13 +354,13 @@ def _validate_queue_item(
         if item_size_bytes and all(value is not None for value in dest_status.values()):
             live_key = _build_item_key(path, source_root)
             try:
-                dest_status = check_duplicate_dynamic(live_key, db_type, indexer_ids, filesize=item_size_bytes)
+                dest_status = destinations_for(live_key, db_type, indexer_ids, filesize=item_size_bytes)
             except Exception:  # pylint: disable=broad-exception-caught
                 pass  # keep the prefetched result on error
     else:
         key = _build_item_key(path, source_root)
         try:
-            dest_status = check_duplicate_dynamic(key, db_type, indexer_ids, filesize=item_size_bytes)
+            dest_status = destinations_for(key, db_type, indexer_ids, filesize=item_size_bytes)
         except Exception as exc:  # pylint: disable=broad-exception-caught
             reason = f"Validation failed for {name}: duplicate check error ({exc})"
             logger.exception(reason)

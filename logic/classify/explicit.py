@@ -6,10 +6,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional, Set, Tuple
 
-from core.utils import AUDIOBOOK_EXTENSIONS, EBOOK_EXTENSIONS, MUSIC_EXTENSIONS, VIDEO_EXTENSIONS
+from core.media import AUDIOBOOK_EXTENSIONS, EBOOK_EXTENSIONS, MUSIC_EXTENSIONS, VIDEO_EXTENSIONS
 from logic.classify.anime import _lookup_anime_status, cached_lookup
 from logic.classify.content import (
-    _APP_FILE_EXTENSIONS,
+    EXTENSION_FIRST_APP,
     _detect_video_disc_leaf_files,
     _disc_base_category,
     _has_nested_tv_context,
@@ -350,7 +350,7 @@ def _resolve_early_explicit_path(
             "books": EBOOK_EXTENSIONS,
             "audiobooks": AUDIOBOOK_EXTENSIONS | MUSIC_EXTENSIONS,
             "music": MUSIC_EXTENSIONS | AUDIOBOOK_EXTENSIONS,
-            "apps": _APP_FILE_EXTENSIONS,
+            "apps": EXTENSION_FIRST_APP,
         }.get(non_video_category, set())
         queue_paths = tuple(path for path in all_leaf_files if path.suffix.lower() in non_video_exts)
         non_video_label = "ebook" if non_video_category == "books" else non_video_category.rstrip("s")
