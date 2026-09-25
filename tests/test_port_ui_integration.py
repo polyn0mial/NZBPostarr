@@ -150,7 +150,8 @@ def test_no_page_reads_a_manual_select_only_key() -> None:
 
 def test_nzb_life_rebrand_and_curl_guidance_in_docs() -> None:
     assert '("su", "NZB.Life", "https://nzb.life"),' in _read_repo_text("setup.py")
-    assert "- NZB.Life (`su`, formerly NZB.su)" in _read_repo_text("README.md")
+    readme = _read_repo_text("README.md")
+    assert "| NZB.Life " in readme and "(formerly NZB.su)" in readme  # the indexer table row
     agents = _read_repo_text("AGENTS.md")
     assert "_curl_redirect_result" not in agents
     assert "judged by the final page" in agents

@@ -603,7 +603,7 @@
                                 <div
                                     v-for="item in visibleFlatItems(cat.id)"
                                     :key="item.key"
-                                    :class="['pending-virtual-row flex items-center gap-2.5 px-3 py-[1px] transition-colors group', (isItemSkipped(item) || isItemFilepart(item)) ? 'opacity-40 pointer-events-none' : isItemCompleted(item) ? 'opacity-50 hover:opacity-75' : 'hover:bg-notion-bg-hover']">
+                                    :class="['pending-virtual-row flex items-center gap-2.5 px-3 py-0 transition-colors group', (isItemSkipped(item) || isItemFilepart(item)) ? 'opacity-40 pointer-events-none' : isItemCompleted(item) ? 'opacity-50 hover:opacity-75' : 'hover:bg-notion-bg-hover']">
                                     <input
                                         type="checkbox"
                                         :checked="selectedItems.has(item.key)"
@@ -693,7 +693,7 @@
 
                             <div v-if="!collapsedCategories[externalGroupCollapseKey(extGroup)]" class="divide-y divide-notion-divider">
                                 <div v-for="item in visibleExtTopLevel(extGroup)" :key="item.key">
-                                    <div :class="['grid items-center gap-0.5 px-3 py-[1px] transition-colors group w-full min-w-0', (isItemSkipped(item) || isItemFilepart(item)) ? 'opacity-40 pointer-events-none' : isItemCompleted(item) ? 'opacity-50 hover:opacity-75' : 'hover:bg-notion-bg-hover']" style="grid-template-columns: auto auto auto minmax(12rem, 1fr) auto auto auto auto auto;">
+                                    <div :class="['grid items-center gap-0.5 px-3 py-0 transition-colors group w-full min-w-0', (isItemSkipped(item) || isItemFilepart(item)) ? 'opacity-40 pointer-events-none' : isItemCompleted(item) ? 'opacity-50 hover:opacity-75' : 'hover:bg-notion-bg-hover']" style="grid-template-columns: auto auto auto minmax(12rem, 1fr) auto auto auto auto auto;">
                                         <input
                                             type="checkbox"
                                             :checked="selectedItems.has(item.key) || (hasLoadedRowChildren(item) && isExtFolderAllSelected(item))"
@@ -727,7 +727,7 @@
                                             </span>
                                             <span v-if="hasRowChildren(item)" class="text-[10px] text-notion-text-placeholder shrink-0">({{ getRowChildCount(item) }} files)</span>
                                         </div>
-                                        <div class="flex items-center justify-center gap-1 shrink-0 w-[1.32rem] text-center">
+                                        <div class="flex items-center justify-center gap-1 shrink-0 min-w-[1.32rem] text-center">
                                             <span v-if="isItemCompleted(item) && !isItemSkipped(item)" class="inline-flex items-center justify-center self-center w-[1rem] h-[1.48rem] rounded-full leading-none bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0" title="Completed">
                                                 <lucide-icon name="check" icon-class="w-3 h-3"></lucide-icon>
                                             </span>
@@ -841,7 +841,7 @@
                                                     <span class="text-[11px] text-notion-text-secondary min-w-0" style="max-width: 28vw; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ child.name }}</span>
                                                     <span v-if="hasRowChildren(child)" class="text-[10px] text-notion-text-placeholder shrink-0">({{ getRowChildCount(child) }} items)</span>
                                                 </div>
-                                                <div class="flex items-center justify-center gap-1 shrink-0 w-[1.32rem] text-center">
+                                                <div class="flex items-center justify-center gap-1 shrink-0 min-w-[1.32rem] text-center">
                                                     <span v-if="isItemCompleted(child) && !isItemSkipped(child)" class="inline-flex items-center justify-center self-center w-[1rem] h-[1.48rem] rounded-full leading-none bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0" title="Completed">
                                                         <lucide-icon name="check" icon-class="w-3 h-3"></lucide-icon>
                                                     </span>
@@ -936,7 +936,7 @@
                                                         <lucide-icon :name="getCategoryIcon(getCategoryForItem(gc) || findExternalAncestorCategory(gc))" icon-class="w-3 h-3 shrink-0" :icon-style="getCategoryIconStyle(getCategoryForItem(gc) || findExternalAncestorCategory(gc))"></lucide-icon>
                                                     </span>
                                                     <span class="text-[11px] text-notion-text-secondary min-w-0" style="display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" :title="gc.name">{{ gc.name }}</span>
-                                                    <div class="flex items-center justify-center gap-1 shrink-0 w-[1.32rem] text-center">
+                                                    <div class="flex items-center justify-center gap-1 shrink-0 min-w-[1.32rem] text-center">
                                                         <span v-if="isItemCompleted(gc) && !isItemSkipped(gc)" class="inline-flex items-center justify-center self-center w-[1rem] h-[1.48rem] rounded-full leading-none bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 shrink-0" title="Completed">
                                                             <lucide-icon name="check" icon-class="w-3 h-3"></lucide-icon>
                                                         </span>
@@ -1086,10 +1086,10 @@
     <div :class="queueSectionClass('staging')">
         <div>
             <!-- Empty state -->
-            <div v-if="queueItems.length === 0" class="empty-state py-6">
-                <lucide-icon name="inbox" icon-class="empty-state-icon w-8 h-8 opacity-30"></lucide-icon>
-                <p class="empty-state-title">Staging area is empty</p>
-                <p class="empty-state-subtitle">
+            <div v-if="queueItems.length === 0" class="px-4 py-6 text-center text-notion-text-tertiary text-sm">
+                <lucide-icon name="inbox" icon-class="w-8 h-8 mx-auto mb-2 opacity-30"></lucide-icon>
+                <p class="font-medium text-xs">Staging area is empty</p>
+                <p class="text-[10px] mt-1">
                     Select items above and click
                     <span class="inline-flex items-center gap-1 px-1.5 py-0.5 bg-notion-accent/10 text-notion-accent rounded text-[10px] font-medium">Add to Staging</span>
                 </p>

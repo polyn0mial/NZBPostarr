@@ -593,7 +593,6 @@ py-3
 py-4
 py-6
 py-8
-py-[1px]
 relative
 resize
 resize-none
@@ -826,7 +825,6 @@ w-8.75
 w-80
 w-9
 w-[1.24rem]
-w-[1.32rem]
 w-[112px]
 w-[15%]
 w-[18%]
