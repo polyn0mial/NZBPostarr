@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Set, Tuple
 
+from loguru import logger
+
 from logic.classify.hints import _coerce_category_hint, _hint_category_from_itype
 from logic.classify.names import (
     _has_guessit_episode_metadata,
@@ -154,8 +156,9 @@ def _tv_pack_episode_rejection_reason(path: Path, video_extensions: Set[str]) ->
                 normalized_key = compatibility_map.get(key, key)
                 if normalized_key in rules:
                     rules[normalized_key] = bool(value)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Config unavailable (early start-up, tests without a config): the defaults apply.
+        logger.debug(f"tv_pack_ignore config unavailable, using defaults: {exc}")
 
     if not rules.get("enabled", True):
         return ""
@@ -255,3 +258,44 @@ def is_season_pack_folder(path: Path, episode_paths: list[Path], *, require_sour
         if looks_like_generic_tv_season_folder(folder_name):
             return False
     return has_season_pack_name(folder_name)
+
+
+def get_tv_sort_key(path: Path) -> tuple[str, int, str]:
+    """
+    Simple Sort key for TV uploads.
+    Groups by Pack Name (folder name) and ensures the pack uploads before its episode files.
+    """
+    if path.is_dir():
+        # It's a Season Pack
+        pack_name = path.name.lower()
+        is_pack = 0
+        sort_name = ""  # Pack sorts first within its group
+    else:
+        # It's an Episode File
+        pack_name = path.parent.name.lower()
+        is_pack = 1
+        sort_name = path.name.lower()
+
+    return (pack_name, is_pack, sort_name)
+
+
+def _has_direct_child_season_pack_dirs(path: Path) -> bool:
+    """Return True when a selected TV folder is a parent that contains season-pack folders."""
+    if not path.is_dir():
+        return False
+    try:
+        for child in path.iterdir():
+            if child.is_dir() and has_season_pack_name(child.name):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def is_season_pack(path: Path) -> bool:
+    """
+    Check if a path represents a season pack (directory).
+    Parent TV collection folders are not season packs; only leaf-ish folders
+    with season naming and no direct child season-pack folders should upload as packs.
+    """
+    return path.is_dir() and has_season_pack_name(path.name) and not _has_direct_child_season_pack_dirs(path)

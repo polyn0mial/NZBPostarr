@@ -11,7 +11,8 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from logic.stream import monitors as stream_monitors, nntp as stream_nntp, repost as stream_repost
-from logic.services import get_upload_service, UploadService
+from logic.jobs.engine import JobEngine
+from logic.runtime import ensure_engine_started
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -51,7 +52,7 @@ async def start_streamed_nzb_upload(
     test_mode: bool = Form(False),
     enable_duplicate_check: bool = Form(True),
     indexer_id: Optional[str] = Form(None),
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> StreamStartResponse:
     """Upload an NZB manifest and queue a direct Usenet-to-Usenet stream job."""
     try:

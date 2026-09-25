@@ -7,7 +7,7 @@ import zlib
 from typing import Any, Dict, List, Optional, Set
 
 from core.config import get_config
-from logic.pending.selection import _selection_path_identity
+from core.paths import path_key
 from logic.queue_metrics import (
     count_pending_indexer_slots,
     incomplete_pending_indexer_ids,
@@ -77,7 +77,7 @@ def _compact_external_tree_item(
         if isinstance(children, list):
             stack.extend(child for child in children if isinstance(child, dict))
         if metadata_by_path is not None and node is not item:
-            path_identity = _selection_path_identity(str(node.get("path") or ""))
+            path_identity = path_key(str(node.get("path") or ""))
             if path_identity:
                 metadata_by_path[path_identity] = {
                     key: value

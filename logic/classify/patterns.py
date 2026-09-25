@@ -1,8 +1,10 @@
-"""Release-name regexes shared by every classifier rule."""
+"""Release-name regexes shared by every classifier rule, and the legacy episode-number check."""
 
 from __future__ import annotations
 
 import re
+from pathlib import Path
+from typing import Dict, List
 
 
 _AUTO_TV_PATTERNS = re.compile(
@@ -245,3 +247,48 @@ _AMBIGUOUS_TRACK_RE = re.compile(r"(?:^|[.\s_-])track[.\s_-]*\d{1,4}(?:[.\s_-]|$
 ANIME_BONUS_RE = re.compile(
     r"(?i)(?:\bncop\b|\bnced\b|\bcreditless\b|(?:^|[.\s_-])op\d{0,2}(?:$|[.\s_-])|(?:^|[.\s_-])ed\d{0,2}(?:$|[.\s_-]))"
 )
+
+
+_LEGACY_EPISODE_NUMBER_RE = re.compile(
+    r"^(?P<prefix>.+?)(?:[.\s_-]+)(?P<code>[1-9]\d{2,3})(?:[.\s_-]+)(?P<suffix>.+)$",
+    re.IGNORECASE,
+)
+
+
+def _normalize_release_segment(value: str) -> str:
+    cleaned = Path(value).stem
+    cleaned = re.sub(r"[\[\](){}]+", " ", cleaned)
+    cleaned = re.sub(r"[._-]+", " ", cleaned)
+    return re.sub(r"\s+", " ", cleaned).strip().lower()
+
+
+def has_multi_file_episode_pattern(names: List[str], *, min_matches: int = 2) -> bool:
+    """Return True when multiple names share legacy episodic numbering.
+
+    This catches older TV releases that use repeated numeric episode codes like
+    ``101``, ``102``, ``1001`` instead of explicit ``S01E01`` tags.
+    """
+    min_matches = max(min_matches, 2)
+
+    matches_by_prefix: Dict[str, set[str]] = {}
+    for raw_name in names:
+        match = _LEGACY_EPISODE_NUMBER_RE.match(Path(raw_name).stem)
+        if not match:
+            continue
+
+        code = match.group("code")
+        code_value = int(code)
+        if 1900 <= code_value <= 2099:
+            continue
+
+        prefix = _normalize_release_segment(match.group("prefix"))
+        suffix = _normalize_release_segment(match.group("suffix"))
+        if len(prefix) < 4 or len(suffix) < 2:
+            continue
+
+        seen_codes = matches_by_prefix.setdefault(prefix, set())
+        seen_codes.add(code)
+        if len(seen_codes) >= min_matches:
+            return True
+
+    return False

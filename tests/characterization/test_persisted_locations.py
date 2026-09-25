@@ -5,7 +5,6 @@ names); they must never change the expected strings.
 """
 
 import pathlib
-import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,7 +12,7 @@ from api import pending as pending_api
 from core import config as config_mod
 from core.db import models as db_models
 from core.db import queue_items as db_queue_items
-from logic import queueing
+from logic.jobs import engine as engine_mod
 from logic.system import backup as system_backup
 from logic.system import lifecycle, updater
 from logic.stream import monitors as stream_monitors
@@ -29,14 +28,9 @@ def _rel(path: Path, root: Path) -> str:
 
 
 def test_job_queue_state_files(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(queueing, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+    monkeypatch.setattr(engine_mod, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
     monkeypatch.setattr(db_queue_items, "db_load_queue", lambda: [])
-    service = object.__new__(queueing.QueueServiceMixin)
-    service._lock = threading.Lock()
-    service._queue_scheduler_loop = lambda: None
-    service._try_start_queued = lambda: None
-
-    service._initialize_queue_state()
+    service = engine_mod.JobEngine()
 
     assert _rel(service._jobs_state_path, tmp_path) == "data/state/job_queue_state.json"
     assert _rel(service._jobs_state_backup_path, tmp_path) == "data/state/job_queue_state.json.bak"

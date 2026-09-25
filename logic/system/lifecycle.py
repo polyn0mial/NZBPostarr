@@ -35,9 +35,9 @@ def runtime_revision() -> Dict[str, Any]:
 
 def stop_all_service_activity(clear_staged_items: bool, wait_timeout_seconds: float) -> Dict[str, Any]:
     """Stop active jobs, clear waiting work, and wait until quiet."""
-    from logic.services import get_upload_service
+    from logic.runtime import ensure_engine_started
 
-    stop_result = get_upload_service().stop_all_jobs_and_wait(
+    stop_result = ensure_engine_started().stop_all_jobs_and_wait(
         clear_staged_items=clear_staged_items,
         wait_timeout_s=wait_timeout_seconds,
     )
@@ -63,9 +63,9 @@ def restart_service(
     """Optionally stop all work, then schedule a process restart without changing files."""
     stop_result: Optional[Dict[str, Any]] = None
     if stop_before_restart:
-        from logic.services import get_upload_service
+        from logic.runtime import ensure_engine_started
 
-        stop_result = get_upload_service().stop_all_jobs_and_wait(
+        stop_result = ensure_engine_started().stop_all_jobs_and_wait(
             clear_staged_items=clear_staged_items,
             wait_timeout_s=wait_timeout_seconds,
         )

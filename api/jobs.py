@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -12,14 +11,15 @@ from pydantic import BaseModel, Field
 from api.deps import (
     _bulk_selection_excluded_roots,
     _normalize_request_strings,
-    _path_is_at_or_below,
-    _resolved_policy_path,
 )
+from core.media import default_itype
+from core.paths import is_at_or_below, path_key, resolve_path
 from core.config import get_config
 from logic.pending.roots import scan_configured_items
-from logic.pending.selection import category_upload_itype
 from logic.jobs.models import ProcessingJobRequest
-from logic.services import get_upload_service, UploadService
+from logic.jobs.engine import JobEngine
+from logic.jobs.views import active_job_items, build_queue_snapshot, finished_job_items, queued_job_items
+from logic.runtime import ensure_engine_started
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -28,7 +28,7 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
     """Resolve one upload request into the canonical bulk-selection candidates."""
     requested_categories = _normalize_upload_categories(req.categories or [req.category])
     selected_folder_keys = {
-        _normalize_selection_path(path)
+        path_key(path)
         for path in _normalize_request_strings(req.folder_paths)
     }
     selected_items: List[Dict[str, str]] = []
@@ -38,7 +38,7 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
     matched_count = 0
 
     if req.file_path:
-        resolved_file_path = _resolved_policy_path(req.file_path)
+        resolved_file_path = resolve_path(req.file_path)
         if not resolved_file_path.exists():
             raise HTTPException(status_code=400, detail="The requested file path was not found")
 
@@ -67,7 +67,7 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
             configured_items = [
                 item
                 for item in configured_items
-                if _normalize_selection_path(str(item.folder)) in selected_folder_keys
+                if path_key(str(item.folder)) in selected_folder_keys
             ]
         if requested_categories != ["all"]:
             configured_items = [
@@ -78,10 +78,10 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
         seen_paths: Set[str] = set()
         for item in configured_items:
             raw_path = str(item.path)
-            if excluded_roots and any(_path_is_at_or_below(item.path, root) for root in excluded_roots):
+            if excluded_roots and any(is_at_or_below(item.path, root) for root in excluded_roots):
                 excluded_count += 1
                 continue
-            key = _normalize_selection_path(raw_path)
+            key = path_key(raw_path)
             if key in seen_paths:
                 duplicate_path_count += 1
                 continue
@@ -104,7 +104,7 @@ def _select_upload_request_items(req: UploadRequest, conf: Any) -> tuple[List[Di
     }
 
 @router.post("/start")
-async def start_upload(req: UploadRequest, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
+async def start_upload(req: UploadRequest, service: JobEngine = Depends(ensure_engine_started)) -> Dict[str, Any]:
     """Start one or more bulk upload jobs based on the selected filters."""
     conf = get_config()
     selected_items, _selection_meta = _select_upload_request_items(req, conf)
@@ -188,31 +188,31 @@ class QueueRevalidateRequest(BaseModel):
     include_paused: bool = True
 
 def _default_itype_for_category(path: Path, category: str) -> str:
-    return category_upload_itype(category, is_dir=path.is_dir())
+    return default_itype(category, is_dir=path.is_dir())
 
 @router.get("/jobs")
 def get_jobs(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> List[Dict[str, Any]]:
     """Retrieve compact upload-job snapshots for frequent dashboard polling."""
     return service.get_active_jobs(compact=True)
 
 @router.post("/jobs/{job_id}/stop")
-async def stop_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
+async def stop_upload(job_id: str, service: JobEngine = Depends(ensure_engine_started)) -> Dict[str, Any]:
     """Request a specific job to stop."""
     if service.stop_job(job_id):
         return {"status": "stopping", "message": "Termination signal sent to job."}
     raise HTTPException(status_code=404, detail="Job not found")
 
 @router.post("/jobs/{job_id}/stop-clear")
-async def stop_clear_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
+async def stop_clear_upload(job_id: str, service: JobEngine = Depends(ensure_engine_started)) -> Dict[str, Any]:
     """Stop a specific job and remove it from the visible queue as soon as possible."""
     if service.stop_and_clear_job(job_id):
         return {"status": "clearing", "message": "Job stopping and clearing from the queue."}
     raise HTTPException(status_code=404, detail="Job not found")
 
 @router.post("/jobs/{job_id}/pause")
-async def pause_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
+async def pause_upload(job_id: str, service: JobEngine = Depends(ensure_engine_started)) -> Dict[str, Any]:
     """Pause an actively running upload job."""
     if service.pause_job(job_id):
         job = service.get_job(job_id) or {}
@@ -228,7 +228,7 @@ async def pause_upload(job_id: str, service: UploadService = Depends(get_upload_
     raise HTTPException(status_code=404, detail="Job not found or not running")
 
 @router.post("/jobs/{job_id}/resume")
-async def resume_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
+async def resume_upload(job_id: str, service: JobEngine = Depends(ensure_engine_started)) -> Dict[str, Any]:
     """Resume a paused upload job."""
     if service.resume_job(job_id):
         job = service.get_job(job_id) or {}
@@ -240,7 +240,7 @@ async def resume_upload(job_id: str, service: UploadService = Depends(get_upload
     raise HTTPException(status_code=404, detail="Job not found or not paused")
 
 @router.post("/jobs/{job_id}/retry")
-async def retry_upload(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
+async def retry_upload(job_id: str, service: JobEngine = Depends(ensure_engine_started)) -> Dict[str, Any]:
     """Queue a new attempt from a failed processing job's saved request."""
     ok, new_job_id, reason = service.retry_job(job_id)
     if not ok:
@@ -256,14 +256,14 @@ async def retry_upload(job_id: str, service: UploadService = Depends(get_upload_
 
 @router.delete("/jobs/completed")
 async def clear_completed(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Clear all finished jobs from memory."""
     cleared = service.clear_completed_jobs()
     return {"cleared": cleared}
 
 @router.delete("/jobs/{job_id}")
-async def delete_job_route(job_id: str, service: UploadService = Depends(get_upload_service)) -> Dict[str, Any]:
+async def delete_job_route(job_id: str, service: JobEngine = Depends(ensure_engine_started)) -> Dict[str, Any]:
     """Remove a job from memory."""
     if service.delete_job(job_id):
         return {"status": "deleted"}
@@ -271,16 +271,14 @@ async def delete_job_route(job_id: str, service: UploadService = Depends(get_upl
 
 @router.get("/queue")
 def get_queue(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Retrieve structured queue data: running, queued, and recently finished jobs."""
-    from logic.services import build_queue_snapshot
-
     return build_queue_snapshot(service)
 
 @router.post("/queue/pause")
 async def pause_queue_processing(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Pause queue processing and pause the currently running job (if any)."""
     service.pause_queue(pause_active=True)
@@ -292,7 +290,7 @@ async def pause_queue_processing(
 
 @router.post("/queue/resume")
 async def resume_queue_processing(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Resume queue processing and continue with paused/waiting jobs."""
     service.resume_queue()
@@ -304,7 +302,7 @@ async def resume_queue_processing(
 
 @router.post("/queue/stop")
 async def stop_queue_processing(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Stop the active job and pause queue processing until resumed."""
     service.stop_queue()
@@ -316,7 +314,7 @@ async def stop_queue_processing(
 
 @router.post("/queue/stop-clear")
 async def stop_clear_queue_processing(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Stop the active job, clear waiting jobs, and hide the active row while it shuts down."""
     result = service.stop_queue_and_clear()
@@ -328,7 +326,7 @@ async def stop_clear_queue_processing(
 
 @router.post("/queue/clear")
 async def clear_queue(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Cancel all queued (not yet running) jobs."""
     cleared = service.clear_queued_jobs()
@@ -337,7 +335,7 @@ async def clear_queue(
 @router.post("/queue/{job_id}/promote")
 async def promote_queued_job(
     job_id: str,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Move a queued job to the front of the queue (next to run)."""
     if service.promote_job(job_id):
@@ -347,10 +345,10 @@ async def promote_queued_job(
 @router.get("/queue/{job_id}/items")
 def get_queued_job_items(
     job_id: str,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Retrieve target paths for a queued job so the UI can edit it."""
-    items = service.get_queued_job_items(job_id)
+    items = queued_job_items(service, job_id)
     if items is None:
         raise HTTPException(status_code=404, detail="Queued job not found")
     return {"job_id": job_id, "items": items, "count": len(items)}
@@ -358,10 +356,10 @@ def get_queued_job_items(
 @router.get("/queue/{job_id}/active-items")
 def get_active_job_items(
     job_id: str,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Retrieve remaining target paths only while an active editor is open."""
-    items = service.get_active_job_items(job_id)
+    items = active_job_items(service, job_id)
     if items is None:
         raise HTTPException(status_code=404, detail="Active job not found")
     return {"job_id": job_id, "items": items, "count": len(items)}
@@ -369,10 +367,10 @@ def get_active_job_items(
 @router.get("/queue/{job_id}/completed-items")
 def get_completed_job_items(
     job_id: str,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Retrieve item paths for a recently finished job (current session only)."""
-    items = service.get_finished_job_items(job_id)
+    items = finished_job_items(service, job_id)
     if items is None:
         raise HTTPException(status_code=404, detail="Finished job not found")
     return {"job_id": job_id, "items": items, "count": len(items)}
@@ -392,15 +390,11 @@ def _normalize_upload_categories(values: List[str]) -> List[str]:
                 normalized.append(category)
     return normalized or ["all"]
 
-def _normalize_selection_path(value: Any) -> str:
-    normalized = str(_resolved_policy_path(value))
-    return normalized.casefold() if os.name == "nt" else normalized
-
 @router.patch("/jobs/{job_id}/name")
 async def rename_upload_job(
     job_id: str,
     req: RenameJobRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Set or clear a human-friendly job name."""
     found, display_name = service.rename_job(job_id, req.name)
@@ -415,7 +409,7 @@ async def rename_upload_job(
 @router.post("/queue/revalidate")
 async def revalidate_queue_jobs(
     req: QueueRevalidateRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Re-scan queued/paused jobs against the current classification rules."""
     result = service.revalidate_queued_jobs(include_paused=bool(req.include_paused))
@@ -425,7 +419,7 @@ async def revalidate_queue_jobs(
 async def set_queued_job_schedule(
     job_id: str,
     req: QueueScheduleRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Set or clear the deferred run timestamp for a queued job."""
     ok, run_after, reason = service.set_queued_job_schedule(job_id, req.run_after)
@@ -448,7 +442,7 @@ async def set_queued_job_schedule(
 async def set_queued_job_priority(
     job_id: str,
     req: QueuePriorityRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Set durable scheduler priority for a queued or paused job."""
     ok, priority = service.set_job_priority(job_id, req.priority)
@@ -462,7 +456,7 @@ async def set_queued_job_priority(
 async def reorder_queued_job_items_route(
     job_id: str,
     req: ReorderQueuedJobItemsRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Reorder queued-job target paths by providing the full desired path order."""
     if not req.paths:
@@ -471,7 +465,7 @@ async def reorder_queued_job_items_route(
     if service.reorder_queued_job_items(job_id, req.paths):
         return {"status": "reordered", "job_id": job_id}
 
-    if service.get_queued_job_items(job_id) is None:
+    if queued_job_items(service, job_id) is None:
         raise HTTPException(status_code=404, detail="Queued job not found")
     raise HTTPException(status_code=400, detail="Invalid path order for queued job")
 
@@ -479,7 +473,7 @@ async def reorder_queued_job_items_route(
 async def reorder_active_job_items_route(
     job_id: str,
     req: ReorderQueuedJobItemsRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Reorder the remaining target paths for a running or paused job."""
     if not req.paths:
@@ -499,7 +493,7 @@ async def reorder_active_job_items_route(
 async def remove_active_job_item_route(
     job_id: str,
     req: RemoveQueuedJobItemRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Remove a single target path from a running or paused job."""
     if not req.path:
@@ -519,7 +513,7 @@ async def remove_active_job_item_route(
 async def remove_queued_job_item_route(
     job_id: str,
     req: RemoveQueuedJobItemRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Remove a single target path from a queued job."""
     if not req.path:
@@ -528,6 +522,6 @@ async def remove_queued_job_item_route(
     if service.remove_queued_job_item(job_id, req.path):
         return {"status": "removed", "job_id": job_id, "path": req.path}
 
-    if service.get_queued_job_items(job_id) is None:
+    if queued_job_items(service, job_id) is None:
         raise HTTPException(status_code=404, detail="Queued job not found")
     raise HTTPException(status_code=404, detail="Path not found in queued job")

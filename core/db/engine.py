@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import QueuePool
 
 from core.db.models import InterfaceStat, JobHistory, SystemStat, Upload, UploadResult
-from core.utils import log_backend_timing
+from core.logging import log_backend_timing
 
 
 _F = TypeVar("_F", bound=Callable[..., Any])

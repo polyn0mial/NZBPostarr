@@ -2,6 +2,7 @@
 
 import asyncio
 import platform
+import threading
 import time
 from collections import deque
 from datetime import datetime, timezone
@@ -11,7 +12,10 @@ import humanfriendly  # type: ignore[import-untyped]
 import psutil
 from loguru import logger
 
+from core.config import get_config
 from core.db import stats as db_stats
+from logic.pending.index import get_pending_index_manager
+from logic.pending.view import build_dashboard_summary
 from logic.stats.process_stats import ProcessStatsCollector
 
 _B_IN_MIB = cast(int, humanfriendly.parse_size("1 MiB"))
@@ -226,7 +230,7 @@ def connections_tracking_enabled(conf: Optional[Any] = None) -> bool:
 
 def sync_collector_schedule() -> None:
     """Keep the periodic stats prune job aligned with the dedicated stats page setting."""
-    from logic.system.reaper import get_scheduler
+    from core.scheduler import get_scheduler
 
     scheduler = get_scheduler()
     job_id = "prune_system_stats"
@@ -311,6 +315,7 @@ async def _stats_collector() -> None:
     """Background task to collect system resources and network I/O."""
     global _INTERFACE_SPEEDS, _NET_DELTA_1H, _UI_MODE
     from core.config import get_config
+    from logic.stats.system_info import _get_1h_network_delta  # system_info imports this module
 
     last_net_io = psutil.net_io_counters(pernic=True)
     last_disk_io = psutil.disk_io_counters()
@@ -528,7 +533,7 @@ async def stop_collector() -> None:
         _STATS_TASK = None
 
     try:
-        from logic.system.reaper import get_scheduler
+        from core.scheduler import get_scheduler
 
         get_scheduler().remove_job("prune_system_stats")
     except Exception:
@@ -560,3 +565,48 @@ async def stop_collector() -> None:
         logger.debug(f"Flushed {len(recent)} stats snapshots to DB on shutdown")
     except Exception as e:
         logger.debug(f"Shutdown flush failed (non-fatal): {e}")
+
+
+# ── Upload statistics for the dashboard ─────────────────────────────
+
+_upload_stats_lock = threading.Lock()
+_upload_stats_cache: Dict[str, Any] = {}
+_upload_stats_cache_ts = 0.0
+
+
+def get_statistics() -> Dict[str, Any]:
+    """Retrieve aggregated upload statistics from the database."""
+    return db_stats.get_detailed_stats()
+
+
+def get_statistics_cached(now: float, ttl_s: float) -> Dict[str, Any]:
+    global _upload_stats_cache, _upload_stats_cache_ts
+
+    with _upload_stats_lock:
+        if _upload_stats_cache and (now - _upload_stats_cache_ts) < ttl_s:
+            return _upload_stats_cache
+    stats = get_statistics()
+    with _upload_stats_lock:
+        _upload_stats_cache = stats
+        _upload_stats_cache_ts = now
+    return stats
+
+
+def invalidate_statistics_cache() -> None:
+    """Drop cached upload stats so the next dashboard request reads fresh values."""
+    global _upload_stats_cache, _upload_stats_cache_ts
+
+    with _upload_stats_lock:
+        _upload_stats_cache = {}
+        _upload_stats_cache_ts = 0.0
+
+
+def get_dashboard_summary() -> Dict[str, Any]:
+    """Return dashboard summary derived from the pending-index snapshot and live stats."""
+    conf = get_config()
+    stats_ttl = float(max(1.0, min(5.0, getattr(conf, "ui_refresh_seconds", 2) or 2)))
+    stats = get_statistics_cached(time.time(), stats_ttl)
+    pending_state = get_pending_index_manager().get_state()
+    if not isinstance(pending_state, dict) or pending_state.get("snapshot") is None:
+        get_pending_index_manager().request_refresh(reason="dashboard-summary")
+    return build_dashboard_summary(conf, stats, pending_state)

@@ -19,16 +19,16 @@ from __future__ import annotations
 
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from cli.launcher.bootstrap import REQS as REQS_FILE
 from cli.launcher.bootstrap import VENV as VENV_DIR
 from cli.launcher.bootstrap import VENV_PY, create_venv, install_requirements
+from core.tools import resolve_tool, tool_version
 
 # ── Paths ────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
@@ -194,25 +194,6 @@ def run(cmd: str, check: bool = True, capture: bool = False, timeout: int = 120)
         text=True,
         timeout=timeout,
     )
-
-
-def cmd_exists(name: str) -> bool:
-    return shutil.which(name) is not None
-
-
-def cmd_version(name: str) -> Optional[str]:
-    """Try to get a version string from a command."""
-    for flag in ("--version", "-V", "version"):
-        try:
-            r = subprocess.run(f"{name} {flag}", shell=True, capture_output=True, text=True, timeout=10)
-            out = (r.stdout + r.stderr).strip()
-            if out:
-                # Extract first version-looking string
-                m = re.search(r"(\d+\.\d+[\.\d]*)", out)
-                return m.group(1) if m else out[:60]
-        except Exception:
-            continue
-    return None
 
 
 # =====================================================================
@@ -381,10 +362,10 @@ def check_tools(total: int) -> Dict[str, bool]:
     all_tools = REQUIRED_TOOLS + OPTIONAL_TOOLS
     for name in all_tools:
         t = TOOLS_INFO[name]
-        found = cmd_exists(t["check"])
+        found = resolve_tool(t["check"]) is not None
         status[name] = found
 
-        ver = cmd_version(t["check"]) if found else None
+        ver = tool_version(t["check"]) if found else None
         ver_str = f" (v{ver})" if ver else ""
         required = name in REQUIRED_TOOLS
 
@@ -433,7 +414,7 @@ def _auto_install_tools(names: List[str], status: Dict[str, bool]) -> None:
     is_root = os.geteuid() == 0 if hasattr(os, "geteuid") else False
 
     # First ensure 7z is available (needed for nyuu extraction)
-    if "nyuu" in names and not cmd_exists("7z"):
+    if "nyuu" in names and resolve_tool("7z") is None:
         if "7z" not in names:
             names.insert(0, "7z")
 
@@ -455,7 +436,7 @@ def _auto_install_tools(names: List[str], status: Dict[str, bool]) -> None:
 
         try:
             r = run(cmd, check=False, capture=True, timeout=300)
-            if r.returncode == 0 and cmd_exists(t["check"]):
+            if r.returncode == 0 and resolve_tool(t["check"]) is not None:
                 ok(f"{name} installed successfully")
                 status[name] = True
             else:
@@ -724,7 +705,7 @@ def setup_systemd(total: int) -> None:
         dim("Systemd is Linux-only - skipping")
         return
 
-    if not cmd_exists("systemctl"):
+    if resolve_tool("systemctl") is None:
         dim("systemctl not found - skipping systemd setup")
         return
 
@@ -848,7 +829,7 @@ def smoke_test(total: int) -> None:
     for tool_name in REQUIRED_TOOLS:
         checks_total += 1
         t = TOOLS_INFO[tool_name]
-        if cmd_exists(t["check"]):
+        if resolve_tool(t["check"]) is not None:
             ok(f"Tool: {tool_name} ✓")
             checks_passed += 1
         else:

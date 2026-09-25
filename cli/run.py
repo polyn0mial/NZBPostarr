@@ -61,9 +61,9 @@ def run_headless(argv: List[str]) -> int:
         return routed
 
     # Shared init: database, indexer registry, console buffer, tmp cleanup
-    from logic.services import init_app
+    from logic.runtime import init_core
 
-    init_app()
+    init_core()
 
     dispatch = {
         "upload": cmd_upload,

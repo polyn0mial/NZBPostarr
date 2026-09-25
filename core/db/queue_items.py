@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
@@ -11,23 +10,11 @@ from sqlalchemy import delete, func, select
 
 from core.db.engine import _retry_on_lock, session_scope
 from core.db.models import QueueItem
+from core.paths import path_key, resolve_path
 
 
 def _normalize_queue_item_path(path: Any) -> str:
-    text = str(path or "").strip()
-    if not text:
-        return ""
-
-    candidate = Path(text).expanduser()
-    try:
-        candidate = candidate.resolve(strict=False)
-    except OSError:
-        pass
-    return str(candidate)
-
-def _queue_item_path_identity(path: Any) -> str:
-    normalized = _normalize_queue_item_path(path)
-    return normalized.casefold() if os.name == "nt" else normalized
+    return str(resolve_path(path)) if str(path or "").strip() else ""
 
 @_retry_on_lock()
 def db_load_queue() -> List[Dict[str, Any]]:
@@ -41,7 +28,7 @@ def db_load_queue() -> List[Dict[str, Any]]:
 
         for qi in items:
             normalized_path = _normalize_queue_item_path(qi.path)
-            identity = _queue_item_path_identity(normalized_path)
+            identity = path_key(normalized_path)
             if not normalized_path or not Path(normalized_path).exists():
                 session.delete(qi)
                 stale += 1
@@ -79,13 +66,13 @@ def db_add_queue_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     added: List[Dict[str, Any]] = []
     with session_scope() as session:
         existing_paths: Set[str] = {
-            _queue_item_path_identity(row[0]) for row in session.execute(select(QueueItem.path)).all()
+            path_key(row[0]) for row in session.execute(select(QueueItem.path)).all()
         }
         max_pos = session.execute(select(func.max(QueueItem.position))).scalar() or 0
         position = max_pos + 1
         for item in items:
             path = _normalize_queue_item_path(item.get("path", ""))
-            path_identity = _queue_item_path_identity(path)
+            path_identity = path_key(path)
             if not path or not path_identity or path_identity in existing_paths:
                 continue
             qi = QueueItem(

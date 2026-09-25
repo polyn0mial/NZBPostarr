@@ -168,7 +168,7 @@ def test_scan_pending_snapshot_marks_indexer_status_unavailable_on_db_error(tmp_
     assert payload["items"]["movies"][0]["indexers"] == {}
 
 def test_processing_db_type_supports_anime_and_media_categories(tmp_path) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     video = tmp_path / "item.mkv"
     video.write_bytes(b"x")

@@ -5,7 +5,7 @@
 from tests.support import *
 
 def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
     from logic.stream import repost as stream_repost
 
     captured: dict[str, object] = {}
@@ -15,8 +15,8 @@ def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
             captured.update(kwargs)
             return "stream-job-123"
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
-    monkeypatch.setattr(services, "get_upload_service", lambda: FakeService())
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: FakeService())
     monkeypatch.setattr(stream_repost, "resolve_source_nzb_paths", lambda _source: [Path("D:/tmp/example.nzb")])
 
     rc = cli_run.run_headless(
@@ -81,12 +81,12 @@ def test_stream_request_normalization_contract() -> None:
             )
 
 def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
     from logic.stream import monitors as stream_monitors
 
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
 
     def fake_add_stream_monitor(**kwargs):
         captured.update(kwargs)
@@ -132,10 +132,10 @@ def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys
     assert "active folder watching only runs in the long-lived app/WebUI process" in output
 
 def test_headless_stream_monitors_list_json(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
     from logic.stream import monitors as stream_monitors
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
     monkeypatch.setattr(
         stream_monitors,
         "list_stream_monitors",
@@ -174,7 +174,7 @@ def test_untrusted_nzb_xml_rejects_entity_expansion(tmp_path) -> None:
         stream_nzb._read_nzb_xml_root(source)
 
 def test_parse_nyuu_article_bytes_decimal_units():
-    from logic.uploaders import _parse_nyuu_article_bytes
+    from logic.pipeline.posting import _parse_nyuu_article_bytes
 
     # Nyuu config commonly uses "1M" style values; we parse in decimal.
     assert _parse_nyuu_article_bytes("1M") == 1_000_000

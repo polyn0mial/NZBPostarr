@@ -14,7 +14,7 @@ import requests
 from loguru import logger
 
 from core.redaction import redact_mapping, redact_text, redact_url
-from core.utils import log_success, log_verbose
+from core.logging import log_success, log_verbose
 from core.indexers.categories import _resolve_category, _resolve_movie_submission_key
 from core.indexers.models import (
     CategoryMapping,

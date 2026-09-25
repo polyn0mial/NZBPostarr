@@ -5,7 +5,6 @@ NZB repost requests and the Usenet-to-Usenet upload itself.
 from __future__ import annotations
 
 import json
-import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,15 +12,15 @@ from typing import Any, Optional, Sequence
 
 from core.config import NNTPServer, get_config
 from core.db.ledger import destinations_for
-from core.db.uploads import record_nntp_success, update_db_destination
+from core.db.uploads import record_nntp_success
 from core.indexers.registry import get_enabled_indexers
-from core.utils import get_thread_job, log_info, run_command, update_job_progress
-from logic.uploaders import (
-    _build_nyuu_command,
-    _parse_nyuu_completion_stats,
-    build_nyuu_progress_parser,
-    submit_api,
-)
+from core.logging import log_info
+from core.media import stream_itype
+from core.paths import resolve_path
+from core.proc import run_command
+from logic.jobs.context import get_thread_job, update_job_progress
+from logic.pipeline.posting import _build_nyuu_command, _parse_nyuu_completion_stats, build_nyuu_progress_parser
+from logic.pipeline.submit import submit_and_record
 from logic.stream.manifest import (
     _safe_output_name,
     build_procjson_inputs,
@@ -79,22 +78,9 @@ def normalize_stream_request(
     )
 
 
-def _path_compare_key(path: str | Path) -> str:
-    text = str(path)
-    return text.casefold() if os.name == "nt" else text
-
-
-def normalize_source_path(raw_path: str | Path) -> Path:
-    path = Path(str(raw_path)).expanduser()
-    try:
-        return path.resolve(strict=False)
-    except OSError:
-        return path.absolute()
-
-
 def resolve_source_nzb_paths(raw_path: str | Path) -> list[Path]:
     """Resolve a server-side NZB file or directory into concrete NZB file paths."""
-    source = normalize_source_path(raw_path)
+    source = resolve_path(raw_path)
     if not source.exists():
         raise StreamError(f"Source path does not exist: {source}")
 
@@ -159,15 +145,6 @@ def resolve_stream_category(source_path: Path, explicit_category: Optional[str] 
     metadata = read_nzb_head_metadata(source_path)
     detected = _normalize_stream_category(metadata.get("category"))
     return detected or "misc"
-
-
-def _stream_itype(category: str) -> str:
-    normalized = str(category or "misc").strip().lower()
-    if normalized == "movies":
-        return "Movie"
-    if normalized == "tv":
-        return "TV Show"
-    return normalized.replace("_", " ").title() or "Misc"
 
 
 def _target_indexers(target_indexer_id: Optional[str]) -> list[str]:
@@ -269,7 +246,7 @@ def stream_nzb_upload(
     submit_mode = normalize_submit_mode(submit_mode)
     primary_server = resolve_posting_server(posting_server_name, servers)
     chosen_release = (release_name or source_path.stem).strip() or source_path.stem
-    itype = _stream_itype(category)
+    itype = stream_itype(category)
     target_ids = [] if submit_mode == "post_only" else _target_indexers(target_indexer_id)
     manifest_path = manifest_path or build_stream_manifest_path(chosen_release)
     generated_nzb: Optional[Path] = None
@@ -322,31 +299,24 @@ def stream_nzb_upload(
 
     record_nntp_success(chosen_release, total_size, itype)
 
-    submission_results: list[tuple[str, bool, str]] = []
-    for dest in target_ids:
-        result = submit_api(
-            chosen_release,
-            dest,
-            conf,
-            nzb_path=generated_nzb,
-            cat=category,
-        )
-        submission_results.append((dest, result.success, result.reason))
-        if result.success:
-            if update_db_destination(dest, chosen_release, total_size, chosen_release, itype=itype, **upload_result):
-                from logic.queue_metrics import request_live_queue_refresh
-
-                request_live_queue_refresh(reason="upload-success")
-        else:
-            update_db_destination(
-                dest,
-                chosen_release,
-                total_size,
-                chosen_release,
-                itype=itype,
-                status="failed",
-                error=result.reason or "Indexer submission rejected or unreachable",
-            )
+    # Same submit semantics as queue posting: per-indexer isolation, and a
+    # "duplicate" answer counts as already posted.
+    api_results, _any_success = submit_and_record(
+        [{"dests": list(target_ids), "priority": False}] if target_ids else [],
+        conf=conf,
+        name=chosen_release,
+        nzb_path=generated_nzb,
+        submission_category=category,
+        item_size=total_size,
+        key=chosen_release,
+        itype=itype,
+        item_path=Path(chosen_release),
+        base_folder=None,
+        category=category,
+        test_mode=False,
+        upload_result=upload_result,
+    )
+    submission_results = [(dest, ok or status == "duplicate", reason) for dest, ok, reason, status in api_results]
 
     success_count = sum(1 for _dest, ok, _reason in submission_results if ok)
     log_info(

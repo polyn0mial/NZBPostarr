@@ -18,12 +18,11 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from core.config import get_config
-from core.utils import start_watchdog_observer, stop_watchdog_observer
+from core.fs import start_watchdog_observer, stop_watchdog_observer
+from core.paths import path_key, resolve_path
 from logic.stream.nntp import StreamError
 from logic.stream.repost import (
     _normalize_stream_category,
-    _path_compare_key,
-    normalize_source_path,
     normalize_submit_mode,
     resolve_posting_server,
     resolve_stream_category,
@@ -123,7 +122,7 @@ def _load_stream_monitors_locked() -> None:
             if not folder_path:
                 continue
             entry = _serialize_monitor(
-                {**row, "id": monitor_id, "folder_path": str(normalize_source_path(folder_path))}
+                {**row, "id": monitor_id, "folder_path": str(resolve_path(folder_path))}
             )
             _stream_monitor_entries[monitor_id] = entry
 
@@ -149,7 +148,7 @@ def add_stream_monitor(
     enable_duplicate_check: bool = True,
     test_mode: bool = False,
 ) -> dict[str, Any]:
-    folder = normalize_source_path(folder_path)
+    folder = resolve_path(folder_path)
     if not folder.exists() or not folder.is_dir():
         raise StreamError(f"Monitor path must be an existing folder: {folder}")
 
@@ -162,7 +161,7 @@ def add_stream_monitor(
             (
                 monitor_id
                 for monitor_id, entry in _stream_monitor_entries.items()
-                if _path_compare_key(entry.get("folder_path", "")) == _path_compare_key(folder)
+                if path_key(entry.get("folder_path", "")) == path_key(folder)
             ),
             None,
         )
@@ -228,7 +227,7 @@ def _scan_monitor_nzb_files(folder_path: str) -> set[str]:
                 rel_parts = path.parts
             if any(part.startswith(".") for part in rel_parts):
                 continue
-            results.add(str(normalize_source_path(path)))
+            results.add(str(resolve_path(path)))
     except OSError:
         return set()
     return results
@@ -238,10 +237,10 @@ class _StreamMonitorEventHandler(FileSystemEventHandler):  # type: ignore[misc]
     def __init__(self, monitor_id: str, folder_path: str):
         super().__init__()
         self.monitor_id = monitor_id
-        self.folder_path = normalize_source_path(folder_path)
+        self.folder_path = resolve_path(folder_path)
 
     def _record_path(self, raw_path: str) -> None:
-        path = normalize_source_path(raw_path)
+        path = resolve_path(raw_path)
         if path.suffix.lower() != ".nzb":
             return
         try:
@@ -272,9 +271,9 @@ class _StreamMonitorEventHandler(FileSystemEventHandler):  # type: ignore[misc]
 
 def _queue_monitored_stream(entry: dict[str, Any], nzb_path: Path) -> None:
     try:
-        from logic.services import UploadService
+        from logic.runtime import ensure_engine_started
 
-        service = UploadService()
+        service = ensure_engine_started()
         job_id = service.start_usenet_stream_job(
             category=resolve_stream_category(nzb_path, entry.get("category")),
             stream_source_path=str(nzb_path),

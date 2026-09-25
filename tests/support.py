@@ -125,11 +125,83 @@ from cli.commands import status as cli_status
 from cli.commands import system as cli_system
 from cli.commands import upload as cli_upload
 
-from logic.services import ConsoleBuffer, console
+from core.logging import ConsoleBuffer, console
 
 from logic.stats.collector import format_seconds, parse_speed_to_bps
 
 from core.indexers.models import SubmitResult
+from logic.pipeline import (
+    checkpoints as pipeline_checkpoints,
+    pack_filter as pipeline_pack_filter,
+    plan as pipeline_plan,
+    posting as pipeline_posting,
+    prepare as pipeline_prepare,
+    record as pipeline_record,
+    runner as pipeline_runner,
+    submission_category as pipeline_submission_category,
+    submit as pipeline_submit,
+    validate as pipeline_validate,
+)
+
+_PIPELINE_MODULES = (
+    pipeline_runner,
+    pipeline_plan,
+    pipeline_validate,
+    pipeline_prepare,
+    pipeline_posting,
+    pipeline_submit,
+    pipeline_record,
+    pipeline_checkpoints,
+    pipeline_pack_filter,
+    pipeline_submission_category,
+)
+
+
+class _PipelineFacade:
+    """Test stand-in for the removed logic.processing facade over logic/pipeline/*.
+
+    Reading a name returns it from the pipeline module that defines it (else the first module
+    that imports it). Setting a name - monkeypatch.setattr(pipeline_facade, "get_config", fake) -
+    rebinds it in EVERY pipeline module that holds it, so the patch reaches every caller.
+    A name no pipeline module holds raises AttributeError (the sentinel: a patch that would
+    silently miss fails loudly). monkeypatch's undo hands back the value it read first; that
+    restores each module's own original binding.
+    """
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "_saved", {})
+
+    def _holders(self, name: str) -> list:
+        return [module for module in _PIPELINE_MODULES if name in vars(module)]
+
+    def __getattr__(self, name: str):
+        holders = self._holders(name)
+        if not holders:
+            raise AttributeError(f"no logic.pipeline module holds {name!r}")
+        for module in holders:
+            value = vars(module)[name]
+            if getattr(value, "__module__", None) == module.__name__:
+                return value
+        return vars(holders[0])[name]
+
+    def __setattr__(self, name: str, value) -> None:
+        holders = self._holders(name)
+        if not holders:
+            raise AttributeError(f"no logic.pipeline module holds {name!r}")
+        saved = self._saved
+        if name not in saved:
+            saved[name] = (self.__getattr__(name), {module: vars(module)[name] for module in holders})
+        canonical, originals = saved[name]
+        if value is canonical:
+            for module, original in originals.items():
+                setattr(module, name, original)
+            del saved[name]
+            return
+        for module in holders:
+            setattr(module, name, value)
+
+
+pipeline_facade = _PipelineFacade()
 
 from tests.webui._source import _queue_source
 
@@ -230,22 +302,22 @@ def _ignored_path_reasons(result) -> list[tuple[Path, str]]:
     return [(item.path, item.reason) for item in result.ignored_paths]
 
 def _make_queue_service_stub(tmp_path: Path, *, queue_items=None):
-    from logic import queueing
+    from logic.jobs import engine as engine_mod
 
-    service = object.__new__(queueing.QueueServiceMixin)
+    service = object.__new__(engine_mod.JobEngine)
     service._lock = threading.Lock()
     service._jobs = {}
     service._processes = {}
-    service._queue_items = list(queue_items or [])
+    service.staging = engine_mod.StagingQueue(service._lock, list(queue_items or []))
     service._queue_processing_paused = False
     service._jobs_state_path = tmp_path / "job_queue_state.json"
     service._jobs_state_backup_path = tmp_path / "job_queue_state.json.bak"
     return service
 
 def _make_upload_service_stub(*, jobs=None, queue_paused=False):
-    from logic.services import UploadService
+    from logic.jobs.engine import JobEngine
 
-    service = object.__new__(UploadService)
+    service = object.__new__(JobEngine)
     service._lock = threading.Lock()
     service._jobs = dict(jobs or {})
     service._processes = {}
@@ -473,15 +545,6 @@ def _make_pending_index_manager(states: list[dict[str, object]]):
             self.reasons.append(reason)
 
     return _FakeIndex(states)
-
-def _make_dashboard_summary_service():
-    from logic.services import UploadService
-
-    service = object.__new__(UploadService)
-    service._lock = threading.Lock()
-    service._stats_cache = {}
-    service._stats_cache_ts = 0.0
-    return service
 
 def _configure_pending_snapshot_environment(
     monkeypatch,

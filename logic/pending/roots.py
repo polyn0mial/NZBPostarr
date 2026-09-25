@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, List, Optional, Set, Tuple
 
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.classify.content import detect_auto_category
 from logic.classify.hints import infer_folder_category_hint
 from logic.classify.tv_packs import _collect_tv_episode_paths

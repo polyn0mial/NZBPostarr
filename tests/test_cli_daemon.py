@@ -6,7 +6,7 @@ import pytest
 
 from cli import daemon_client
 from cli import run as cli_run
-from logic import services
+from logic import runtime
 
 
 @pytest.fixture()
@@ -24,9 +24,9 @@ def live_daemon(monkeypatch):
 
     monkeypatch.setattr(daemon_client, "webui_is_listening", lambda: True)
     monkeypatch.setattr(daemon_client, "_request", fake_request)
-    monkeypatch.setattr(services, "init_app", no_engine)
-    monkeypatch.setattr(services, "get_upload_service", no_engine)
-    monkeypatch.setattr(services.UploadService, "__init__", no_engine)
+    monkeypatch.setattr(runtime, "init_core", no_engine)
+    monkeypatch.setattr(runtime, "ensure_engine_started", no_engine)
+    monkeypatch.setattr(runtime.JobEngine, "__init__", no_engine)
     return calls, replies
 
 

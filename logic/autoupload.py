@@ -14,7 +14,7 @@ from loguru import logger
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
-from core.utils import start_watchdog_observer, stop_watchdog_observer
+from core.fs import start_watchdog_observer, stop_watchdog_observer
 from logic.classify.content import detect_auto_category
 from logic.classify.hints import infer_folder_category_hint
 
@@ -137,9 +137,9 @@ def _resolve_monitored_category(configured_category: str, item_path: Path, folde
 def _trigger_uploads(folder_path: str, item_categories: Dict[str, str]) -> None:
     """Start explicit-path upload jobs grouped by auto-detected category."""
     try:
-        from logic.services import get_upload_service
+        from logic.runtime import ensure_engine_started
 
-        service = get_upload_service()
+        service = ensure_engine_started()
         grouped_paths: Dict[str, list[str]] = {}
         for item_name, configured_category in item_categories.items():
             item_path = Path(folder_path) / item_name

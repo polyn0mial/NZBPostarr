@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from api.deps import _filter_bulk_selectable_items, _log_selected_payload
 from core.db import uploads as db_uploads
 from core.config import get_config
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.pending import children as pending_children
 from logic.pending import index as pending_index
 from logic.pending import tree as pending_tree
@@ -25,7 +25,8 @@ from logic.pending.selection import stamp_upload_itype
 from logic.pending.index import get_pending_index_manager
 from logic.pending.roots import get_configured_folders
 from logic.jobs.models import ProcessingJobRequest
-from logic.services import get_upload_service, UploadService
+from logic.jobs.engine import JobEngine
+from logic.runtime import ensure_engine_started
 
 
 router = APIRouter(prefix="/api/pending", tags=["pending"])
@@ -286,7 +287,7 @@ def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, A
 @router.post("/force-upload")
 async def force_upload_items(
     req: ForceUploadRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Force-upload specific items from the pending queue.
 

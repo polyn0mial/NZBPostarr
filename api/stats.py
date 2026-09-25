@@ -9,7 +9,9 @@ from fastapi import APIRouter, Depends, Response
 
 from api.deps import check_feature
 from core.db import stats as db_stats
-from logic.services import get_upload_service, UploadService
+from logic.jobs.engine import JobEngine
+from logic.runtime import ensure_engine_started
+from logic.stats.collector import get_dashboard_summary, get_statistics
 
 
 dashboard_router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -53,11 +55,11 @@ def get_system_stats() -> Dict[str, Any]:
 
 @router.get("/summary")
 async def get_stats_summary(
-    service: UploadService = Depends(get_upload_service),
+    _engine: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Retrieve summarized historical statistics."""
     check_feature("stats_page")
-    return await asyncio.to_thread(service.get_statistics)
+    return await asyncio.to_thread(get_statistics)
 
 @router.get("/full")
 async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
@@ -168,7 +170,10 @@ async def record_stats(
 
 @dashboard_router.get("/summary")
 def get_summary(
-    service: UploadService = Depends(get_upload_service),
+    _engine: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
-    """Get a summary of current stats and queue sizes for the dashboard."""
-    return service.get_dashboard_summary()
+    """Get a summary of current stats and queue sizes for the dashboard.
+
+    Depends on the engine only to start it on the first request, as before the runtime split.
+    """
+    return get_dashboard_summary()

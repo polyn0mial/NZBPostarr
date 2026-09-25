@@ -8,7 +8,7 @@ import json
 
 def cmd_logs(args: argparse.Namespace) -> int:
     """Show recent console log lines from the shared in-memory buffer."""
-    from logic.services import console
+    from core.logging import console
 
     logs, last_seq = console.get_tail(args.lines)
 

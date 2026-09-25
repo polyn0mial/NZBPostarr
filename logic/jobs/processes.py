@@ -16,13 +16,13 @@ class ProcessRegistry:
         self._processes = processes
         self._lock = lock
 
-    def register(self, job_id: str, process: Any) -> None:
+    def register_process(self, job_id: str, process: Any) -> None:
         with self._lock:
             if job_id not in self._processes:
                 self._processes[job_id] = []
             self._processes[job_id].append(process)
 
-    def unregister(self, job_id: str, process: Optional[Any] = None) -> None:
+    def unregister_process(self, job_id: str, process: Optional[Any] = None) -> None:
         with self._lock:
             if job_id in self._processes:
                 if process:
@@ -77,7 +77,7 @@ class ProcessRegistry:
                 continue
 
         if pids:
-            from logic.system.reaper import get_scheduler
+            from core.scheduler import get_scheduler
 
             sched = get_scheduler()
 

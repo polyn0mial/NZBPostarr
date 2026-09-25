@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional, Tuple
 
+from loguru import logger
+
 from core.release_name import parse_release_name
-from core.utils import VIDEO_EXTENSIONS
+from core.media import VIDEO_EXTENSIONS
 from logic.classify.anime import _lookup_anime_status
 from logic.classify.hints import _coerce_category_hint, _hint_category_from_itype
 from logic.classify.patterns import (
@@ -174,7 +176,9 @@ def _classify_by_explicit_or_anime_hint(
     if anime_lookup is not None:
         try:
             anime_status = anime_lookup(name)
-        except Exception:
+        except Exception as exc:
+            # The lookup is caller-supplied (network or cache backed); a failure means "unknown".
+            logger.debug(f"Anime lookup failed for {name!r}: {exc}")
             anime_status = None
 
     if anime_status is True:
@@ -213,7 +217,9 @@ def classify_video_name_result(
 
     try:
         parsed = parse_release_name(name)
-    except Exception:
+    except Exception as exc:
+        # guessit raises assorted internal errors on odd names; fall through to the name heuristics.
+        logger.debug(f"Release-name parse failed for {name!r}: {exc}")
         parsed = {}
     parsed_media_type = str(parsed.get("media_type") or "").strip().lower()
     parsed_season = parsed.get("season_number")
@@ -265,7 +271,9 @@ def _has_guessit_episode_metadata(name: str) -> bool:
         return False
     try:
         parsed = parse_release_name(name)
-    except Exception:
+    except Exception as exc:
+        # guessit raises assorted internal errors on odd names; no metadata means no episode.
+        logger.debug(f"Release-name parse failed for {name!r}: {exc}")
         return False
     return bool(
         str(parsed.get("media_type") or "").strip().lower() == "tv"
@@ -316,7 +324,9 @@ def _source_less_video_category(
     """Classify a video filename that does not contain an explicit source token."""
     try:
         anime_status = _lookup_anime_status(entry_path, _iter_video_candidates(entry_path, VIDEO_EXTENSIONS), lookup)
-    except Exception:
+    except Exception as exc:
+        # The lookup is caller-supplied (network or cache backed); a failure means "unknown".
+        logger.debug(f"Anime lookup failed for {entry_path}: {exc}")
         anime_status = None
     if anime_status is True:
         return "anime", "Anime"

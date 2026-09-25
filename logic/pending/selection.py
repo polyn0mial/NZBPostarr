@@ -3,28 +3,11 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from logic.pending.rules import _SOURCE_EXEMPT_NAME_RE
-
-
-_CATEGORY_UPLOAD_ITYPES = {
-    "movies": "Movie",
-    "anime": "Anime",
-    "music": "Music",
-    "audiobooks": "Audiobook",
-    "books": "Ebook",
-    "apps": "App",
-}
-
-
-def category_upload_itype(category: str, *, is_dir: bool) -> str:
-    """Return the itype an upload of this category is posted with when no classifier verdict applies."""
-    normalized = str(category or "").strip().lower()
-    if normalized == "tv":
-        return "TV Show" if is_dir else "TV Episode"
-    return _CATEGORY_UPLOAD_ITYPES.get(normalized, "Misc")
+from core.media import default_itype
+from core.paths import path_key
 
 
 def upload_itype(node: Dict[str, Any]) -> str:
@@ -33,7 +16,7 @@ def upload_itype(node: Dict[str, Any]) -> str:
     if itype and itype != "External":
         return itype
     category = str(node.get("detected_category") or node.get("category") or "")
-    return category_upload_itype(category, is_dir=bool(node.get("is_dir")))
+    return default_itype(category, is_dir=bool(node.get("is_dir")))
 
 
 def stamp_upload_itype(node: Any) -> None:
@@ -41,14 +24,6 @@ def stamp_upload_itype(node: Any) -> None:
     if isinstance(node, dict):
         node["upload_itype"] = upload_itype(node)
 
-
-def _selection_path_identity(value: str | Path) -> str:
-    text = str(value)
-    try:
-        resolved = str(Path(text).resolve())
-    except OSError:
-        resolved = text
-    return resolved.casefold()
 
 def _row_source_exempt(node: Dict[str, Any]) -> bool:
     category = str(node.get("detected_category") or node.get("category") or "").strip().lower()
@@ -108,15 +83,15 @@ def _annotate_selection_node(
 
 def _stamp_tree_selection_state(item: Dict[str, Any], resolution: Any) -> bool:
     """Annotate tree nodes with auto-select metadata from explicit-path resolution."""
-    selectable = {_selection_path_identity(path) for path in getattr(resolution, "queue_paths", ())}
-    ignored = {_selection_path_identity(entry.path): entry.reason for entry in getattr(resolution, "ignored_paths", ())}
+    selectable = {path_key(path) for path in getattr(resolution, "queue_paths", ())}
+    ignored = {path_key(entry.path): entry.reason for entry in getattr(resolution, "ignored_paths", ())}
 
     def visit(node: Dict[str, Any]) -> bool:
         child_selected = False
         built_children = node.get("children", []) or []
         for child in built_children:
             child_selected = visit(child) or child_selected
-        node_identity = _selection_path_identity(node.get("path", ""))
+        node_identity = path_key(node.get("path", ""))
         if node.get("is_dir") and not built_children:
             # Lazy tree: children are not built yet, so look for selectable
             # descendants among the resolved queue paths instead.
@@ -133,12 +108,12 @@ def _stamp_tree_selection_state(item: Dict[str, Any], resolution: Any) -> bool:
 
 def _stamp_lazy_children_selection(children: List[Dict[str, Any]], resolution: Any) -> None:
     """Stamp auto-select state on one lazily loaded level from its parent's resolution."""
-    selectable = {_selection_path_identity(path) for path in getattr(resolution, "queue_paths", ()) or ()}
+    selectable = {path_key(path) for path in getattr(resolution, "queue_paths", ()) or ()}
     ignored = {
-        _selection_path_identity(entry.path): entry.reason for entry in getattr(resolution, "ignored_paths", ()) or ()
+        path_key(entry.path): entry.reason for entry in getattr(resolution, "ignored_paths", ()) or ()
     }
     for child in children:
-        identity = _selection_path_identity(child.get("path", ""))
+        identity = path_key(child.get("path", ""))
         prefix = identity.rstrip("\\/") + os.sep
         descendant_selected = bool(child.get("is_dir")) and any(path.startswith(prefix) for path in selectable)
         _annotate_selection_node(child, identity, selectable, ignored, descendant_selected)

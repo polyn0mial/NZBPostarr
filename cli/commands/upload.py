@@ -11,9 +11,9 @@ from typing import Any
 
 
 def cmd_upload(args: argparse.Namespace) -> int:
-    """Run an upload job synchronously via UploadService (blocking until complete)."""
+    """Run an upload job synchronously via the JobEngine (blocking until complete)."""
     from core.indexers.categories import get_available_categories
-    from logic.services import get_upload_service
+    from logic.runtime import ensure_engine_started
 
     category = args.category.lower()
 
@@ -53,9 +53,9 @@ def cmd_upload(args: argparse.Namespace) -> int:
             print(f"  Path:        {args.path}")
         print("━" * 60 + "\n")
 
-    # Handle Ctrl+C gracefully - UploadService sets the thread job for us,
+    # Handle Ctrl+C gracefully - the JobEngine sets the thread job for us,
     # so we hook SIGINT to set stop_requested on whatever job is active.
-    service = get_upload_service()
+    service = ensure_engine_started()
     stop_event = threading.Event()
 
     def _sigint_handler(_sig: int, _frame: Any) -> None:
@@ -65,7 +65,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
         print("\nStop requested - finishing current item...")
         stop_event.set()
         # Signal the job via the thread-local job dict
-        from core.utils import get_thread_job
+        from logic.jobs.context import get_thread_job
 
         job = get_thread_job()
         if job:
@@ -76,7 +76,7 @@ def cmd_upload(args: argparse.Namespace) -> int:
 
     paths = [args.path] if args.path else None
 
-    # Delegate entirely to UploadService - single source of truth for
+    # Delegate entirely to the JobEngine - single source of truth for
     # job creation, force-flag resolution, processing, and history recording.
     try:
         job = service.run_job_sync(

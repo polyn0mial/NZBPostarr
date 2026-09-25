@@ -10,7 +10,8 @@ from typing import Any, Optional
 
 from loguru import logger
 
-from core.utils import atomic_write_text, log_info
+from core.fs import atomic_write_text
+from core.logging import log_info
 from logic.jobs.models import (
     _FINISHED_JOB_RETENTION_COUNT,
     _FINISHED_JOB_RETENTION_DAYS,
@@ -306,6 +307,80 @@ def build_restored_queued_job(
     return job, restored_manual_stop
 
 
+def state_paths(script_dir: Path) -> tuple[Path, Path]:
+    """The job-state file pair under the app's data directory: (primary, backup)."""
+    state_dir = script_dir / "data" / "state"
+    return state_dir / "job_queue_state.json", state_dir / "job_queue_state.json.bak"
+
+
+def _rebuild_rows(data: dict[str, Any], jobs: dict[str, dict[str, Any]]) -> tuple[bool, int, int]:
+    """Rebuild persisted rows into ``jobs``; returns (queue_paused, recovered queued, recovered finished)."""
+    queue_paused = bool(data.get("queue_processing_paused", False))
+    rows = data.get("jobs", [])
+    if not isinstance(rows, list):
+        return queue_paused, 0, 0
+
+    recovered = 0
+    recovered_finished = 0
+    restored_manual_stop = False
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        job_id = str(row.get("job_id") or "").strip() or str(uuid.uuid4())[:8]
+        category = str(row.get("category") or "misc")
+        started_at = str(row.get("started_at") or datetime.now(timezone.utc).isoformat())
+        created_at = str(row.get("created_at") or started_at)
+        persisted_status = str(row.get("status") or "queued")
+
+        kwargs = row.get("kwargs")
+        if not isinstance(kwargs, dict):
+            kwargs = {}
+
+        display_name = normalize_job_name(row.get("display_name"))
+        run_after = normalize_run_after(row.get("run_after"))
+        priority = int(row.get("priority") or 0)
+
+        persisted_paths = normalize_paths(row.get("paths"))
+        persisted_finished = persisted_status in _TERMINAL_JOB_STATUSES or (
+            persisted_status == "stopped" and not persisted_paths
+        )
+        if persisted_finished:
+            jobs[job_id] = build_restored_terminal_job(
+                row,
+                job_id=job_id,
+                category=category,
+                started_at=started_at,
+                created_at=created_at,
+                display_name=display_name,
+                persisted_status=persisted_status,
+                priority=priority,
+            )
+            recovered_finished += 1
+            continue
+
+        job, is_manual_stop = build_restored_queued_job(
+            row,
+            job_id=job_id,
+            category=category,
+            started_at=started_at,
+            created_at=created_at,
+            display_name=display_name,
+            run_after=run_after,
+            priority=priority,
+            persisted_status=persisted_status,
+            kwargs=kwargs,
+        )
+        if is_manual_stop:
+            restored_manual_stop = True
+        jobs[job_id] = job
+        recovered += 1
+
+    if restored_manual_stop:
+        queue_paused = True
+    return queue_paused, recovered, recovered_finished
+
+
 class JobStore:
     """The job-state file pair: primary job_queue_state.json and its .bak copy."""
 
@@ -336,8 +411,8 @@ class JobStore:
         except (OSError, TypeError, ValueError) as exc:
             logger.warning(f"Failed to update queued jobs backup state: {exc}")
 
-    def load(self) -> Optional[dict[str, Any]]:
-        """Read the primary file, falling back to (and restoring from) the backup."""
+    def load(self, *, repair: bool = True) -> Optional[dict[str, Any]]:
+        """Read the primary file, falling back to the backup (and restoring the primary from it when ``repair``)."""
         candidates = [
             ("primary", self.state_path),
             ("backup", self.backup_path),
@@ -366,7 +441,7 @@ class JobStore:
                 logger.warning(f"Ignoring malformed {label} queued jobs state file at {path}")
                 continue
 
-            if label == "backup":
+            if label == "backup" and repair:
                 try:
                     self._write_atomic(self.state_path, data)
                 except (OSError, TypeError, ValueError) as exc:
@@ -375,76 +450,25 @@ class JobStore:
 
         return None
 
+    def load_readonly(self) -> tuple[dict[str, dict[str, Any]], bool]:
+        """The persisted jobs and queue-paused flag as a restart would rebuild them, writing nothing."""
+        jobs: dict[str, dict[str, Any]] = {}
+        data = self.load(repair=False)
+        if data is None:
+            return jobs, False
+        queue_paused, _recovered, _recovered_finished = _rebuild_rows(data, jobs)
+        return jobs, queue_paused
+
     def restore(self, jobs: dict[str, dict[str, Any]], *, queue_paused: bool) -> bool:
         """Rebuild persisted jobs into ``jobs`` and persist the result; returns the queue-paused flag."""
         data = self.load()
         if data is None:
             return queue_paused
 
-        queue_paused = bool(data.get("queue_processing_paused", False))
-        rows = data.get("jobs", [])
-        if not isinstance(rows, list):
-            return queue_paused
+        if not isinstance(data.get("jobs", []), list):
+            return bool(data.get("queue_processing_paused", False))
 
-        recovered = 0
-        recovered_finished = 0
-        restored_manual_stop = False
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-
-            job_id = str(row.get("job_id") or "").strip() or str(uuid.uuid4())[:8]
-            category = str(row.get("category") or "misc")
-            started_at = str(row.get("started_at") or datetime.now(timezone.utc).isoformat())
-            created_at = str(row.get("created_at") or started_at)
-            persisted_status = str(row.get("status") or "queued")
-
-            kwargs = row.get("kwargs")
-            if not isinstance(kwargs, dict):
-                kwargs = {}
-
-            display_name = normalize_job_name(row.get("display_name"))
-            run_after = normalize_run_after(row.get("run_after"))
-            priority = int(row.get("priority") or 0)
-
-            persisted_paths = normalize_paths(row.get("paths"))
-            persisted_finished = persisted_status in _TERMINAL_JOB_STATUSES or (
-                persisted_status == "stopped" and not persisted_paths
-            )
-            if persisted_finished:
-                jobs[job_id] = build_restored_terminal_job(
-                    row,
-                    job_id=job_id,
-                    category=category,
-                    started_at=started_at,
-                    created_at=created_at,
-                    display_name=display_name,
-                    persisted_status=persisted_status,
-                    priority=priority,
-                )
-                recovered_finished += 1
-                continue
-
-            job, is_manual_stop = build_restored_queued_job(
-                row,
-                job_id=job_id,
-                category=category,
-                started_at=started_at,
-                created_at=created_at,
-                display_name=display_name,
-                run_after=run_after,
-                priority=priority,
-                persisted_status=persisted_status,
-                kwargs=kwargs,
-            )
-            if is_manual_stop:
-                restored_manual_stop = True
-            jobs[job_id] = job
-            recovered += 1
-
-        if restored_manual_stop:
-            queue_paused = True
-
+        queue_paused, recovered, recovered_finished = _rebuild_rows(data, jobs)
         recovered_finished += self.import_legacy_finished(jobs)
 
         if recovered:
