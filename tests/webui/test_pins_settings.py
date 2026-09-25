@@ -1,11 +1,10 @@
 """Settings page: source-text pins and the /api/settings fields the page reads without a fallback."""
 
-import asyncio
 import re
 from pathlib import Path
 
-import api.settings as settings_api
 import core.config as config_mod
+from logic import settings as settings_service
 from tests.webui._source import REPO_ROOT
 
 SETTINGS_JS_DIR = REPO_ROOT / "webui" / "assets" / "js" / "pages" / "settings"
@@ -108,10 +107,8 @@ def test_api_settings_returns_every_field_the_page_reads_without_fallback(tmp_pa
     config_path = tmp_path / "config.yaml"
     config_path.write_text(defaults_path.read_text(encoding="utf-8"), encoding="utf-8")
     monkeypatch.setenv("NZBPOSTARR_CONFIG", str(config_path))
-    conf = config_mod.load_config()
-    monkeypatch.setattr(settings_api, "get_config", lambda: conf)
-
-    data = asyncio.run(settings_api.get_current_settings())
+    # GET /api/settings returns settings_view(get_config()) unchanged.
+    data = settings_service.settings_view(config_mod.load_config())
 
     for section, fields in _FIELDS_READ_WITHOUT_FALLBACK.items():
         for field, kind in fields.items():

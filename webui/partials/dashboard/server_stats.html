@@ -1,0 +1,91 @@
+    <!-- Server Stats Section (Collapsible) -->
+    <section
+        v-if="uiSettings.dashboard_stats_enabled && shouldRenderCard('server-stats')"
+        class="bg-notion-bg-secondary border border-notion-border rounded-lg transition-all duration-200"
+        :class="[cardDragClass('server-stats'), dashboardCardStateClass('server-stats')]"
+        :style="{ order: cardOrder('server-stats') }"
+        data-card="server-stats"
+        :draggable="editMode"
+        @dragstart="onCardDragStart($event, 'server-stats')"
+        @dragover.prevent="onCardDragOver($event, 'server-stats')"
+        @drop="onCardDrop($event, 'server-stats')"
+        @dragend="onCardDragEnd()">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer select-none" @click="toggleSection('server-stats')">
+            <div class="flex items-center gap-2">
+                <div v-show="editMode" class="cursor-grab active:cursor-grabbing p-0.5 -ml-1 hover:bg-notion-bg-hover rounded shrink-0" @click.stop>
+                    <lucide-icon name="grip-vertical" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                </div>
+                <lucide-icon :name="isSectionExpanded('server-stats') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="cpu" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Server Stats</h2>
+                <span class="text-xs text-notion-text-tertiary ml-1 hidden sm:inline">{{ serverStats.hostname }}</span>
+            </div>
+            <div class="flex items-center gap-2" @click.stop>
+                <button v-show="isSectionExpanded('server-stats')" @click="refreshServerStats()" class="text-xs text-notion-text-tertiary hover:text-notion-text-secondary transition-colors flex items-center gap-1">
+                    <lucide-icon name="refresh-cw" icon-class="size-3"></lucide-icon>
+                    Refresh
+                </button>
+                <button
+                    v-show="editMode"
+                    @click="toggleDashboardCard('server-stats')"
+                    :class="['dashboard-toggle-btn', isDashboardCardEnabled('server-stats') ? 'is-enabled' : '']"
+                    :title="isDashboardCardEnabled('server-stats') ? 'Disable card' : 'Enable card'"
+                    class="h-7 px-2.5 rounded-md text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5">
+                    <lucide-icon :name="isDashboardCardEnabled('server-stats') ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                    <span>{{ isDashboardCardEnabled('server-stats') ? 'Disable' : 'Enable' }}</span>
+                </button>
+            </div>
+        </div>
+        <div :class="sectionContentClass('server-stats')">
+            <div>
+                <div class="p-3">
+                    <!-- System Info Row -->
+                    <div class="flex items-center gap-4 mb-2 text-xs text-notion-text-tertiary">
+                        <span class="flex items-center gap-1">
+                            <lucide-icon name="monitor" icon-class="size-3"></lucide-icon>
+                            <span>{{ serverStats.platform || '-' }}</span>
+                        </span>
+                        <span class="flex items-center gap-1">
+                            <lucide-icon name="clock" icon-class="size-3"></lucide-icon>
+                            <span>Uptime: {{ formatUptime(serverStats.uptime_seconds) }}</span>
+                        </span>
+                    </div>
+
+                    <div v-if="editMode" class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <span class="px-2 py-1 rounded-full bg-notion-bg border border-notion-border text-[10px] font-semibold uppercase tracking-wide text-notion-text-secondary">{{ orderedEnabledServerStatsModules.length }}/6 enabled</span>
+                    </div>
+
+                    <!-- System Stats (Dynamic Cards) -->
+                    <div v-if="editMode" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
+                        <div
+                            v-for="mod in serverStatsEditorModules"
+                            :key="mod.id"
+                            :class="[serverStatsModuleDragClass(mod.id), !mod.enabled ? 'dashboard-card-disabled' : '']"
+                            class="relative rounded-lg transition-all duration-200"
+                            :draggable="editMode"
+                            @dragstart="onServerStatsModuleDragStart($event, mod.id)"
+                            @dragover.prevent="onServerStatsModuleDragOver($event, mod.id)"
+                            @drop="onServerStatsModuleDrop($event, mod.id)"
+                            @dragend="onServerStatsModuleDragEnd()">
+                            <button @click.stop="toggleServerStatsModule(mod.id)" :class="['dashboard-toggle-icon-btn', mod.enabled ? 'is-enabled' : '']" :title="mod.enabled ? 'Disable' : 'Enable'" class="absolute top-2 right-2 z-10">
+                                <lucide-icon :name="mod.enabled ? 'eye-off' : 'eye'" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                            <stats-card :title="mod.title" :icon="mod.icon" :color="mod.color" :value="mod.value" :unit="mod.unit" :progress="mod.progress" :spark-data="mod.sparkData" :peak-key="mod.peakKey" :value-suffix="mod.valueSuffix">
+                                <template #extra v-if="mod.extra">
+                                    <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ mod.extra }}</p>
+                                </template>
+                            </stats-card>
+                        </div>
+                    </div>
+                    <div v-else-if="uiSettings.dashboard_stats_enabled" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-6">
+                        <stats-card v-for="mod in serverStatsList" :key="mod.id" :title="mod.title" :icon="mod.icon" :color="mod.color" :value="mod.value" :unit="mod.unit" :progress="mod.progress" :spark-data="mod.sparkData" :peak-key="mod.peakKey" :value-suffix="mod.valueSuffix">
+                            <template #extra v-if="mod.extra">
+                                <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ mod.extra }}</p>
+                            </template>
+                        </stats-card>
+                    </div>
+                    <div v-else class="rounded-lg border border-dashed border-notion-border bg-notion-bg px-4 py-6 text-center text-sm text-notion-text-tertiary mb-6">No server stat cards are enabled.</div>
+                </div>
+            </div>
+        </div>
+    </section>

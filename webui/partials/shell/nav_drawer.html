@@ -1,0 +1,100 @@
+            <!-- Mobile Menu Overlay & Drawer -->
+            <div class="mobile-menu-overlay" :class="{ active: mobileMenuOpen }" @click="mobileMenuOpen = false"></div>
+            <div class="mobile-menu-drawer flex flex-col overflow-hidden" :class="{ active: mobileMenuOpen }">
+                <div class="shrink-0 flex items-center justify-between px-4 py-3 border-b border-notion-divider">
+                    <div class="flex items-center gap-2">
+                        <img src="/assets/images/logo.png" alt="NZBPostarr Logo" class="dark:hidden size-6 object-contain" />
+                        <img src="/assets/images/logo_white.png" alt="NZBPostarr Logo" class="hidden dark:block size-6 object-contain" />
+                        <span class="text-sm font-semibold text-notion-text-primary tracking-tight">NZBPostarr</span>
+                    </div>
+                    <button @click="mobileMenuOpen = false" class="icon-btn" aria-label="Close menu">
+                        <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                    </button>
+                </div>
+
+                <div class="grow overflow-y-auto">
+                    <!-- Nav links -->
+                    <div class="py-2">
+                        <template v-for="item in visibleNavItems" :key="item.href">
+                            <a
+                                :href="item.href"
+                                @click="mobileMenuOpen = false"
+                                class="flex items-center gap-3 px-4 py-3 text-sm transition-colors"
+                                :class="pageTitle === item.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-secondary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                <lucide-icon :name="item.icon" icon-class="size-4"></lucide-icon>
+                                <span>{{ item.label }}</span>
+                            </a>
+                            <a
+                                v-for="child in (item.children || [])"
+                                :key="child.href"
+                                :href="child.href"
+                                @click="mobileMenuOpen = false"
+                                class="flex items-center gap-3 pl-11 pr-4 py-2.5 text-sm transition-colors"
+                                :class="pageTitle === child.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-tertiary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                <lucide-icon :name="child.icon" icon-class="size-3.5"></lucide-icon>
+                                <span class="text-xs">{{ child.label }}</span>
+                            </a>
+                        </template>
+                    </div>
+                    <!-- System Status in flyout -->
+                    <div class="mx-4 mt-2 mb-4 rounded-lg border border-notion-border bg-notion-bg p-3">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-1.5">
+                                <lucide-icon name="activity" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                                <span class="text-[10px] text-notion-text-tertiary uppercase tracking-wider font-semibold">System Status</span>
+                            </div>
+                            <span class="text-[9px] px-1.5 py-0.5 bg-notion-bg-secondary rounded border border-notion-border text-notion-text-tertiary font-medium">{{ appVersionLabel }}</span>
+                        </div>
+                        <div class="space-y-2 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">API Status</span>
+                                <div class="flex items-center gap-1.5">
+                                    <span :class="isConnected ? 'text-notion-success' : 'text-notion-error'" class="font-medium">{{ isConnected ? 'Online' : 'Offline' }}</span>
+                                    <span class="relative flex h-2 w-2">
+                                        <span v-if="isConnected" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-notion-success opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2" :class="connectionDotClass"></span>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Update</span>
+                                <span :class="updateStatusClass" class="font-medium">{{ updateStatusText }}</span>
+                            </div>
+                            <div v-if="updateStatus.update_available" class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Latest</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ latestVersionLabel }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Latency</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ isConnected ? (apiLatency || '< 1ms') : '---' }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Refresh Rate</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ uiRefreshRate / 1000 }}s</span>
+                            </div>
+                            <div v-if="lastUpdated" class="flex items-center justify-between pt-2 border-t border-notion-divider">
+                                <span class="text-notion-text-tertiary">Last Heartbeat</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ lastUpdatedLabel }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer of sidebar pinned to bottom -->
+                <div class="shrink-0 px-4 py-4 border-t border-notion-divider bg-notion-bg-secondary/50">
+                    <div class="flex items-center gap-6">
+                        <a href="/docs" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="Documentation">
+                            <lucide-icon name="book-open" icon-class="size-3.5"></lucide-icon>
+                            Docs
+                        </a>
+                        <a href="/indexer-guides" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="Indexer Guides">
+                            <lucide-icon name="globe" icon-class="size-3.5"></lucide-icon>
+                            Indexers
+                        </a>
+                        <a href="https://github.com/polyn0mial/nzbpostarr" target="_blank" rel="noopener" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="View Source on GitHub">
+                            <lucide-icon name="github" icon-class="size-3.5"></lucide-icon>
+                            GitHub
+                        </a>
+                    </div>
+                </div>
+            </div>
