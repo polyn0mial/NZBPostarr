@@ -33,6 +33,7 @@ def _register_levels() -> None:
         try:
             logger.level(name, no=no, color=color)
         except (TypeError, ValueError):
+            # Already registered (module re-imported): loguru refuses to redefine a level.
             pass
 
 
@@ -52,7 +53,8 @@ try:
         encoding="utf-8",
         enqueue=True,
     )
-except Exception:
+except OSError:
+    # data/logs is not writable (read-only install): log to the console only.
     pass
 
 

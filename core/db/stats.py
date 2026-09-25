@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, cast, Dict, List
 
 from loguru import logger
@@ -404,9 +406,6 @@ def get_all_upload_stats() -> Dict[str, int]:
 def get_top_directories(limit: int = 25) -> Dict[str, Any]:
     """Retrieve top directories by scanning base folder and categorizing usage."""
     try:
-        import os
-        from pathlib import Path
-
         from core.config import get_config
 
         conf = get_config()
@@ -416,7 +415,7 @@ def get_top_directories(limit: int = 25) -> Dict[str, Any]:
             base_path = Path(conf.script_dir).parent
 
         targets = []
-        for fp in getattr(conf, "folder_paths", []):
+        for fp in conf.folder_paths:
             if not isinstance(fp, dict):
                 continue
             path = str(fp.get("path", "") or "").strip()
@@ -451,7 +450,8 @@ def get_top_directories(limit: int = 25) -> Dict[str, Any]:
                                 "files": 0,
                                 "path": str(entry.path),
                             }
-            except Exception:
+            except OSError as exc:
+                logger.debug(f"Skipping unreadable folder {target}: {exc}")
                 continue
 
         # 2. DATABASE SEED (Aggregate historical sizes)
