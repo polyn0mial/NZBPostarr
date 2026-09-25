@@ -9,7 +9,8 @@ from loguru import logger
 from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.orm import selectinload
 
-from core.db.engine import DatabaseOperationalError, session_scope
+from core.db import engine as db_engine
+from core.db.engine import DatabaseOperationalError
 from core.db.models import JobHistory, Upload, UploadResult
 from core.db.timefmt import _isoformat_utc
 
@@ -27,7 +28,7 @@ def get_recent_uploads(
 ) -> Dict[str, Any]:
     """Get list of most recent individual item uploads with pagination and search."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             # Eager load results using selectinload (more efficient for collections)
             stmt = select(Upload).options(selectinload(Upload.results))
             total_stmt = select(func.count(Upload.id))
@@ -145,7 +146,7 @@ def get_grouped_uploads(
     """
     # pylint: disable=assignment-from-no-return
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             # ── WHERE filters ──
             filters: List[Any] = _build_grouped_upload_filters(search, literal, destination)
 
@@ -278,7 +279,7 @@ def get_group_upload_items(
 ) -> Dict[str, Any]:
     """Return full upload rows for one grouped-history title key."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             title_key = func.lower(func.coalesce(Upload.parsed_title, Upload.item_name))
             stmt = (
                 select(Upload)
@@ -308,7 +309,7 @@ def get_group_upload_items(
 def get_uploads_for_job(job_id: str) -> List[Dict[str, Any]]:
     """Fetch individual items updated within a job's timeframe."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             job = session.execute(select(JobHistory).filter_by(job_id=job_id)).scalar_one_or_none()
             if not job:
                 return []

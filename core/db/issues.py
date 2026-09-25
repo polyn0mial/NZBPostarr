@@ -9,7 +9,8 @@ from typing import Any, Dict, Optional, Tuple
 from loguru import logger
 from sqlalchemy import select
 
-from core.db.engine import DatabaseOperationalError, session_scope
+from core.db import engine as db_engine
+from core.db.engine import DatabaseOperationalError
 from core.db.models import MutedIssue, Upload, UploadResult
 
 
@@ -60,7 +61,7 @@ def get_grouped_upload_errors(
     the result entirely instead of just flagging them.
     """
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             stmt = (
                 select(
                     UploadResult.indexer_id,
@@ -142,7 +143,7 @@ def mute_upload_issue(indexer_id: str, signature: str) -> bool:
     Idempotent: muting an already-muted (indexer_id, signature) pair is a no-op.
     """
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             existing = session.execute(
                 select(MutedIssue).filter_by(indexer_id=indexer_id, signature=signature)
             ).scalar_one_or_none()
@@ -159,7 +160,7 @@ def unmute_upload_issue(indexer_id: str, signature: str) -> bool:
     Idempotent: unmuting an already-unmuted pair is a no-op.
     """
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             existing = session.execute(
                 select(MutedIssue).filter_by(indexer_id=indexer_id, signature=signature)
             ).scalar_one_or_none()

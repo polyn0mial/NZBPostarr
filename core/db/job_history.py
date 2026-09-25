@@ -8,7 +8,8 @@ from typing import Any, cast, Dict, List
 from loguru import logger
 from sqlalchemy import delete, desc, select
 
-from core.db.engine import DatabaseOperationalError, session_scope
+from core.db import engine as db_engine
+from core.db.engine import DatabaseOperationalError
 from core.db.models import JobHistory
 from core.db.timefmt import _isoformat_utc
 
@@ -16,7 +17,7 @@ from core.db.timefmt import _isoformat_utc
 def save_job_history(job_id: str, **kwargs: Any) -> None:
     """Create or update a job history record."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             job = session.execute(select(JobHistory).filter_by(job_id=job_id)).scalar_one_or_none()
             if not job:
                 # Ensure category is present for new record
@@ -50,7 +51,7 @@ def save_job_history(job_id: str, **kwargs: Any) -> None:
 def get_job_history(limit: int = 50) -> List[Dict[str, Any]]:
     """Retrieve historical upload jobs."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             jobs = session.query(JobHistory).order_by(desc(JobHistory.started_at)).limit(limit).all()
             serialized: List[Dict[str, Any]] = []
             for job in jobs:
@@ -69,7 +70,7 @@ def delete_job_history(job_ids: List[str]) -> int:
     if not job_ids:
         return 0
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             stmt = delete(JobHistory).where(JobHistory.job_id.in_(job_ids))
             result = session.execute(stmt)
             return cast(Any, result).rowcount

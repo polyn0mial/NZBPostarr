@@ -9,7 +9,8 @@ from loguru import logger
 from sqlalchemy import or_, select
 from sqlalchemy.orm import selectinload, Session
 
-from core.db.engine import _log_db_timing, DatabaseOperationalError, session_scope
+from core.db import engine as db_engine
+from core.db.engine import _log_db_timing, DatabaseOperationalError
 from core.db.models import Upload, UploadResult
 
 
@@ -53,7 +54,7 @@ def destinations_for(item_key: str, _itype: str, indexer_ids: List[str], filesiz
     """Check which indexers already have this item."""
     results: Dict[str, Optional[str]] = {idx: None for idx in indexer_ids}
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             basename = item_key.rsplit("/", 1)[-1]
             uploads = _load_duplicate_upload_payloads(
                 session,
@@ -142,7 +143,7 @@ def destinations_for_batch(
     basenames: Dict[str, str] = {key: key.rsplit("/", 1)[-1] for key in unique_keys}
 
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             lookup_names = list(dict.fromkeys([*unique_keys, *basenames.values()]))
             upload_payloads = _load_duplicate_upload_payloads(
                 session,
@@ -218,7 +219,7 @@ def completion_index(
 
     started = time.perf_counter()
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             # Fetch distinct (item_name, indexer_id, filesize) rows for active indexers (SUCCESS).
             stmt = (
                 select(Upload.item_name, UploadResult.indexer_id, Upload.filesize)

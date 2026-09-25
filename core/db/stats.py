@@ -11,7 +11,8 @@ from typing import Any, cast, Dict, List
 from loguru import logger
 from sqlalchemy import delete, desc, func, select
 
-from core.db.engine import _log_db_timing, _retry_on_lock, session_scope
+from core.db import engine as db_engine
+from core.db.engine import _log_db_timing, _retry_on_lock
 from core.db.models import InterfaceStat, SystemStat, Upload, UploadResult
 
 
@@ -19,7 +20,7 @@ from core.db.models import InterfaceStat, SystemStat, Upload, UploadResult
 def record_system_stats(**data: Any) -> None:
     """Record historical system metrics (retries on transient locks)."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             stat = SystemStat(
                 cpu_percent=data.get("cpu"),
                 memory_percent=data.get("mem"),
@@ -50,7 +51,7 @@ def record_system_stats_batch(rows: List[Dict[str, Any]]) -> None:
         return
 
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             for data in rows:
                 session.add(
                     SystemStat(
@@ -80,7 +81,7 @@ def record_system_stats_batch(rows: List[Dict[str, Any]]) -> None:
 def record_interface_stats(iface_data: List[Dict[str, Any]]) -> bool:
     """Record per-interface metrics (retries on transient locks)."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             for item in iface_data:
                 stat = InterfaceStat(
                     interface_name=item["name"],
@@ -97,13 +98,13 @@ def record_interface_stats(iface_data: List[Dict[str, Any]]) -> bool:
 def prune_system_stats(max_records: int = 1000) -> None:
     """Keep the stats tables lean (retries on transient locks)."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             # Delete older system_stats
             sub = select(SystemStat.id).order_by(desc(SystemStat.recorded_at)).offset(max_records)
             session.execute(delete(SystemStat).where(SystemStat.id.in_(sub.scalar_subquery())))
         # Use a separate transaction for interface pruning to hold the
         # write lock for shorter bursts.
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             session.execute(
                 delete(InterfaceStat).where(InterfaceStat.recorded_at < datetime.now(timezone.utc) - timedelta(hours=2))
             )
@@ -146,7 +147,7 @@ def _serialize_stats_history_rows(stats: List[Any]) -> Dict[str, List[Any]]:
 def get_system_stats_history(limit: int = 100) -> Dict[str, List[Any]]:
     """Retrieve history for dashboard charts."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             stats = session.query(SystemStat).order_by(desc(SystemStat.recorded_at)).limit(limit).all()
             stats.reverse()
             return _serialize_stats_history_rows(stats)
@@ -158,7 +159,7 @@ def get_interface_stats_history(limit: int = 100) -> Dict[str, Dict[str, List[An
     """Retrieve per-interface history."""
     results: Dict[str, Dict[str, List[Any]]] = {}
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             ifaces = session.query(InterfaceStat.interface_name).distinct().all()
             for (if_name,) in ifaces:
                 stats = (
@@ -201,7 +202,7 @@ def _empty_stats_history() -> Dict[str, List[Any]]:
 def get_hourly_upload_stats() -> Dict[str, Any]:
     """Fetch aggregate hourly stats for the last 24 hours."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             now = datetime.now(timezone.utc)
             one_hour_ago = now - timedelta(hours=1)
             cutoff_24h = now - timedelta(hours=24)
@@ -293,7 +294,7 @@ def get_detailed_stats() -> Dict[str, Any]:
     """Summary stats for the UI - returns full structure expected by dashboard."""
     started = time.perf_counter()
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             count = session.query(func.count(Upload.id)).scalar() or 0
             bytes_total = session.query(func.sum(Upload.filesize)).scalar() or 0
 
@@ -392,7 +393,7 @@ def get_detailed_stats() -> Dict[str, Any]:
 def get_all_upload_stats() -> Dict[str, int]:
     """Retrieve aggregate success counts per indexer."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             rows = (
                 session.query(UploadResult.indexer_id, func.count(UploadResult.id))
                 .group_by(UploadResult.indexer_id)
@@ -456,7 +457,7 @@ def get_top_directories(limit: int = 25) -> Dict[str, Any]:
 
         # 2. DATABASE SEED (Aggregate historical sizes)
         try:
-            with session_scope() as session:
+            with db_engine.session_scope() as session:
                 stmt = select(Upload.item_name, Upload.filesize)
                 db_results = session.execute(stmt).all()
                 for item_name, size in db_results:

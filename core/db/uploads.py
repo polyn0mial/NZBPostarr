@@ -11,7 +11,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
-from core.db.engine import DatabaseOperationalError, session_scope
+from core.db import engine as db_engine
+from core.db.engine import DatabaseOperationalError
 from core.db.models import Upload, UploadResult
 from core.db.schema import uploads_columns
 from core.db.timefmt import sql_timestamp
@@ -71,7 +72,7 @@ def _restore_updated_at(upload: Upload, previous: datetime) -> None:
 def record_nntp_success(item_key: str, size: int, itype: str, *, bump_timestamp: bool = True) -> None:
     """Ensure a record exists in the uploads table after successful NNTP upload."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             upload = _get_or_create_upload_row(session, item_key, filesize=size, itype=itype)
             _prev_ts = upload.updated_at
             upload.filesize = size
@@ -120,7 +121,7 @@ def update_db_destination(
     success calls ``logic.queue_metrics.request_live_queue_refresh``.
     """
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             upload = _get_or_create_upload_row(session, key, filesize=size, itype=itype)
             _prev_ts = upload.updated_at
             if upload.parsed_title is None:
@@ -197,7 +198,7 @@ def pin_folder_ts_to_children(folder_key: str) -> None:
     stays consistent with ORM-written rows and the onupdate hook is bypassed.
     """
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             folder = session.execute(
                 select(Upload).filter_by(item_name=folder_key)
             ).scalar_one_or_none()
@@ -228,7 +229,7 @@ def pin_folder_ts_to_children(folder_key: str) -> None:
 def delete_upload_item(name: str) -> bool:
     """Delete an item from history."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             upload = session.execute(select(Upload).filter_by(item_name=name)).scalar_one_or_none()
             if upload:
                 session.delete(upload)
@@ -241,7 +242,7 @@ def delete_upload_item(name: str) -> bool:
 def bulk_delete_upload_items(names: List[str]) -> int:
     """Bulk delete items."""
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             if not names:
                 return 0
 
@@ -271,7 +272,7 @@ def mark_as_uploaded(
     """
     created = 0
     try:
-        with session_scope() as session:
+        with db_engine.session_scope() as session:
             for key in item_keys:
                 upload = session.execute(select(Upload).filter_by(item_name=key)).scalar_one_or_none()
                 if not upload:

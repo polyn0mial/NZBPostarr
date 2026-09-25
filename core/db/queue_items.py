@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Set
 from loguru import logger
 from sqlalchemy import delete, func, select
 
-from core.db.engine import _retry_on_lock, session_scope
+from core.db import engine as db_engine
+from core.db.engine import _retry_on_lock
 from core.db.models import QueueItem
 from core.paths import path_key, resolve_path
 
@@ -19,7 +20,7 @@ def _normalize_queue_item_path(path: Any) -> str:
 @_retry_on_lock()
 def db_load_queue() -> List[Dict[str, Any]]:
     """Return all queued items ordered by position then id."""
-    with session_scope() as session:
+    with db_engine.session_scope() as session:
         items = session.execute(select(QueueItem).order_by(QueueItem.position, QueueItem.id)).scalars().all()
         valid: List[QueueItem] = []
         seen_identities: Set[str] = set()
@@ -64,7 +65,7 @@ def db_load_queue() -> List[Dict[str, Any]]:
 def db_add_queue_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Add items to the queue; skip duplicate paths. Returns added items as dicts."""
     added: List[Dict[str, Any]] = []
-    with session_scope() as session:
+    with db_engine.session_scope() as session:
         existing_paths: Set[str] = {
             path_key(row[0]) for row in session.execute(select(QueueItem.path)).all()
         }
@@ -101,7 +102,7 @@ def db_add_queue_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 @_retry_on_lock()
 def db_remove_queue_item(item_id: int) -> bool:
     """Remove a single item from the queue by id."""
-    with session_scope() as session:
+    with db_engine.session_scope() as session:
         qi = session.get(QueueItem, item_id)
         if qi is None:
             return False
@@ -115,7 +116,7 @@ def db_remove_queue_items(item_ids: List[int]) -> int:
     if not normalized_ids:
         return 0
 
-    with session_scope() as session:
+    with db_engine.session_scope() as session:
         count = (
             session.execute(
                 select(func.count()).select_from(QueueItem).where(QueueItem.id.in_(normalized_ids))
@@ -129,7 +130,7 @@ def db_remove_queue_items(item_ids: List[int]) -> int:
 @_retry_on_lock()
 def db_clear_queue() -> int:
     """Remove all items from the queue. Returns count removed."""
-    with session_scope() as session:
+    with db_engine.session_scope() as session:
         count = session.execute(select(func.count()).select_from(QueueItem)).scalar() or 0
         session.execute(delete(QueueItem))
     return int(count)
@@ -137,7 +138,7 @@ def db_clear_queue() -> int:
 @_retry_on_lock()
 def db_reorder_queue(item_ids: List[int]) -> bool:
     """Update position of each item per the provided ordered list of IDs."""
-    with session_scope() as session:
+    with db_engine.session_scope() as session:
         rows = session.execute(select(QueueItem)).scalars().all()
         if len(rows) != len(item_ids):
             return False
