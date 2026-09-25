@@ -12,7 +12,10 @@ submits them to configured indexers. The browser UI is rendered with Jinja
 templates with Vue 3 page controllers and Tailwind CSS, built with npm.
 
 The repository intentionally uses a flat application layout. Do not recreate a
-self-titled `nzbpostarr/` source directory.
+self-titled `nzbpostarr/` source directory. It also keeps older installs safe:
+the in-app updater of versions before 9.5 only accepts an archive containing
+`nzbpostarr/app.py`, so it refuses a flat release cleanly instead of mixing two
+layouts (`tests/test_release.py::test_source_layout_stays_flat`).
 
 ## Repository Map
 

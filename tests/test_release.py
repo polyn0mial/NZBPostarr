@@ -50,6 +50,8 @@ def test_release_manifest_lists_archive_files(tmp_path) -> None:
 
 
 def test_source_layout_stays_flat() -> None:
+    # Also an upgrade contract: pre-9.5 in-app updaters install only an archive that contains
+    # nzbpostarr/app.py, so a flat tree makes them refuse cleanly instead of mixing layouts.
     assert not (REPO_ROOT / "nzbpostarr").exists()
     for expected in ("app.py", "main.py", "api", "cli", "core", "logic", "indexers", "webui"):
         assert (REPO_ROOT / expected).exists()
