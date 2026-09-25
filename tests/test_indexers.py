@@ -46,7 +46,7 @@ def test_ordinary_api_secret_masking_and_save_merge() -> None:
         nntp_servers=[current_server],
         web_password="private-web-password",
     )
-    masked = app_mod._mask_config_secrets(
+    masked = settings_api._mask_config_secrets(
         {
             "enable_password": True,
             "api_keys": conf.api_keys,
@@ -61,7 +61,7 @@ def test_ordinary_api_secret_masking_and_save_merge() -> None:
     assert masked["nntp_servers"][0]["user"] == SECRET_MASK
     assert masked["nntp_servers"][0]["password"] == SECRET_MASK
 
-    merged = app_mod._merge_masked_secret_updates(
+    merged = settings_api._merge_masked_secret_updates(
         {
             "api_keys": {"geek": SECRET_MASK},
             "usernames": {"omg": SECRET_MASK},
@@ -543,14 +543,13 @@ def test_pending_summary_includes_indexer_status_metadata(monkeypatch) -> None:
     )
 
     monkeypatch.setattr(
-        app_mod,
-        "_pending_index",
+        pending_api, "_pending_index",
         _make_pending_index_manager(
             [{"snapshot": snapshot, "snapshot_ts": 456.0, "ready": True, "refreshing": False, "last_error": None}]
         ),
     )
 
-    result = app_mod.get_pending_summary()
+    result = pending_api.get_pending_summary()
 
     assert result["ready"] is True
     assert result["indexer_status_available"] is False
@@ -571,7 +570,7 @@ def test_force_upload_items_collapses_overlapping_tv_paths(tmp_path):
             captured["kwargs"] = kwargs
             return ["job-1"]
 
-    req = app_mod.ForceUploadRequest(
+    req = pending_api.ForceUploadRequest(
         items=[
             {"path": str(show_dir), "category": "tv", "itype": "TV Show"},
             {"path": str(episode), "category": "tv", "itype": "TV Episode"},
@@ -579,7 +578,7 @@ def test_force_upload_items_collapses_overlapping_tv_paths(tmp_path):
         enable_duplicate_check=True,
     )
 
-    result = _run_async(app_mod.force_upload_items(req, service=DummyService()))
+    result = _run_async(pending_api.force_upload_items(req, service=DummyService()))
 
     assert result == {
         "status": "started",
@@ -607,7 +606,7 @@ def test_force_upload_items_preserves_tv_pack_directory_with_episode_children(tm
             captured["kwargs"] = kwargs
             return ["job-1"]
 
-    req = app_mod.ForceUploadRequest(
+    req = pending_api.ForceUploadRequest(
         items=[
             {"path": str(season_dir), "category": "tv", "itype": "TV Show"},
             {"path": str(episode), "category": "tv", "itype": "TV Episode"},
@@ -615,7 +614,7 @@ def test_force_upload_items_preserves_tv_pack_directory_with_episode_children(tm
         enable_duplicate_check=True,
     )
 
-    result = _run_async(app_mod.force_upload_items(req, service=DummyService()))
+    result = _run_async(pending_api.force_upload_items(req, service=DummyService()))
 
     assert result == {
         "status": "started",
@@ -643,7 +642,7 @@ def test_force_upload_items_keeps_mixed_categories_in_one_request(tmp_path):
             captured["kwargs"] = kwargs
             return ["job-1"]
 
-    req = app_mod.ForceUploadRequest(
+    req = pending_api.ForceUploadRequest(
         items=[
             {"path": str(movie), "category": "movies", "itype": "Movie"},
             {"path": str(episode), "category": "tv", "itype": "TV Episode"},
@@ -651,7 +650,7 @@ def test_force_upload_items_keeps_mixed_categories_in_one_request(tmp_path):
         enable_duplicate_check=False,
     )
 
-    result = _run_async(app_mod.force_upload_items(req, service=DummyService()))
+    result = _run_async(pending_api.force_upload_items(req, service=DummyService()))
 
     assert result == {
         "status": "started",

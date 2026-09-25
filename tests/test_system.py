@@ -186,7 +186,7 @@ def test_arm_process_reaper_schedules_boot_scan_in_background(monkeypatch) -> No
 
     monkeypatch.setattr(process_reaper, "schedule_reaper", lambda: calls.append("schedule_reaper"))
     monkeypatch.setattr(process_reaper, "schedule_wal_checkpoint", lambda: calls.append("schedule_wal_checkpoint"))
-    monkeypatch.setattr(app_mod.asyncio, "create_task", fake_create_task)
+    monkeypatch.setattr(asyncio, "create_task", fake_create_task)
     monkeypatch.setattr(app_mod, "_boot_reaper_task", None)
 
     app_mod._arm_process_reaper()
@@ -451,7 +451,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
 
     for case_name, path, detail, status_code, content_type_prefix, expected_json in not_found_cases:
         response = _run_async(
-            app_mod.not_found_exception_handler(
+            pages_api.not_found_exception_handler(
                 _make_request(path),
                 HTTPException(status_code=404, detail=detail),
             )
@@ -463,7 +463,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
             assert json.loads(response.body) == expected_json, case_name
 
     response = _run_async(
-        app_mod.server_error_exception_handler(
+        pages_api.server_error_exception_handler(
             _make_request("/api/uploads/jobs"),
             RuntimeError("boom"),
         )
@@ -480,8 +480,9 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
         ("all-stats-disabled", False, False, False, False),
     ]
     for case_name, stats_page_enabled, dashboard_stats_enabled, expect_collector, expect_history in stats_flag_cases:
-        monkeypatch.setattr(
-            app_mod,
+        patch_hit(
+            monkeypatch,
+            deps_api,
             "get_config",
             lambda stats_page_enabled=stats_page_enabled,
             dashboard_stats_enabled=dashboard_stats_enabled: SimpleNamespace(
@@ -490,11 +491,12 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
                 dashboard_stats_modules=["cpu", "memory"],
             ),
         )
-        assert app_mod._stats_collector_required() is expect_collector, case_name
-        assert app_mod._stats_history_enabled() is expect_history, case_name
+        assert deps_api._stats_collector_required() is expect_collector, case_name
+        assert deps_api._stats_history_enabled() is expect_history, case_name
 
-    monkeypatch.setattr(
-        app_mod,
+    patch_hit(
+        monkeypatch,
+        deps_api,
         "get_config",
         lambda: SimpleNamespace(
             stats_page_enabled=False,
@@ -503,7 +505,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
         ),
     )
     with pytest.raises(HTTPException) as exc_info:
-        _run_async(app_mod.get_page(_make_request("/stats"), "stats"))
+        _run_async(pages_api._page_route(pages_api.PAGES["stats"])(_make_request("/stats")))
     assert exc_info.value.status_code == 404
     assert "disabled" in str(exc_info.value.detail).lower()
 
@@ -587,10 +589,10 @@ def test_dynamic_cache_bust_updates_from_watchdog_events(tmp_path, monkeypatch) 
         def join(self, timeout: float = 5.0) -> None:
             _ = timeout
 
-    monkeypatch.setattr(app_mod, "ASSETS_DIR", assets_dir)
-    monkeypatch.setattr(app_mod, "Observer", _FakeObserver)
+    monkeypatch.setattr(assets_api, "ASSETS_DIR", assets_dir)
+    monkeypatch.setattr(assets_api, "Observer", _FakeObserver)
 
-    token = app_mod._DynamicCacheBust(ttl_seconds=0.1, reconcile_interval_s=60.0)
+    token = assets_api._DynamicCacheBust(ttl_seconds=0.1, reconcile_interval_s=60.0)
     token.start()
     initial = str(token)
 
@@ -617,7 +619,7 @@ def test_update_settings_reports_partial_success_when_monitor_restart_fails(monk
 
     monkeypatch.setattr(autoupload, "restart_folder_monitor", _boom)
 
-    result = _run_async(app_mod.update_settings("folders", {"base_folder": "X:/"}))
+    result = _run_async(settings_api.update_settings("folders", {"base_folder": "X:/"}))
 
     assert result["status"] == "partial_success"
     assert result["monitor_restart"]["attempted"] is True
@@ -632,7 +634,7 @@ def test_update_settings_reports_monitor_restart_success(monkeypatch) -> None:
 
     monkeypatch.setattr(autoupload, "restart_folder_monitor", _ok)
 
-    result = _run_async(app_mod.update_settings("folders", {"base_folder": "X:/"}))
+    result = _run_async(settings_api.update_settings("folders", {"base_folder": "X:/"}))
 
     assert result["status"] == "success"
     assert result["monitor_restart"] == {"attempted": True, "ok": True}
@@ -652,9 +654,9 @@ def test_reset_settings_route_uses_bundled_defaults_path(monkeypatch, tmp_path) 
     async def _sync(conf=None) -> None:
         observed["synced"] = conf
 
-    monkeypatch.setattr(app_mod, "_sync_stats_collector_state", _sync)
+    patch_hit(monkeypatch, settings_api, "_sync_stats_collector_state", _sync)
 
-    result = _run_async(app_mod.reset_settings_route())
+    result = _run_async(settings_api.reset_settings_route())
 
     assert result["status"] == "success"
     assert config_path.parent.is_dir()
@@ -697,7 +699,7 @@ def test_get_raw_config_masks_credentials(monkeypatch, tmp_path) -> None:
     )
     monkeypatch.setattr(config_mod, "get_config_path", lambda: config_path)
 
-    result = _run_async(app_mod.get_raw_config())
+    result = _run_async(settings_api.get_raw_config())
     content = result["content"]
 
     assert result["masked"] is True
@@ -734,13 +736,13 @@ def test_save_raw_config_restores_untouched_masks(monkeypatch, tmp_path) -> None
         written["content"] = content
         return SimpleNamespace(ok=True)
 
-    monkeypatch.setattr(app_mod, "get_config", lambda: conf)
+    patch_hit(monkeypatch, settings_api, "get_config", lambda: conf)
     monkeypatch.setattr(config_mod, "replace_config_content", _replace)
 
     async def _sync(new_conf=None) -> None:
         return None
 
-    monkeypatch.setattr(app_mod, "_sync_stats_collector_state", _sync)
+    patch_hit(monkeypatch, settings_api, "_sync_stats_collector_state", _sync)
 
     submitted = (
         "base_folder: /srv/usenet\n"
@@ -754,7 +756,7 @@ def test_save_raw_config_restores_untouched_masks(monkeypatch, tmp_path) -> None
         "usernames:\n"
         f"  omg: {redaction.SECRET_MASK}\n"
     )
-    result = _run_async(app_mod.save_raw_config({"content": submitted}))
+    result = _run_async(settings_api.save_raw_config({"content": submitted}))
 
     assert result["status"] == "success"
     saved = written["content"]
@@ -764,10 +766,10 @@ def test_save_raw_config_restores_untouched_masks(monkeypatch, tmp_path) -> None
     assert "news.example.com" in saved
 
 def test_save_raw_config_rejects_invalid_yaml(monkeypatch) -> None:
-    monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace(web_password=""))
+    patch_hit(monkeypatch, settings_api, "get_config", lambda: SimpleNamespace(web_password=""))
 
     with pytest.raises(HTTPException) as exc_info:
-        _run_async(app_mod.save_raw_config({"content": "key: [unclosed\n"}))
+        _run_async(settings_api.save_raw_config({"content": "key: [unclosed\n"}))
 
     assert exc_info.value.status_code == 400
 
@@ -779,7 +781,7 @@ def test_reset_settings_route_returns_404_when_defaults_missing(monkeypatch, tmp
     monkeypatch.setattr(config_mod, "get_config_path", lambda: config_path)
 
     with pytest.raises(HTTPException) as exc_info:
-        _run_async(app_mod.reset_settings_route())
+        _run_async(settings_api.reset_settings_route())
 
     assert exc_info.value.status_code == 404
 
@@ -821,11 +823,11 @@ def test_get_current_settings_preserves_folder_path_categories(monkeypatch) -> N
         ],
     )
 
-    monkeypatch.setattr(app_mod, "get_config", lambda: conf)
+    patch_hit(monkeypatch, settings_api, "get_config", lambda: conf)
     monkeypatch.setattr("core.registry.get_all_indexers", lambda: [])
     monkeypatch.setattr("core.registry.get_available_categories", lambda: [])
 
-    result = _run_async(app_mod.get_current_settings())
+    result = _run_async(settings_api.get_current_settings())
 
     assert result["folders"]["folder_paths"] == [
         {"path": "D:/watch/external-a", "category": "auto", "monitor": False},

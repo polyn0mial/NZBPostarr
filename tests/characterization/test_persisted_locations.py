@@ -9,7 +9,8 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
-import app as app_mod
+from api import pending as pending_api
+from api import system as system_api
 from core import config as config_mod
 from core import database as db
 from logic import queueing, updater, usenet_stream
@@ -64,7 +65,7 @@ def test_deployed_revision_file(monkeypatch) -> None:
         return real_exists(self, *args, **kwargs)
 
     monkeypatch.setattr(pathlib.Path, "exists", recording_exists)
-    app_mod._runtime_revision()
+    system_api._runtime_revision()
     monkeypatch.undo()
 
     assert [_rel(path, APP_ROOT) for path in probed if path.name == "deployed_revision.json"] == [
@@ -84,8 +85,8 @@ def test_pending_group_order_config_keys(monkeypatch) -> None:
         return True
 
     monkeypatch.setattr(config_mod, "save_config", recording_save)
-    _run_async(app_mod.update_pending_group_order(app_mod.PendingGroupOrderRequest(order=["a"])))
-    _run_async(app_mod.update_pending_group_order_locked(app_mod.PendingGroupOrderLockedRequest(locked=True)))
+    _run_async(pending_api.update_pending_group_order(pending_api.PendingGroupOrderRequest(order=["a"])))
+    _run_async(pending_api.update_pending_group_order_locked(pending_api.PendingGroupOrderLockedRequest(locked=True)))
 
     assert [sorted(update) for update in saved] == [
         ["pending_external_group_order"],

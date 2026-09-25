@@ -40,15 +40,18 @@ def test_e2e_web_page_loads(base_url: str, page: Page) -> None:
         expect(_page_smoke_locator(page, locator_kind, locator_value)).to_be_visible()
 
 def test_legacy_queue_and_history_pages_redirect_to_canonical_routes() -> None:
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app_mod.app)
     cases = [
-        ("pending", app_mod.redirect_pending_to_queue, "/queue"),
-        ("pending.html", app_mod.redirect_pending_to_queue, "/queue"),
-        ("uploads", app_mod.redirect_uploads_to_history, "/history"),
-        ("uploads.html", app_mod.redirect_uploads_to_history, "/history"),
+        ("pending", "/queue"),
+        ("pending.html", "/queue"),
+        ("uploads", "/history"),
+        ("uploads.html", "/history"),
     ]
 
-    for page_name, handler, destination in cases:
-        response = _run_async(handler(_make_request(f"/{page_name}")))
+    for page_name, destination in cases:
+        response = client.get(f"/{page_name}", follow_redirects=False)
         assert response.status_code == 301, page_name
         assert response.headers["location"] == destination, page_name
 

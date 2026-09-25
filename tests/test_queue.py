@@ -4,6 +4,7 @@
 
 import psutil
 
+from logic.queueing import ProcessingJobRequest
 from tests.support import *
 
 def test_job_names_use_category_and_item_count(tmp_path) -> None:
@@ -852,7 +853,7 @@ def test_queue_endpoint_keeps_resumable_stopped_job_out_of_finished(tmp_path) ->
     }
     service = _make_upload_service_stub(jobs={"job-stop": job}, queue_paused=True)
 
-    payload = app_mod.get_queue(service=service)
+    payload = jobs_api.get_queue(service=service)
 
     assert len(payload["queued"]) == 1
     assert payload["queued"][0]["job_id"] == "job-stop"
@@ -887,7 +888,7 @@ def test_compact_job_polling_omits_large_path_lists_and_bounds_events(tmp_path) 
     assert active_items is not None
     assert len(active_items) == 5_000
     assert active_items[0]["path"] == paths[0]
-    route_payload = app_mod.get_active_job_items("job-large", service=service)
+    route_payload = jobs_api.get_active_job_items("job-large", service=service)
     assert route_payload["count"] == 5_000
 
 
@@ -907,7 +908,7 @@ def test_finished_job_items_are_available_for_the_current_session(tmp_path) -> N
         {"index": 1, "path": paths[0], "name": "One.mkv"},
         {"index": 2, "path": paths[1], "name": "Two.mkv"},
     ]
-    route_payload = app_mod.get_completed_job_items("job-finished", service=service)
+    route_payload = jobs_api.get_completed_job_items("job-finished", service=service)
     assert route_payload["count"] == 2
     assert route_payload["items"] == items
 
@@ -959,12 +960,12 @@ def test_queue_control_routes_report_confirmed_backend_state() -> None:
 
     service = DummyService()
 
-    paused = _run_async(app_mod.pause_upload("job-1", service=service))
-    resumed = _run_async(app_mod.resume_upload("job-1", service=service))
+    paused = _run_async(jobs_api.pause_upload("job-1", service=service))
+    resumed = _run_async(jobs_api.resume_upload("job-1", service=service))
     prioritized = _run_async(
-        app_mod.set_queued_job_priority(
+        jobs_api.set_queued_job_priority(
             "job-1",
-            app_mod.QueuePriorityRequest(priority=250),
+            jobs_api.QueuePriorityRequest(priority=250),
             service=service,
         )
     )
@@ -990,7 +991,7 @@ def test_retry_route_reports_new_job_and_conflicts() -> None:
 
     service = DummyService()
 
-    queued = _run_async(app_mod.retry_upload("failed-1", service=service))
+    queued = _run_async(jobs_api.retry_upload("failed-1", service=service))
     assert queued == {
         "status": "queued",
         "job_id": "retry-2",
@@ -999,11 +1000,11 @@ def test_retry_route_reports_new_job_and_conflicts() -> None:
     }
 
     with pytest.raises(HTTPException) as missing:
-        _run_async(app_mod.retry_upload("missing", service=service))
+        _run_async(jobs_api.retry_upload("missing", service=service))
     assert missing.value.status_code == 404
 
     with pytest.raises(HTTPException) as conflict:
-        _run_async(app_mod.retry_upload("complete", service=service))
+        _run_async(jobs_api.retry_upload("complete", service=service))
     assert conflict.value.status_code == 409
 
 def test_queue_launch_builds_request(tmp_path, monkeypatch) -> None:
@@ -1284,7 +1285,7 @@ def test_api_start_upload_builds_processing_request(monkeypatch, tmp_path) -> No
     cases = [
         (
             "scan-configured-items",
-            lambda movie: app_mod.UploadRequest(
+            lambda movie: jobs_api.UploadRequest(
                 category="movies",
                 test_mode=True,
                 enable_duplicate_check=False,
@@ -1303,7 +1304,7 @@ def test_api_start_upload_builds_processing_request(monkeypatch, tmp_path) -> No
         ),
         (
             "explicit-file-path",
-            lambda movie: app_mod.UploadRequest(
+            lambda movie: jobs_api.UploadRequest(
                 category="movies",
                 file_path=str(movie),
                 test_mode=True,
@@ -1326,7 +1327,7 @@ def test_api_start_upload_builds_processing_request(monkeypatch, tmp_path) -> No
         ),
     ]
 
-    monkeypatch.setattr(app_mod, "get_config", lambda: SimpleNamespace())
+    patch_hit(monkeypatch, jobs_api, "get_config", lambda: SimpleNamespace())
 
     for (
         case_name,
@@ -1349,15 +1350,15 @@ def test_api_start_upload_builds_processing_request(monkeypatch, tmp_path) -> No
             def fake_scan_configured_items(*_args, **_kwargs):
                 return scan_items
 
-            monkeypatch.setattr(app_mod, "scan_configured_items", fake_scan_configured_items)
+            patch_hit(monkeypatch, jobs_api, "scan_configured_items", fake_scan_configured_items)
 
         request = request_factory(movie)
-        result = _run_async(app_mod.start_upload(request, service=service))
+        result = _run_async(jobs_api.start_upload(request, service=service))
 
         assert result == {"job_id": expected_job_id, "job_ids": [expected_job_id], "status": "started"}, case_name
         requests = captured["requests"]
         assert len(requests) == 1, case_name
-        assert isinstance(requests[0], app_mod.ProcessingJobRequest), case_name
+        assert isinstance(requests[0], ProcessingJobRequest), case_name
         assert requests[0].category == "movies", case_name
         assert requests[0].paths == expected_paths(movie), case_name
         assert requests[0].enable_duplicate_check is expected_dupe_check, case_name
@@ -1885,7 +1886,7 @@ def test_force_start_queue_item_preserves_staged_item_when_launch_fails(tmp_path
     service = DummyService()
 
     with pytest.raises(RuntimeError, match="boom"):
-        _run_async(app_mod.force_start_queue_item(1, service=service))
+        _run_async(staging_api.force_start_queue_item(1, service=service))
 
     assert service.removed is False
     assert service.items == [{"id": 1, "path": str(movie), "category": "movies", "itype": "Movie", "name": movie.name}]
@@ -1910,7 +1911,7 @@ def test_bulk_selection_filter_excludes_descendants_but_not_manual_actions(tmp_p
         {"path": str(allowed_item), "category": "movies"},
     ]
 
-    filtered, excluded = app_mod._filter_bulk_selectable_items(payload, conf)
+    filtered, excluded = deps_api._filter_bulk_selectable_items(payload, conf)
 
     assert filtered == [payload[1]]
     assert excluded == 1
@@ -1922,10 +1923,12 @@ def test_bulk_selection_filter_excludes_descendants_but_not_manual_actions(tmp_p
         def get_queue_items(self):
             return []
 
-    monkeypatch.setattr(app_mod, "get_config", lambda: conf)
+    # The blocking config is live in the staging module (the pre-split patch on app.get_config never
+    # reached app_g1): a manual add must not consult it, so this patch is expected to stay unhit.
+    monkeypatch.setattr(staging_api, "get_config", lambda: conf)
     manual_result = _run_async(
-        app_mod.add_queue_items(
-            app_mod.AddQueueItemsRequest(items=[payload[0]], bulk_selection=False),
+        staging_api.add_queue_items(
+            staging_api.AddQueueItemsRequest(items=[payload[0]], bulk_selection=False),
             service=DummyService(),
         )
     )
@@ -1954,10 +1957,10 @@ def test_staged_queue_preview_is_non_mutating(monkeypatch) -> None:
             "items": [],
         }
 
-    monkeypatch.setattr(app_mod, "_preview_selected_items", fake_preview)
+    monkeypatch.setattr(staging_api, "_preview_selected_items", fake_preview)
     result = _run_async(
-        app_mod.preview_queue(
-            app_mod.StartQueueRequest(enable_duplicate_check=True, indexer_id="geek"),
+        staging_api.preview_queue(
+            staging_api.StartQueueRequest(enable_duplicate_check=True, indexer_id="geek"),
             service=DummyService(),
         )
     )
