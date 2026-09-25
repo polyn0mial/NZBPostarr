@@ -324,7 +324,7 @@ async forceStartItem(item) {
       const idx = this.queueItems.findIndex((qi2) => qi2.id === item.id);
       const removed = idx >= 0 ? this.queueItems.splice(idx, 1)[0] : null;
       try {
-        const res = await this.apiFetch(`/api/uploads/queue/items/${item.id}/start`, { method: "POST" });
+        await this.apiFetch(`/api/uploads/queue/items/${item.id}/start`, { method: "POST" });
         this.showToast("success", "Started", `"${item.name}" is now uploading`);
         this.startTimeout(() => this.loadJobs(), 500);
         this.loadQueuedPaths();

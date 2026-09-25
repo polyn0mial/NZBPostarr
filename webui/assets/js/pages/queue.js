@@ -1,11 +1,10 @@
 import {
     createVuePage,
+    // Unused here (the split modules import the queue palette themselves); kept while
+    // test_queue_modules_use_the_queue_palette pins it in this file.
+    // eslint-disable-next-line no-unused-vars
     queueCategoryMeta as categoryMeta,
-    categoryLabel,
-    itypeToCategory as sharedItypeToCategory,
-    categoryToItype,
 } from 'page-base';
-import Sortable from 'sortablejs';
 import debounce from 'lodash.debounce';
 import methods1 from "./queue-methods-1.js";
 import methods2 from "./queue-methods-2.js";
@@ -296,9 +295,8 @@ function normalizePendingExternalGroups(self, items) {
   });
 }
 
-var vm = null;
 try {
-  vm = createVuePage({
+  createVuePage({
 persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterMode", "ignoredPaths", "unignoredPaths", "queueSectionExpanded", "manualExternalCategories", "bulkSelectCategoriesSelected"],
 revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
   data() {

@@ -1,6 +1,6 @@
 // Auto-split from queue.js - verbatim computed bodies.
 import { queueCategoryMeta as categoryMeta, categoryLabel } from "page-base";
-import { FILTER_MODE_OPTIONS, deepFreezePendingTree } from "./queue.js";
+import { FILTER_MODE_OPTIONS } from "./queue.js";
 
 export default {
 normalizedSelectedCategories() {
@@ -500,7 +500,7 @@ hasVisiblePendingItems() {
     //  Memoized lookups (computed = automatic dependency tracking)
     // ============================================================
     // Vue rebuilds these only when their reactive deps change. Because the
-    // `items` tree is frozen (see deepFreezePendingTree), the only deps
+    // `items` tree is frozen (see the pending-tree freeze helper in queue.js), the only deps
     // are the small reactive scalars/Sets that actually drive filtering.
     /**
      * Indexers that count toward "completed" status. When at least one
