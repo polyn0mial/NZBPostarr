@@ -115,7 +115,7 @@ export default {
           const freshFinished = data.finished || [];
           if (freshFinished.length > 0) {
             this.finished = freshFinished;
-            try { localStorage.setItem("nzb_finished_jobs", JSON.stringify({ ts: Date.now(), jobs: freshFinished })); } catch (_) {}
+            try { localStorage.setItem("nzb_finished_jobs", JSON.stringify({ ts: Date.now(), jobs: freshFinished })); } catch (_storageError) { /* Storage full or disabled: keep the in-memory state. */ }
           } else {
             try {
               const cached = JSON.parse(localStorage.getItem("nzb_finished_jobs") || "null");

@@ -76,8 +76,8 @@ function getStoredRevision() {
 function setStoredRevision(signature) {
     try {
         localStorage.setItem(KEY.uiRevisionSignature, signature);
-    } catch (_err) {
-        // Ignore storage failures and keep the page usable.
+    } catch (_storageError) {
+        // Storage full or disabled: keep the page usable.
     }
 }
 
@@ -92,8 +92,8 @@ function clearPersistedUiState() {
             }
         }
         keysToRemove.forEach((key) => localStorage.removeItem(key));
-    } catch (_err) {
-        // Ignore storage failures and keep the page usable.
+    } catch (_storageError) {
+        // Storage full or disabled: keep the page usable.
     }
 }
 
@@ -127,8 +127,8 @@ export async function syncRevision() {
             clearPersistedUiState();
             setStoredRevision(signature);
         }
-    } catch (_err) {
-        // Silently ignore transient network problems.
+    } catch (_networkError) {
+        // Transient network problem: the next poll retries.
     }
 }
 

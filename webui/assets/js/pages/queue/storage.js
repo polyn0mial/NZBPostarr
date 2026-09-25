@@ -38,7 +38,8 @@ export default {
         try {
           localStorage.setItem(EXTERNAL_GROUP_ORDER_KEY, JSON.stringify(order));
           localStorage.setItem(EXTERNAL_GROUP_LOCK_KEY, this.pendingExternalGroupOrderLocked ? "true" : "false");
-        } catch (_e2) {
+        } catch (_storageError) {
+          // Storage full or disabled: keep the in-memory state.
         }
         if (!serverOrder.length && order.length) {
           void this.apiPut("/api/pending/order", { order }).catch(() => {
@@ -60,7 +61,8 @@ export default {
       this.pendingExternalGroupOrderLoaded = true;
       try {
         localStorage.setItem(EXTERNAL_GROUP_ORDER_KEY, JSON.stringify(normalized));
-      } catch (_e2) {
+      } catch (_storageError) {
+        // Storage full or disabled: keep the in-memory state.
       }
       void this.apiPut("/api/pending/order", { order: normalized }).catch(() => {
       });
@@ -80,7 +82,8 @@ export default {
       this.pendingExternalGroupOrderLoaded = true;
       try {
         localStorage.setItem(EXTERNAL_GROUP_LOCK_KEY, this.pendingExternalGroupOrderLocked ? "true" : "false");
-      } catch (_e2) {
+      } catch (_storageError) {
+        // Storage full or disabled: keep the in-memory state.
       }
       void this.apiPut("/api/pending/order/locked", { locked: this.pendingExternalGroupOrderLocked }).catch(() => {
       });
@@ -105,7 +108,8 @@ export default {
           return;
         }
         sessionStorage.setItem(CACHE_KEY, payload);
-      } catch (e2) {
+      } catch (_storageError) {
+        // Storage full, disabled or holding a stale shape: skip the session cache.
       }
     },
 
@@ -128,7 +132,8 @@ export default {
         this.markIndexerSelection = sel;
         this.syncExternalGroupOrder();
         this.$nextTick(() => this.initPendingExternalGroupsSortable());
-      } catch (e2) {
+      } catch (_storageError) {
+        // Storage full, disabled or holding a stale shape: skip the session cache.
       }
     },
   },
