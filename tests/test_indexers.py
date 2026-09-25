@@ -1,5 +1,6 @@
 """NZBPostarr indexers tests."""
 
+import yaml
 from pathlib import Path
 from types import SimpleNamespace
 

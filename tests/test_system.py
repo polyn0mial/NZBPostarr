@@ -1,5 +1,7 @@
 """NZBPostarr system tests."""
 
+from types import SimpleNamespace
+import sys
 import asyncio
 import json
 from pathlib import Path

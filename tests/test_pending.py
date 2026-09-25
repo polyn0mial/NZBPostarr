@@ -1,5 +1,7 @@
 """NZBPostarr pending tests."""
 
+from logic.pending import children as pending_children
+from logic.pending import view as pending_view
 from pathlib import Path
 import sys
 import time

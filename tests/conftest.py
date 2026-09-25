@@ -415,14 +415,6 @@ def _make_pending_snapshot(
 
 def _pending_lazy_children(snapshot: dict[str, object], item: dict[str, object]) -> list[dict[str, object]]:
     from logic import autoupload as autoupload
-    from logic.pending import children as pending_children
-    from logic.pending import completion as pending_completion
-    from logic.pending import index as pending_index
-    from logic.pending import overrides as pending_overrides
-    from logic.pending import rules as pending_rules
-    from logic.pending import selection as pending_selection
-    from logic.pending import tree as pending_tree
-    from logic.pending import view as pending_view
 
     result = pending_children.build_external_children_for_request(
         snapshot,

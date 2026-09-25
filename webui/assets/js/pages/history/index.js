@@ -86,7 +86,7 @@ async function fetchFlatUploadsPage(self, requestSeq) {
     return true;
 }
 
-const vm = createVuePage({
+createVuePage({
     persist: ['literalSearch', 'filterDestination', 'sortColumn', 'sortOrder', 'pageSize', 'viewMode', 'knownIssuesShowMuted'],
     data() {
         return {

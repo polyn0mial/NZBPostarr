@@ -118,7 +118,7 @@ function applySettingsCategoriesAndServers(self, data) {
     self.servers = data.nntp_servers;
 }
 
-const vm = createVuePage({
+createVuePage({
     data() {
         return {
             // Section expansion state

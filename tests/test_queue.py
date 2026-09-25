@@ -1,5 +1,6 @@
 """NZBPostarr queue tests."""
 
+from types import SimpleNamespace
 import psutil
 
 from logic.stream import monitors as stream_monitors

@@ -574,7 +574,6 @@ def _split_parallel_server_connections(raw_sets: list[tuple[dict[str, Any], Any]
 
 def _upload_target_display(upload_set: dict[str, Any]) -> str:
     """Return the formatted display label for an upload set."""
-    from core.indexers.registry import get_indexer
 
     ids_part = upload_set["id"].split(" (")[0]
     resolved: list[str] = []

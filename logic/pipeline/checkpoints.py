@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 
 from loguru import logger
 
-from core.paths import checkpoint_key, path_key
+from core.paths import checkpoint_key
 
 
 def _append_cleanup_path(job: Optional[dict[str, Any]], path: Path) -> None:

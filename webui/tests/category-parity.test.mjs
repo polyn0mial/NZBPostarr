@@ -37,8 +37,8 @@ export async function load(url, context, nextLoad) {
 `;
 register(`data:text/javascript,${encodeURIComponent(hooks)}`);
 
-const { default: queueMethods } = await import('../assets/js/pages/queue-methods-2.js');
-const { normalizePendingNode } = await import('../assets/js/pages/queue.js');
+const { default: { methods: queueMethods } } = await import('../assets/js/pages/queue/pending-categories.js');
+const { normalizePendingNode } = await import('../assets/js/pages/queue/pending-tree.logic.js');
 
 const rows = readFileSync(new URL('./fixtures/category_parity.jsonl', import.meta.url), 'utf8')
     .split('\n')

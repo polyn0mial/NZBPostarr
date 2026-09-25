@@ -1,5 +1,6 @@
 """NZBPostarr streaming tests."""
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 

@@ -1,6 +1,6 @@
 // Formatting and search-highlight helpers shared by every page (pure; no Vue).
 import dayjs from 'dayjs';
-import relativeTime from 'dayjs/plugin/relativeTime';
+import relativeTime from 'dayjs/plugin/relativeTime.js';
 import { filesize } from 'filesize';
 import humanizeDuration from 'humanize-duration';
 import escapeStringRegexp from 'escape-string-regexp';
