@@ -84,7 +84,7 @@ class _FakeQueueService:
 
 
 def test_headless_parser_has_json_on_core_commands() -> None:
-    parser = headless_mod.build_headless_parser()
+    parser = cli_parser.build_headless_parser()
 
     assert parser.parse_args(["upload", "tv", "--json"]).json is True
     assert parser.parse_args(["status", "--json"]).json is True
@@ -94,7 +94,7 @@ def test_headless_parser_has_json_on_core_commands() -> None:
 
 
 def test_headless_parser_queue_and_job_subcommands() -> None:
-    parser = headless_mod.build_headless_parser()
+    parser = cli_parser.build_headless_parser()
 
     status_args = parser.parse_args(["queue", "status", "--json"])
     assert status_args.command == "queue"
@@ -118,7 +118,7 @@ def test_headless_parser_queue_and_job_subcommands() -> None:
 
 
 def test_headless_parser_logs_subcommand() -> None:
-    parser = headless_mod.build_headless_parser()
+    parser = cli_parser.build_headless_parser()
 
     logs_args = parser.parse_args(["logs", "--lines", "50", "--json"])
     assert logs_args.command == "logs"
@@ -127,7 +127,7 @@ def test_headless_parser_logs_subcommand() -> None:
 
 
 def test_headless_parser_config_system_and_pending_filters() -> None:
-    parser = headless_mod.build_headless_parser()
+    parser = cli_parser.build_headless_parser()
 
     config_args = parser.parse_args(["config", "set", "api_keys.geek", "token", "--json"])
     assert config_args.command == "config"
@@ -153,7 +153,7 @@ def test_headless_parser_config_system_and_pending_filters() -> None:
 def test_headless_version_flag_exits_zero(capsys) -> None:
     from version import __version__
 
-    parser = headless_mod.build_headless_parser()
+    parser = cli_parser.build_headless_parser()
 
     with pytest.raises(SystemExit) as exc_info:
         parser.parse_args(["--version"])
@@ -170,7 +170,7 @@ def test_headless_version_flag_exits_zero(capsys) -> None:
 def test_cmd_upload_invalid_category_json(monkeypatch, capsys) -> None:
     monkeypatch.setattr(registry_mod, "get_available_categories", lambda: [{"id": "tv"}])
 
-    rc = headless_mod.cmd_upload(
+    rc = cli_upload.cmd_upload(
         SimpleNamespace(
             category="bogus",
             limit=None,
@@ -205,7 +205,7 @@ def test_cmd_upload_json_success(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(services, "get_upload_service", lambda: _FakeUploadService())
 
-    rc = headless_mod.cmd_upload(
+    rc = cli_upload.cmd_upload(
         SimpleNamespace(
             category="tv",
             limit=None,
@@ -248,7 +248,7 @@ def test_cmd_status_json_all_tools_present(monkeypatch, capsys) -> None:
     monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: True)
     monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
 
-    rc = headless_mod.cmd_status(SimpleNamespace(json=True))
+    rc = cli_status.cmd_status(SimpleNamespace(json=True))
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -269,7 +269,7 @@ def test_cmd_status_missing_required_tool_sets_exit_code(monkeypatch, capsys) ->
 
     monkeypatch.setattr(shutil, "which", fake_which)
 
-    rc = headless_mod.cmd_status(SimpleNamespace(json=True))
+    rc = cli_status.cmd_status(SimpleNamespace(json=True))
 
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)
@@ -288,7 +288,7 @@ def test_cmd_status_missing_mediainfo_only_does_not_fail(monkeypatch, capsys) ->
 
     monkeypatch.setattr(shutil, "which", fake_which)
 
-    rc = headless_mod.cmd_status(SimpleNamespace(json=True))
+    rc = cli_status.cmd_status(SimpleNamespace(json=True))
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -319,7 +319,7 @@ def test_cmd_pending_json_output(monkeypatch, capsys, tmp_path) -> None:
     )
     monkeypatch.setattr(pending_roots, "relative_key", lambda item, _folder: item.name)
 
-    rc = headless_mod.cmd_pending(SimpleNamespace(category=None, verbose=True, json=True))
+    rc = cli_pending.cmd_pending(SimpleNamespace(category=None, verbose=True, json=True))
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -336,7 +336,7 @@ def test_cmd_pending_json_empty(monkeypatch, capsys) -> None:
     monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
     monkeypatch.setattr(pending_roots, "collect_configured_scan_items", lambda _conf: [])
 
-    rc = headless_mod.cmd_pending(SimpleNamespace(category=None, verbose=False, json=True))
+    rc = cli_pending.cmd_pending(SimpleNamespace(category=None, verbose=False, json=True))
 
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)
@@ -361,7 +361,7 @@ def test_cmd_pending_filters_folder_and_limits_verbose_items(monkeypatch, capsys
     )
     monkeypatch.setattr(pending_roots, "relative_key", lambda item, _folder: item.name)
 
-    rc = headless_mod.cmd_pending(SimpleNamespace(category=None, folder="tv", limit=1, verbose=True, json=True))
+    rc = cli_pending.cmd_pending(SimpleNamespace(category=None, folder="tv", limit=1, verbose=True, json=True))
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -381,9 +381,9 @@ def test_cmd_config_get_and_set_use_config_writer(monkeypatch, capsys) -> None:
     monkeypatch.setattr(config_mod, "get_config", lambda: SimpleNamespace(model_dump=lambda **_kwargs: data.copy()))
     monkeypatch.setattr(config_mod, "save_config", lambda updates: saved.append(updates) or True)
 
-    get_rc = headless_mod.cmd_config(SimpleNamespace(config_command="get", key="api_keys.geek", json=True))
+    get_rc = cli_config.cmd_config(SimpleNamespace(config_command="get", key="api_keys.geek", json=True))
     get_payload = json.loads(capsys.readouterr().out)
-    set_rc = headless_mod.cmd_config(
+    set_rc = cli_config.cmd_config(
         SimpleNamespace(config_command="set", key="host", value="0.0.0.0", json=True)
     )
     set_payload = json.loads(capsys.readouterr().out)
@@ -404,7 +404,7 @@ def test_cmd_config_rejects_empty_dotted_path_segments(monkeypatch, capsys, key)
         lambda: SimpleNamespace(model_dump=lambda **_kwargs: {"host": "127.0.0.1", "api_keys": {}}),
     )
 
-    rc = headless_mod.cmd_config(SimpleNamespace(config_command="get", key=key, json=True))
+    rc = cli_config.cmd_config(SimpleNamespace(config_command="get", key=key, json=True))
 
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)
@@ -430,7 +430,7 @@ def test_cmd_system_update_never_schedules_from_headless_process(monkeypatch, ca
         lambda **_kwargs: pytest.fail("headless update must not schedule its own argv"),
     )
 
-    install_rc = headless_mod.cmd_system(
+    install_rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="update",
             update_command="install",
@@ -440,7 +440,7 @@ def test_cmd_system_update_never_schedules_from_headless_process(monkeypatch, ca
         )
     )
     install_payload = json.loads(capsys.readouterr().out)
-    rollback_rc = headless_mod.cmd_system(
+    rollback_rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="update",
             update_command="rollback",
@@ -462,12 +462,12 @@ def test_cmd_system_update_never_schedules_from_headless_process(monkeypatch, ca
 
 def test_cmd_system_check_error_and_stop_timeout_return_nonzero(monkeypatch, capsys) -> None:
     monkeypatch.setattr(updater, "check_for_updates", lambda: {"check_error": "offline"})
-    check_rc = headless_mod.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
+    check_rc = cli_system.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
     check_payload = json.loads(capsys.readouterr().out)
 
     service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
     monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
-    stop_rc = headless_mod.cmd_system(
+    stop_rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="stop-all",
             update_command=None,
@@ -495,16 +495,16 @@ def test_cmd_system_restart_uses_managed_daemon_lifecycle(monkeypatch, capsys) -
 
     monkeypatch.setattr(updater, "check_for_updates", lambda: {"update_available": True})
     monkeypatch.setattr(services_mod, "get_upload_service", lambda: Service())
-    monkeypatch.setattr(headless_mod, "_managed_daemon_is_running", lambda: True)
+    monkeypatch.setattr(cli_system, "_managed_daemon_is_running", lambda: True)
     monkeypatch.setattr(
-        headless_mod,
+        cli_system,
         "_restart_managed_daemon",
         lambda delay_seconds: calls.append(("daemon_restart", delay_seconds)) or (True, "daemon restarted"),
     )
 
-    check_rc = headless_mod.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
+    check_rc = cli_system.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
     check_payload = json.loads(capsys.readouterr().out)
-    restart_rc = headless_mod.cmd_system(
+    restart_rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="restart",
             update_command=None,
@@ -532,12 +532,12 @@ def test_cmd_system_restart_timeout_requires_force(monkeypatch, capsys) -> None:
     service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
     monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
     monkeypatch.setattr(
-        headless_mod,
+        cli_system,
         "_managed_daemon_is_running",
         lambda: pytest.fail("daemon lifecycle must not run after a timeout"),
     )
 
-    rc = headless_mod.cmd_system(
+    rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="restart",
             update_command=None,
@@ -560,14 +560,14 @@ def test_cmd_system_restart_force_proceeds_after_timeout(monkeypatch, capsys) ->
     calls: list[float] = []
     service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
     monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
-    monkeypatch.setattr(headless_mod, "_managed_daemon_is_running", lambda: True)
+    monkeypatch.setattr(cli_system, "_managed_daemon_is_running", lambda: True)
     monkeypatch.setattr(
-        headless_mod,
+        cli_system,
         "_restart_managed_daemon",
         lambda delay_seconds: calls.append(delay_seconds) or (True, "daemon restarted"),
     )
 
-    rc = headless_mod.cmd_system(
+    rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="restart",
             update_command=None,
@@ -586,9 +586,9 @@ def test_cmd_system_restart_force_proceeds_after_timeout(monkeypatch, capsys) ->
 
 
 def test_cmd_system_restart_without_managed_daemon_requires_operator(monkeypatch, capsys) -> None:
-    monkeypatch.setattr(headless_mod, "_managed_daemon_is_running", lambda: False)
+    monkeypatch.setattr(cli_system, "_managed_daemon_is_running", lambda: False)
 
-    rc = headless_mod.cmd_system(
+    rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="restart",
             update_command=None,
@@ -610,7 +610,7 @@ def test_cmd_system_restart_without_managed_daemon_requires_operator(monkeypatch
 def test_cmd_system_normalizes_operational_exception(monkeypatch, capsys) -> None:
     monkeypatch.setattr(updater, "check_for_updates", lambda: (_ for _ in ()).throw(OSError("network down")))
 
-    rc = headless_mod.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
+    rc = cli_system.cmd_system(SimpleNamespace(system_command="update", update_command="check", json=True))
 
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)
@@ -626,7 +626,7 @@ def test_cmd_history_json_output(monkeypatch, capsys) -> None:
     jobs = [{"job_id": "abc", "category": "tv", "status": "completed"}]
     monkeypatch.setattr(db, "get_job_history", lambda limit=20: jobs)
 
-    rc = headless_mod.cmd_history(SimpleNamespace(limit=20, json=True))
+    rc = cli_history.cmd_history(SimpleNamespace(limit=20, json=True))
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -664,7 +664,7 @@ def test_cmd_issues_json_output_passes_args_through(monkeypatch, capsys) -> None
 
     monkeypatch.setattr(db, "get_grouped_upload_errors", _fake)
 
-    rc = headless_mod.cmd_issues(SimpleNamespace(destination="geek", limit=10, since_days=7, json=True))
+    rc = cli_history.cmd_issues(SimpleNamespace(destination="geek", limit=10, since_days=7, json=True))
 
     assert rc == 0
     assert seen == {"indexer_id": "geek", "limit": 10, "since_days": 7}
@@ -690,14 +690,14 @@ def test_cmd_issues_table_output_and_empty_case(monkeypatch, capsys) -> None:
         },
     )
 
-    rc = headless_mod.cmd_issues(SimpleNamespace(destination="all", limit=50, since_days=None, json=False))
+    rc = cli_history.cmd_issues(SimpleNamespace(destination="all", limit=50, since_days=None, json=False))
     assert rc == 0
     out = capsys.readouterr().out
     assert "geek" in out
     assert "Auth failed" in out
 
     monkeypatch.setattr(db, "get_grouped_upload_errors", lambda **_kw: {"issues": [], "total_issues": 0})
-    rc = headless_mod.cmd_issues(SimpleNamespace(destination="all", limit=50, since_days=None, json=False))
+    rc = cli_history.cmd_issues(SimpleNamespace(destination="all", limit=50, since_days=None, json=False))
     assert rc == 0
     assert "No known upload issues found." in capsys.readouterr().out
 
@@ -718,7 +718,7 @@ def test_cmd_indexers_json_and_exit_code(monkeypatch, capsys) -> None:
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(all=lambda: [idx_enabled, idx_disabled]))
     monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda idx, _conf: idx.enabled)
 
-    rc = headless_mod.cmd_indexers(SimpleNamespace(json=True))
+    rc = cli_history.cmd_indexers(SimpleNamespace(json=True))
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -727,7 +727,7 @@ def test_cmd_indexers_json_and_exit_code(monkeypatch, capsys) -> None:
 
     monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _idx, _conf: False)
 
-    rc = headless_mod.cmd_indexers(SimpleNamespace(json=True))
+    rc = cli_history.cmd_indexers(SimpleNamespace(json=True))
 
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)
@@ -753,7 +753,7 @@ def test_cmd_queue_status_json(monkeypatch, capsys) -> None:
     )
     monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(json=True))  # no queue_command -> defaults to status
+    rc = cli_queue.cmd_queue(SimpleNamespace(json=True))  # no queue_command -> defaults to status
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -770,12 +770,12 @@ def test_cmd_queue_pause_and_resume(monkeypatch, capsys) -> None:
     fake_service = _FakeQueueService()
     monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="pause", json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="pause", json=True))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "paused"
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="resume", json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="resume", json=True))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "running"
@@ -790,12 +790,12 @@ def test_cmd_queue_stop_and_stop_clear(monkeypatch, capsys) -> None:
     fake_service = _FakeQueueService()
     monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="stop", clear=False, json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="stop", clear=False, json=True))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "stopped"
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="stop", clear=True, json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="stop", clear=True, json=True))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "clearing"
@@ -811,11 +811,11 @@ def test_cmd_queue_clear_and_revalidate(monkeypatch, capsys) -> None:
     fake_service = _FakeQueueService()
     monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="clear", json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="clear", json=True))
     assert rc == 0
     assert json.loads(capsys.readouterr().out) == {"cleared": 4}
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="revalidate", skip_paused=True, json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="revalidate", skip_paused=True, json=True))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "success"
@@ -834,12 +834,12 @@ def test_cmd_queue_job_pause_resume_not_found(monkeypatch, capsys) -> None:
     fake_service = _FakeQueueService()
     monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="job", job_command="pause", job_id="job-ok", json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="job", job_command="pause", job_id="job-ok", json=True))
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["job_id"] == "job-ok"
 
-    rc = headless_mod.cmd_queue(SimpleNamespace(queue_command="job", job_command="resume", job_id="job-missing", json=True))
+    rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="job", job_command="resume", job_id="job-missing", json=True))
     assert rc == 1
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "error"
@@ -851,14 +851,14 @@ def test_cmd_queue_job_stop_retry_promote(monkeypatch, capsys) -> None:
     fake_service = _FakeQueueService()
     monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
 
-    rc = headless_mod.cmd_queue(
+    rc = cli_queue.cmd_queue(
         SimpleNamespace(queue_command="job", job_command="stop", job_id="job-ok", clear=False, json=True)
     )
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "stopping"
 
-    rc = headless_mod.cmd_queue(
+    rc = cli_queue.cmd_queue(
         SimpleNamespace(queue_command="job", job_command="retry", job_id="job-ok", json=True)
     )
     assert rc == 0
@@ -866,20 +866,20 @@ def test_cmd_queue_job_stop_retry_promote(monkeypatch, capsys) -> None:
     assert payload["job_id"] == "new-job-1"
     assert payload["retry_of"] == "job-ok"
 
-    rc = headless_mod.cmd_queue(
+    rc = cli_queue.cmd_queue(
         SimpleNamespace(queue_command="job", job_command="retry", job_id="job-bad", json=True)
     )
     assert rc == 1
     capsys.readouterr()  # discard the error payload before the next assertion
 
-    rc = headless_mod.cmd_queue(
+    rc = cli_queue.cmd_queue(
         SimpleNamespace(queue_command="job", job_command="promote", job_id="job-ok", json=True)
     )
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["status"] == "promoted"
 
-    rc = headless_mod.cmd_queue(
+    rc = cli_queue.cmd_queue(
         SimpleNamespace(queue_command="job", job_command="promote", job_id="job-missing", json=True)
     )
     assert rc == 1
@@ -895,7 +895,7 @@ def test_cmd_logs_json(capsys) -> None:
     console.log("First message", "INFO")
     console.log("Second message", "ERROR")
 
-    rc = headless_mod.cmd_logs(SimpleNamespace(lines=100, json=True))
+    rc = cli_logs.cmd_logs(SimpleNamespace(lines=100, json=True))
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -906,7 +906,7 @@ def test_cmd_logs_json(capsys) -> None:
 def test_cmd_logs_empty_buffer_human_output(capsys) -> None:
     console.clear()
 
-    rc = headless_mod.cmd_logs(SimpleNamespace(lines=100, json=False))
+    rc = cli_logs.cmd_logs(SimpleNamespace(lines=100, json=False))
 
     assert rc == 0
     assert "No log entries yet." in capsys.readouterr().out
@@ -924,7 +924,7 @@ def test_run_headless_dispatches_queue_and_logs(monkeypatch, capsys) -> None:
     fake_service = _FakeQueueService()
     monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
 
-    rc = headless_mod.run_headless(["queue", "status", "--json"])
+    rc = cli_run.run_headless(["queue", "status", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert "counts" in payload
@@ -932,7 +932,7 @@ def test_run_headless_dispatches_queue_and_logs(monkeypatch, capsys) -> None:
     console.clear()
     console.log("Hello", "INFO")
 
-    rc = headless_mod.run_headless(["logs", "--json"])
+    rc = cli_run.run_headless(["logs", "--json"])
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
     assert payload["logs"][0]["msg"] == "Hello"

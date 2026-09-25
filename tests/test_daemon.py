@@ -12,7 +12,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture()
-def launcher(monkeypatch):
+def launcher():
+    """The detached-daemon lifecycle module main.py drives."""
+    from cli.launcher import daemon
+
+    return daemon
+
+
+@pytest.fixture()
+def main_module(monkeypatch):
     """Load main.py with a clean argv without invoking its bootstrapper."""
     monkeypatch.setattr(sys, "argv", [str(ROOT / "main.py")])
     spec = importlib.util.spec_from_file_location("_test_nzbpostarr_main", ROOT / "main.py")
@@ -28,8 +36,8 @@ def _configure_state_path(monkeypatch, launcher, tmp_path):
     return state_path
 
 
-def test_early_parser_exposes_daemon_lifecycle_flags(launcher) -> None:
-    parser = launcher.build_early_parser()
+def test_early_parser_exposes_daemon_lifecycle_flags(main_module) -> None:
+    parser = main_module.build_early_parser()
 
     assert parser.parse_args(["--daemon"]).daemon is True
     assert parser.parse_args(["--status"]).status is True
@@ -177,8 +185,38 @@ def test_daemon_child_cleans_only_its_own_state_after_server_exits(tmp_path, mon
     token = "reserved"
     launcher._write_daemon_state(1, 1.0, status="starting", token=token)
     monkeypatch.setitem(sys.modules, "psutil", SimpleNamespace(Process=lambda pid: Process()))
-    monkeypatch.setattr(launcher, "run_app", lambda: None)
-
-    launcher._run_daemon_child(token)
+    launcher._run_daemon_child(token, lambda: None)
 
     assert not state_path.exists()
+
+
+def test_daemon_child_command_forwards_launcher_host_and_port(launcher) -> None:
+    command = launcher._daemon_command("token", "127.0.0.1", 9001)
+
+    assert command[-4:] == ["--host", "127.0.0.1", "--port", "9001"]
+    assert "--direct" in command
+    assert launcher._daemon_command("token")[-1] == "--direct"
+
+
+def test_launcher_bootstrap_imports_under_isolated_system_python() -> None:
+    """main.py runs before the venv exists, so every launcher module it imports must be stdlib-only."""
+    import subprocess
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-I",
+            "-c",
+            "import sys; sys.path.insert(0, sys.argv[1]); import cli.launcher.bootstrap as b;"
+            " import cli.launcher.daemon, cli.launcher.instance, cli.launcher.tmux; print(b.ROOT.name)",
+            str(ROOT),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == ROOT.name

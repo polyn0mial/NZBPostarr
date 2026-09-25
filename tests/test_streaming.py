@@ -18,7 +18,7 @@ def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
     monkeypatch.setattr(services, "get_upload_service", lambda: FakeService())
     monkeypatch.setattr(usenet_stream, "resolve_source_nzb_paths", lambda _source: [Path("D:/tmp/example.nzb")])
 
-    rc = headless_mod.run_headless(
+    rc = cli_run.run_headless(
         [
             "stream",
             "D:/tmp/example.nzb",
@@ -101,7 +101,7 @@ def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys
 
     monkeypatch.setattr(usenet_stream, "add_stream_monitor", fake_add_stream_monitor)
 
-    rc = headless_mod.run_headless(
+    rc = cli_run.run_headless(
         [
             "stream",
             "D:/watch",
@@ -151,7 +151,7 @@ def test_headless_stream_monitors_list_json(monkeypatch, capsys) -> None:
         ],
     )
 
-    rc = headless_mod.run_headless(["stream-monitors", "--json"])
+    rc = cli_run.run_headless(["stream-monitors", "--json"])
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)

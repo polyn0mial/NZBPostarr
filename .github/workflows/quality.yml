@@ -47,7 +47,7 @@ jobs:
           python -m pip install --group dev
 
       - name: Compile production modules
-        run: python -m compileall -q app.py main.py setup.py version.py api core logic
+        run: python -m compileall -q app.py main.py setup.py version.py api cli core logic
 
       # Steps below that inspect the tree or the lockfile rather than the
       # interpreter only need to run once, not once per matrix entry.
@@ -61,7 +61,7 @@ jobs:
 
       - name: Lint
         if: matrix.python-version == '3.13'
-        run: ruff check app.py main.py setup.py version.py api core logic .github/*.py tests
+        run: ruff check app.py main.py setup.py version.py api cli core logic .github/*.py tests
 
       - name: Type-check the enforced frontier
         run: mypy
