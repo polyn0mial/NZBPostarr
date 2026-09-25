@@ -255,3 +255,44 @@ def is_season_pack_folder(path: Path, episode_paths: list[Path], *, require_sour
         if looks_like_generic_tv_season_folder(folder_name):
             return False
     return has_season_pack_name(folder_name)
+
+
+def get_tv_sort_key(path: Path) -> tuple[str, int, str]:
+    """
+    Simple Sort key for TV uploads.
+    Groups by Pack Name (folder name) and ensures the pack uploads before its episode files.
+    """
+    if path.is_dir():
+        # It's a Season Pack
+        pack_name = path.name.lower()
+        is_pack = 0
+        sort_name = ""  # Pack sorts first within its group
+    else:
+        # It's an Episode File
+        pack_name = path.parent.name.lower()
+        is_pack = 1
+        sort_name = path.name.lower()
+
+    return (pack_name, is_pack, sort_name)
+
+
+def _has_direct_child_season_pack_dirs(path: Path) -> bool:
+    """Return True when a selected TV folder is a parent that contains season-pack folders."""
+    if not path.is_dir():
+        return False
+    try:
+        for child in path.iterdir():
+            if child.is_dir() and has_season_pack_name(child.name):
+                return True
+    except OSError:
+        return False
+    return False
+
+
+def is_season_pack(path: Path) -> bool:
+    """
+    Check if a path represents a season pack (directory).
+    Parent TV collection folders are not season packs; only leaf-ish folders
+    with season naming and no direct child season-pack folders should upload as packs.
+    """
+    return path.is_dir() and has_season_pack_name(path.name) and not _has_direct_child_season_pack_dirs(path)

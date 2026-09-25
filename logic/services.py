@@ -21,7 +21,8 @@ from core.utils import (
     reset_thread_job,
     set_thread_job,
 )
-from logic import processing, usenet_stream
+from logic import usenet_stream
+from logic.pipeline import runner
 from logic.pending.index import get_pending_index_manager
 from logic.pending.view import build_dashboard_summary
 from logic.jobs.models import ProcessingJobRequest, StreamJobRequest
@@ -255,7 +256,7 @@ class UploadService(QueueServiceMixin):
         return build_dashboard_summary(conf, stats, pending_state)
 
     def _execute_processing_job(self, job: dict[str, Any], request: ProcessingJobRequest) -> None:
-        """Execute processing.run_job with shared force/error semantics.
+        """Execute runner.run_job with shared force/error semantics.
 
         The thread-job binding is restored on exit so callers that run this
         synchronously (CLI, tests with ``ImmediateThread``) don't leak the
@@ -283,7 +284,7 @@ class UploadService(QueueServiceMixin):
                 test_mode=test_v,
             )
 
-            processing.run_job(
+            runner.run_job(
                 request.category,
                 limit=request.limit,
                 skip_packs=request.skip_packs,

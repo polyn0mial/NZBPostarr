@@ -35,7 +35,6 @@ from core.config import NNTPServer, get_config
 from core.database import (
     check_duplicate_dynamic,
     record_nntp_success,
-    update_db_destination,
 )
 from core.registry import get_enabled_indexers
 from core.utils import (
@@ -46,12 +45,12 @@ from core.utils import (
     stop_watchdog_observer,
     update_job_progress,
 )
-from logic.uploaders import (
+from logic.pipeline.posting import (
     _build_nyuu_command,
     _parse_nyuu_completion_stats,
     build_nyuu_progress_parser,
-    submit_api,
 )
+from logic.pipeline.submit import submit_and_record
 
 
 class StreamError(RuntimeError):
@@ -1104,28 +1103,24 @@ def stream_nzb_upload(
 
     record_nntp_success(chosen_release, total_size, itype)
 
-    submission_results: list[tuple[str, bool, str]] = []
-    for dest in target_ids:
-        result = submit_api(
-            chosen_release,
-            dest,
-            conf,
-            nzb_path=generated_nzb,
-            cat=category,
-        )
-        submission_results.append((dest, result.success, result.reason))
-        if result.success:
-            update_db_destination(dest, chosen_release, total_size, chosen_release, itype=itype, **upload_result)
-        else:
-            update_db_destination(
-                dest,
-                chosen_release,
-                total_size,
-                chosen_release,
-                itype=itype,
-                status="failed",
-                error=result.reason or "Indexer submission rejected or unreachable",
-            )
+    # Same submit semantics as queue posting: per-indexer isolation, and a
+    # "duplicate" answer counts as already posted.
+    api_results, _any_success = submit_and_record(
+        [{"dests": list(target_ids), "priority": False}] if target_ids else [],
+        conf=conf,
+        name=chosen_release,
+        nzb_path=generated_nzb,
+        submission_category=category,
+        item_size=total_size,
+        key=chosen_release,
+        itype=itype,
+        item_path=Path(chosen_release),
+        base_folder=None,
+        category=category,
+        test_mode=False,
+        upload_result=upload_result,
+    )
+    submission_results = [(dest, ok or status == "duplicate", reason) for dest, ok, reason, status in api_results]
 
     success_count = sum(1 for _dest, ok, _reason in submission_results if ok)
     log_info(

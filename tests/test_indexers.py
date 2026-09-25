@@ -127,7 +127,7 @@ def test_indexer_ui_metadata_never_returns_configured_credentials() -> None:
     assert payload["username"] == ""
 
 def test_estimate_nyuu_post_percent_uses_read_as_lower_bound():
-    from logic.uploaders import _estimate_nyuu_post_percent
+    from logic.pipeline.posting import _estimate_nyuu_post_percent
 
     # If our estimate is too small, the read counter should prevent us from
     # hitting 99% early for a long time.
@@ -137,7 +137,7 @@ def test_estimate_nyuu_post_percent_uses_read_as_lower_bound():
     assert _estimate_nyuu_post_percent(10_000, 10_000, 10_000) == 99
 
 def test_upload_item_does_not_override_nzb_subject(tmp_path, monkeypatch) -> None:
-    from logic import uploaders
+    from logic.pipeline import posting as uploaders
 
     tmp_sub = tmp_path / "tmp"
     item_dir = tmp_sub / "Release.Name"
@@ -275,7 +275,7 @@ def test_available_categories_exposes_dedicated_audiobook_metadata(monkeypatch) 
 
 
 def test_books_mapping_advertises_only_books_for_all_jobs(monkeypatch) -> None:
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     indexer = IndexerDefinition(
         id="books-check",
@@ -666,7 +666,7 @@ def test_force_upload_items_keeps_mixed_categories_in_one_request(tmp_path):
     assert captured["kwargs"] == {"source": "pending-force-upload", "reuse_running": False}
 
 def test_submit_api_batch_isolates_indexer_exceptions(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     nzb_file = tmp_path / "sample.nzb"
     nzb_file.write_bytes(b"x")
@@ -693,3 +693,66 @@ def test_submit_api_batch_isolates_indexer_exceptions(tmp_path, monkeypatch) -> 
         ("bad", False, "Unhandled submission exception for indexer 'bad': boom", "error"),
         ("good", True, "ok", "success"),
     ]
+
+
+def test_submit_and_record_records_each_destination(tmp_path, monkeypatch) -> None:
+    # One call covers success, duplicate (counts as posted, processing-08), rejection and an
+    # indexer that raises: every destination gets its own history row, none stops the others.
+    from logic.pipeline import submit as submit_mod
+
+    nzb_file = tmp_path / "sample.nzb"
+    nzb_file.write_bytes(b"x")
+    submitted: list[str] = []
+
+    def fake_submit_api(name, dest_id, _conf, **_kwargs):
+        submitted.append(f"{dest_id}:{name}")
+        if dest_id == "boom":
+            raise RuntimeError("down")
+        return {
+            "ok": SubmitResult(True, "success", "ok"),
+            "dupe": SubmitResult(False, "duplicate", "already there"),
+            "nope": SubmitResult(False, "failed", "rejected"),
+        }[dest_id]
+
+    rows: list[tuple[str, str]] = []
+    refreshed: list[bool] = []
+    monkeypatch.setattr(submit_mod, "submit_api", fake_submit_api)
+    monkeypatch.setattr(
+        submit_mod,
+        "update_db_destination",
+        lambda dest_id, *_args, **kwargs: rows.append((dest_id, kwargs.get("status", "success"))) or True,
+    )
+    monkeypatch.setattr(submit_mod, "_record_folder_hierarchy_rows", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(submit_mod, "refresh_pending_after_upload", lambda: refreshed.append(True))
+
+    results, any_success = submit_mod.submit_and_record(
+        [{"dests": ["ok", "dupe"], "priority": False}, {"dests": ["nope", "boom"], "priority": True}],
+        conf=SimpleNamespace(),
+        name="Show.Name.S01E01",
+        nzb_path=nzb_file,
+        submission_category="tv",
+        item_size=10,
+        key="Show.Name.S01E01",
+        itype="TV Episode",
+        item_path=tmp_path / "Show.Name.S01E01.mkv",
+        base_folder=None,
+        category="tv",
+        test_mode=False,
+        upload_result={},
+    )
+
+    assert any_success is True
+    assert [(dest, ok, status) for dest, ok, _reason, status in results] == [
+        ("ok", True, "success"),
+        ("dupe", False, "duplicate"),
+        ("nope", False, "failed"),
+        ("boom", False, "error"),
+    ]
+    assert sorted(submitted) == [
+        "boom:Priority Show.Name.S01E01",
+        "dupe:Show.Name.S01E01",
+        "nope:Priority Show.Name.S01E01",
+        "ok:Show.Name.S01E01",
+    ]
+    assert sorted(rows) == [("boom", "failed"), ("dupe", "success"), ("nope", "failed"), ("ok", "success")]
+    assert refreshed == [True]

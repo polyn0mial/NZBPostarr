@@ -79,7 +79,7 @@ def test_run_job_passes_queue_category_to_process_single(tmp_path, monkeypatch) 
     separately from `itype`.
     """
 
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     tv_dir = tmp_path / "tv"
     tv_dir.mkdir()
@@ -115,7 +115,7 @@ def test_run_job_passes_queue_category_to_process_single(tmp_path, monkeypatch) 
     assert captured["category"] == "tv"
 
 def test_process_single_uses_expected_submission_category(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     cases = [
         (
@@ -1215,7 +1215,7 @@ def test_snapshot_metadata_keeps_unknown_video_for_manual_review(monkeypatch, tm
 
 
 def test_guessit_episode_signal_reaches_snapshot_and_processing(monkeypatch, tmp_path) -> None:
-    from logic import processing
+    from tests.support import pipeline_facade as processing
     from logic.pending import tree as pending_tree
 
     episode = _touch(tmp_path / "Show.Name.S1.1.1080p.WEB-DL.mkv", b"x")
@@ -1938,7 +1938,7 @@ def test_scan_pending_all_ignored_extra_files_do_not_block_pack_completion(monke
     assert top_item["indexers"]["idx1"] is True
 
 def test_resolve_submission_category_cases(tmp_path) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     cases = [
         ("rejects-ambiguous-video-misc", "Untitled.Release.mkv", "misc", "Misc", None, "cannot be submitted as Misc"),
@@ -1994,7 +1994,7 @@ def test_resolve_submission_category_cases(tmp_path) -> None:
 
 
 def test_disc_selection_queues_the_whole_release_and_routes_by_underlying_type(monkeypatch, tmp_path) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     release = tmp_path / "Show.Name.S01.DVD"
     _touch(release / "VIDEO_TS" / "VIDEO_TS.IFO")
@@ -2016,7 +2016,7 @@ def test_disc_selection_queues_the_whole_release_and_routes_by_underlying_type(m
 
 def test_targeted_job_assembly_never_uses_live_anime_lookup(monkeypatch, tmp_path) -> None:
     from logic.classify import anime as anime_cache
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     movie = _touch(tmp_path / "Movie.Name.2024.1080p.BluRay.mkv", b"x")
 

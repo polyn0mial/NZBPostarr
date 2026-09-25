@@ -45,7 +45,7 @@ def test_upload_service_passes_target_paths_to_processing_run_job():
     with service._lock:
         service._jobs = {}
 
-    with patch("logic.services.processing.run_job", side_effect=fake_run_job):
+    with patch("logic.services.runner.run_job", side_effect=fake_run_job):
         with patch("logic.queueing.threading.Thread", ImmediateThread):
             with patch("logic.queueing.database.save_job_history"):
                 service.start_upload_job(
@@ -81,7 +81,7 @@ def test_run_job_marks_missing_tools_as_failed(monkeypatch) -> None:
     from types import SimpleNamespace
 
     from core.utils import set_thread_job
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     job = {"job_id": "job-tools", "status": "running", "progress": "Starting..."}
     conf = SimpleNamespace(rar_path="missing-rar", parpar_path="missing-parpar", nyuu_path="missing-nyuu")
@@ -96,7 +96,7 @@ def test_run_job_marks_missing_tools_as_failed(monkeypatch) -> None:
 def test_validation_stop_request_preserves_current_item_for_resume(tmp_path, monkeypatch) -> None:
     from core import registry
     from core.utils import reset_thread_job, set_thread_job
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     item_path = _touch(tmp_path / "Current.Movie.2026.mkv")
     checkpoints: list[dict[str, object]] = []
@@ -1371,7 +1371,7 @@ def test_api_start_upload_builds_processing_request(monkeypatch, tmp_path) -> No
         assert captured["kwargs"] == ({} if expected_source is None else {"source": expected_source}), case_name
 
 def test_run_job_uses_runtime_target_path_order(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
     from core.utils import set_thread_job
 
     cases = [
@@ -1433,7 +1433,7 @@ def test_run_job_uses_runtime_target_path_order(tmp_path, monkeypatch) -> None:
             assert job["target_paths"] == expected_remaining, case_name
 
 def test_run_job_targeted_validation_uses_prefetched_duplicate_state(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
     from core.utils import set_thread_job
 
     movies_dir = tmp_path / "movies"
@@ -1493,7 +1493,7 @@ def test_run_job_targeted_validation_uses_prefetched_duplicate_state(tmp_path, m
     ]
 
 def test_run_job_rejects_relative_target_paths(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     movies_dir = tmp_path / "movies"
     movies_dir.mkdir()
@@ -1513,7 +1513,7 @@ def test_run_job_rejects_relative_target_paths(tmp_path, monkeypatch) -> None:
 
 def test_run_job_fails_when_targeted_selection_resolves_to_zero_items(tmp_path, monkeypatch) -> None:
     import logic.classify.explicit as classify_explicit
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
     from core.utils import set_thread_job
 
     item = tmp_path / "Unknown.Release.mkv"
@@ -1552,7 +1552,7 @@ def test_run_job_fails_when_targeted_selection_resolves_to_zero_items(tmp_path, 
     assert job["items_processed"] == 0
 
 def test_process_single_reuses_validated_size_for_preparation(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     movie = tmp_path / "Movie.Name.2026.mkv"
     movie.write_bytes(b"x")
@@ -1582,7 +1582,7 @@ def test_process_single_reuses_validated_size_for_preparation(tmp_path, monkeypa
     assert captured["total_bytes"] == 987_654_321
 
 def test_process_single_uses_expected_mediainfo_sidecar(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     for case_name, prepare_mode in (
         ("canonical-sidecar", "canonical"),
@@ -1631,7 +1631,7 @@ def test_process_single_uses_expected_mediainfo_sidecar(tmp_path, monkeypatch) -
         assert seen["mediainfo"] == expected_path, case_name
 
 def test_process_single_directory_reuses_scanned_nfo_for_submission(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     movies_dir = tmp_path / "movies"
     movies_dir.mkdir()
@@ -1678,7 +1678,7 @@ def test_process_single_directory_reuses_scanned_nfo_for_submission(tmp_path, mo
 def test_process_single_posts_once_per_shared_server_and_submits_each_priority_group(tmp_path, monkeypatch) -> None:
     # processing-09 (DECISIONS: one post per shared server): priority and normal
     # indexers on the same server share one NNTP post; each group is submitted.
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     movies_dir = tmp_path / "movies"
     movies_dir.mkdir()
@@ -1734,7 +1734,7 @@ def test_process_single_posts_once_per_shared_server_and_submits_each_priority_g
     assert seen == [("idx_fail", "Priority Movie.Name.2026.1080p.mkv"), ("idx_ok", "Movie.Name.2026.1080p.mkv")]
 
 def test_run_job_validates_duplicates_per_item_without_batch_prefetch(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     movies_dir = tmp_path / "movies"
     movies_dir.mkdir()
@@ -1781,7 +1781,7 @@ def test_run_job_validates_duplicates_per_item_without_batch_prefetch(tmp_path, 
     assert all(isinstance(v, dict) and "geek" in v for v in prefetched_seen)
 
 def test_run_job_starts_upload_before_validating_entire_queue(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     first = tmp_path / "Movie.One.2026.1080p.mkv"
     second = tmp_path / "Movie.Two.2026.1080p.mkv"
@@ -1818,7 +1818,7 @@ def test_run_job_starts_upload_before_validating_entire_queue(tmp_path, monkeypa
     assert validation_saw_active_upload == [True]
 
 def test_validation_timeout_marks_item_failed_fast(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     item = tmp_path / "Slow.Movie.2026.1080p.mkv"
     item.write_bytes(b"x")
@@ -1986,7 +1986,7 @@ def test_check_success_duplicate_pattern_detected() -> None:
     assert is_dup is True
 
 def test_preview_processing_items_reports_ready_and_duplicate_destinations(tmp_path, monkeypatch) -> None:
-    from logic import processing
+    from tests.support import pipeline_facade as processing
     from logic import services
 
     first = tmp_path / "Already.Uploaded.2025.mkv"

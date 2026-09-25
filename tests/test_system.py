@@ -265,7 +265,7 @@ def test_console_buffer_operations() -> None:
 def test_oversized_folder_still_processes_inner_files(tmp_path, monkeypatch):
     from unittest.mock import patch
 
-    from logic import processing
+    from tests.support import pipeline_facade as processing
     from logic.pending.roots import PendingScanItem
 
     monkeypatch.setenv("NZBPOSTARR_VALIDATE_ISOLATE", "0")
@@ -335,7 +335,7 @@ def test_oversized_folder_still_processes_inner_files(tmp_path, monkeypatch):
 def test_check_tools_honors_configured_commands(tmp_path) -> None:
     from types import SimpleNamespace
 
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     rar = tmp_path / "rar.exe"
     parpar = tmp_path / "parpar.exe"
@@ -370,7 +370,7 @@ def test_run_command_handles_carriage_return_progress() -> None:
     assert parsed == ["10%", "20%", "Done"]
 
 def test_runtime_checkpoint_keeps_uploading_item_when_prefetch_finishes(tmp_path) -> None:
-    from logic import processing
+    from tests.support import pipeline_facade as processing
 
     uploading_path = tmp_path / "Uploading.Movie.mkv"
     prefetched_path = tmp_path / "Prefetched.Movie.mkv"
@@ -388,7 +388,7 @@ def test_runtime_checkpoint_keeps_uploading_item_when_prefetch_finishes(tmp_path
     assert persisted == [True]
 
 def test_generate_mediainfo_uses_one_cli_pass(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     source = tmp_path / "Movie.Name.2026.mkv"
     source.write_bytes(b"video")
@@ -410,7 +410,7 @@ def test_generate_mediainfo_uses_one_cli_pass(tmp_path, monkeypatch) -> None:
     assert calls == [["mediainfo", "--Full", str(source)]]
 
 def test_generate_mediainfo_reuses_current_sidecar(tmp_path, monkeypatch) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     source = tmp_path / "Movie.Name.2026.mkv"
     source.write_bytes(b"video")
@@ -510,7 +510,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
     assert "disabled" in str(exc_info.value.detail).lower()
 
 def test_scan_item_support_assets_prefers_largest_video_and_primary_nfo(tmp_path) -> None:
-    import logic.processing as processing
+    from tests.support import pipeline_facade as processing
 
     release_dir = tmp_path / "Release.Dir"
     large_video = _touch(release_dir / "CD1" / "movie.part01.mkv", b"b" * 25)
@@ -1068,7 +1068,7 @@ def test_check_success_word_boundary() -> None:
         assert ok is expected_ok, case_name
 
 def test_should_skip_completed_item_respects_force(monkeypatch) -> None:
-    from logic.processing import _should_skip_completed_item
+    from logic.pipeline.validate import _should_skip_completed_item
 
     monkeypatch.setattr(
         "core.registry.resolve_indexer_enabled",
@@ -1086,7 +1086,7 @@ def test_should_skip_completed_item_respects_force(monkeypatch) -> None:
         assert _should_skip_completed_item(indexers, None, dest_status, force=force, name="test") is expected, case_name
 
 def test_plan_upload_runs_respects_force() -> None:
-    from logic.processing import _plan_upload_runs
+    from logic.pipeline.posting import _plan_upload_runs
 
     upload_sets = [{"id": "omg", "dests": ["omg"], "backbone": "NetNews", "priority": False}]
     indexer_map = {"omg": _make_force_test_indexer_map("omg")}

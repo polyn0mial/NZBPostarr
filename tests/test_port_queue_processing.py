@@ -10,8 +10,8 @@ from tests.support import *
 from logic.pending import completion as pending_completion
 from logic.pending import rules as pending_rules
 from logic.pending import tree as pending_tree
-from logic import processing
-from logic.processing_g2 import _iter_work_items
+from tests.support import pipeline_facade as processing
+from logic.pipeline.plan import _iter_work_items
 from logic.queueing_base import ProcessingJobRequest
 
 
@@ -149,11 +149,11 @@ def test_shared_server_posts_once_with_submission_groups() -> None:
 
 def test_consecutive_failures_warn_and_reset(monkeypatch) -> None:
     # processing-11: warn from the fifth failure in a row, reset on success; the job continues.
-    from logic import processing_g2
+    from logic.pipeline import runner
 
     warnings: list[str] = []
-    monkeypatch.setattr(processing_g2, "log_info", lambda msg, level="INFO": warnings.append(f"{level}:{msg}"))
-    state = processing_g2._JobRunState(total=10, effective_limit=None, test_mode=True)
+    monkeypatch.setattr(runner, "log_info", lambda msg, level="INFO": warnings.append(f"{level}:{msg}"))
+    state = runner._JobRunState(total=10, effective_limit=None, test_mode=True)
 
     for _ in range(4):
         state.note_failure()

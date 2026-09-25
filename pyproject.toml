@@ -10,7 +10,8 @@ files = [
   "logic/process_reaper.py",
   "logic/process_stats.py",
   "logic/queue_metrics.py",
-  "logic/uploaders.py",
+  "logic/pipeline/posting.py",
+  "logic/pipeline/submit.py",
   "logic/usenet_stream.py",
   ".github/release.py",
 ]

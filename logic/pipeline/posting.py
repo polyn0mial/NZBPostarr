@@ -1,25 +1,23 @@
-"""
-📦 NZBPostarr - Uploaders Module
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NNTP (Nyuu) and Indexer API submission logic.
-Now uses the dynamic indexer plugin system.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+"""Posting: nyuu upload plans, commands and progress, upload sets per server, and the single-item upload flow."""
 
+from __future__ import annotations
+
+import copy
 import math
 import random
 import re
 import time
-import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 from typing import Any, Callable, Dict, Iterable, Optional, Sequence
 
 import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 
 from core.config import Config, NNTPServer, get_config
-from core.registry import get_indexer, submit_to_indexer
+from core.database import record_nntp_success
+from core.registry import get_indexer
 from core.utils import (
     extract_percentage,
     extract_speed,
@@ -28,17 +26,11 @@ from core.utils import (
     is_priority_key,
     log_info,
     run_command,
+    set_thread_job,
     update_job_progress,
 )
-
-
-@dataclass(frozen=True, slots=True)
-class SubmitResult:
-    """Canonical outcome returned by every indexer submission path."""
-
-    success: bool
-    status: str
-    reason: str
+from logic.pipeline.record import _record_folder_hierarchy_rows
+from logic.pipeline.submit import submit_and_record
 
 
 @dataclass(frozen=True, slots=True)
@@ -463,107 +455,286 @@ def upload_item(
         return None
 
 
-# Error statuses that should NOT be retried (permanent failures)
-_PERMANENT_FAILURE_STATUSES = frozenset({"duplicate", "misconfigured"})
+def _select_upload_server(upload_backbone: str, servers: list[Any], selected_backbones: list[str]) -> Any:
+    """Choose a server deterministically for a pending upload set."""
+    matching = [
+        server for server in servers if any(upload_backbone.lower() == backbone.lower() for backbone in server.backbone)
+    ]
+    if matching:
+        return matching[0]
+
+    unused = [
+        server for server in servers if not any(backbone.lower() in selected_backbones for backbone in server.backbone)
+    ]
+    if unused:
+        return unused[0]
+
+    return sorted(servers, key=lambda server: server.name.lower())[0]
 
 
-def submit_api(
-    name: str,
-    dest: str,
-    config: Config,
-    nzb_path: Optional[Path] = None,
-    cat: str = "tv",
-    nfo_path: Optional[Path] = None,
-    mediainfo_path: Optional[Path] = None,
-) -> SubmitResult:
-    """Submit NZB to indexer API via dynamic plugin system.
+def _build_upload_sets(indexers: list[Any], conf: Any) -> list[dict[str, Any]]:
+    """Construct logical upload sets for the selected indexers."""
+    from core.registry import resolve_indexer_priority
 
-    Retries transient failures (network errors, 5xx, timeouts) up to
-    ``upload_max_retries`` times with exponential backoff.  Permanent
-    failures (invalid API key, banned) are returned immediately.
+    upload_sets: list[dict[str, Any]] = []
+    for indexer in indexers:
+        upload_sets.append(
+            {
+                "id": indexer.id,
+                "dests": [indexer.id],
+                "backbone": "NetNews",
+                "priority": resolve_indexer_priority(indexer, conf),
+            }
+        )
+    return upload_sets
+
+
+def _split_parallel_server_connections(raw_sets: list[tuple[dict[str, Any], Any]]) -> list[tuple[dict[str, Any], Any]]:
+    """Split server connection budgets when multiple uploads share the same server."""
+    server_counts: dict[str, int] = {}
+    for _, server in raw_sets:
+        server_counts[server.name] = server_counts.get(server.name, 0) + 1
+
+    planned_sets: list[tuple[dict[str, Any], Any]] = []
+    for upload_set, server in raw_sets:
+        if server_counts.get(server.name, 0) > 1:
+            split_server = server.model_copy() if hasattr(server, "model_copy") else copy.copy(server)
+            split_server.max_connections = max(5, int(server.max_connections / server_counts[server.name]))
+            planned_sets.append((upload_set, split_server))
+        else:
+            planned_sets.append((upload_set, server))
+    return planned_sets
+
+
+def _upload_target_display(upload_set: dict[str, Any]) -> str:
+    """Return the formatted display label for an upload set."""
+    from core.registry import get_indexer
+
+    ids_part = upload_set["id"].split(" (")[0]
+    resolved: list[str] = []
+    for indexer_id in ids_part.split("/"):
+        clean_id = indexer_id.strip()
+        indexer = get_indexer(clean_id)
+        if indexer and indexer.color:
+            resolved.append(f"<fg {indexer.color}>{clean_id}</fg>")
+        else:
+            resolved.append(clean_id)
+    return "/".join(resolved) + (" (P)" if upload_set.get("priority") else " (NP)")
+
+
+@dataclass(frozen=True)
+class _SingleUploadContext:
+    conf: Any
+    name: str
+    path: Path
+    category: str
+    itype: str
+    base_folder: Optional[Path]
+    test_mode: bool
+    item_size: int
+    job: Optional[dict[str, Any]]
+    submission_category: str
+    nfo_path: Optional[Path]
+    mediainfo_path: Optional[Path]
+    key: str
+
+
+@dataclass
+class _SingleUploadState:
+    lock: Lock = field(default_factory=Lock)
+    any_success: bool = False
+    errors: list[str] = field(default_factory=list)
+
+
+def _plan_upload_runs(
+    upload_sets: list[dict[str, Any]],
+    *,
+    all_servers: list[Any],
+    dest_status: Dict[str, Optional[str]],
+    indexer_map: Dict[str, Any],
+    force: bool,
+    is_new: bool,
+    global_backfill: bool,
+) -> list[tuple[dict[str, Any], Any]]:
+    """Map logical upload sets to concrete server executions.
+
+    Same-server destinations are merged into ONE physical upload regardless of
+    priority, so an item is posted to Usenet once per server. The priority
+    split is kept only as ``submission_groups``, so each indexer group still
+    gets its own API submission (and its own "Priority " name prefix) without
+    a second NNTP post. A set that includes priority destinations keeps the
+    " (P)" suffix in its id so the uploader still labels the post as priority.
     """
-    nzb = nzb_path or config.get_nzb_path(name)
-    if not nzb.exists():
-        reason = f"NZB not found at {nzb}"
-        logger.error(f"Submission failed: {reason}")
-        return SubmitResult(False, "error", reason)
+    server_to_group: dict[str, dict[str, Any]] = {}
+    selected_backbones: list[str] = []
 
-    # Guard against empty/truncated NZB files (e.g. Nyuu partial failure)
-    nzb_size = nzb.stat().st_size
-    if nzb_size == 0:
-        reason = f"NZB is 0 bytes (empty file) at {nzb}"
-        logger.error(f"Submission blocked: {reason}")
-        return SubmitResult(False, "error", reason)
-    if nzb_size < 100:
-        reason = f"NZB is suspiciously small ({nzb_size} bytes) at {nzb}"
-        logger.error(f"Submission blocked: {reason}")
-        return SubmitResult(False, "error", reason)
+    for upload_set in upload_sets:
+        needed_dests: list[str] = []
+        is_priority = upload_set["priority"]
 
-    # Get the indexer definition
-    indexer = get_indexer(dest)
-    if not indexer:
-        reason = f"Unknown indexer identifier: {dest}"
-        logger.error(reason)
-        return SubmitResult(False, "error", reason)
-
-    try:
-        job = get_thread_job()
-        if config.test_run or (job and job.get("test_mode")):
-            log_info(f"[TEST MODE] Skipping indexer submission to {indexer.log_name}")
-            return SubmitResult(True, "success", "Test mode: indexer submission skipped")
-
-        # Clean "Priority " from release name for submission
-        clean_name = name.replace("Priority ", "")
-
-        # Sanitize release name
-        rls_name = re.sub(r"\.(nzb|mkv|mp4|avi|ts|m4v|wmv)$", "", clean_name, flags=re.I)
-        # Transliterate accents ("Pokémon" -> "Pokemon") instead of turning them into dots.
-        rls_name = unicodedata.normalize("NFKD", rls_name).encode("ascii", "ignore").decode("ascii")
-        rls_name = rls_name.replace(" & ", ".and.").replace("&", ".and.")
-        rls_name = rls_name.replace("'", "")
-        rls_name = re.sub(r"[^a-zA-Z0-9.\-_]", ".", rls_name)
-        rls_name = re.sub(r"\.{2,}", ".", rls_name).strip(".")
-
-        max_retries = getattr(config, "upload_max_retries", 3)
-        retry_delay = getattr(config, "upload_retry_delay_seconds", 5)
-        last_reason = ""
-
-        for attempt in range(1, max_retries + 1):
-            if attempt > 1:
-                # Check if job was stopped between retries
-                if job and job.get("stop_requested"):
-                    return SubmitResult(False, "error", last_reason or "Job stopped during retry")
-                wait = retry_delay * attempt  # linear backoff: 10s, 15s, 20s, ...
-                logger.info(f"{indexer.log_name} Retry {attempt}/{max_retries} in {wait}s...")
-                time.sleep(wait)
-
-            success, status, reason = submit_to_indexer(
-                indexer=indexer,
-                rls_name=rls_name,
-                nzb_path=nzb,
-                config=config,
-                cat=cat,
-                nfo_path=nfo_path,
-                mediainfo_path=mediainfo_path,
-            )
-            last_reason = reason
-
-            if success:
-                return SubmitResult(True, "success", reason)
-
-            # Permanent failure - no point retrying
-            if status in _PERMANENT_FAILURE_STATUSES:
-                logger.warning(f"{indexer.log_name} Permanent failure ({status}): {reason}")
-                return SubmitResult(False, status, reason)
-
-            # Retryable failure - try again unless this was the last attempt
-            if attempt < max_retries:
-                logger.warning(f"{indexer.log_name} Attempt {attempt}/{max_retries} failed ({status}): {reason}")
+        for dest_id in upload_set["dests"]:
+            is_done = dest_status.get(dest_id) is not None
+            if not force and is_done:
+                logger.debug("[PLAN] dest=%s skipped (already done, force=False)", dest_id)
+                continue
+            indexer = indexer_map.get(dest_id)
+            can_backfill = indexer.backfill if indexer else False
+            if force or is_new or (global_backfill and can_backfill):
+                needed_dests.append(dest_id)
+                logger.debug(
+                    "[PLAN] dest=%s ADDED (force=%r  is_new=%r  backfill=%r)",
+                    dest_id,
+                    force,
+                    is_new,
+                    can_backfill,
+                )
             else:
-                logger.error(f"{indexer.log_name} All {max_retries} attempts failed: {reason}")
+                logger.debug(
+                    "[PLAN] dest=%s skipped (force=%r  is_new=%r  backfill=%r/%r)",
+                    dest_id,
+                    force,
+                    is_new,
+                    global_backfill,
+                    can_backfill,
+                )
 
-        return SubmitResult(False, "error", last_reason)
-    except Exception as e:
-        reason = str(e)
-        logger.error(f"{indexer.log_name} Submission Error: {reason}")
-        return SubmitResult(False, "error", reason)
+        if not needed_dests:
+            continue
+
+        server = _select_upload_server(upload_set["backbone"], all_servers, selected_backbones)
+        selected_backbones.extend(backbone.lower() for backbone in server.backbone)
+
+        bucket = server_to_group.setdefault(
+            server.name,
+            {"server": server, "priority_dests": [], "priority_ids": [], "normal_dests": [], "normal_ids": []},
+        )
+        if is_priority:
+            bucket["priority_dests"].extend(needed_dests)
+            bucket["priority_ids"].append(upload_set["id"])
+        else:
+            bucket["normal_dests"].extend(needed_dests)
+            bucket["normal_ids"].append(upload_set["id"])
+
+    raw_sets: list[tuple[dict[str, Any], Any]] = []
+    for bucket in server_to_group.values():
+        server = bucket["server"]
+        submission_groups: list[dict[str, Any]] = []
+        all_ids: list[str] = []
+        all_dests: list[str] = []
+
+        if bucket["priority_dests"]:
+            submission_groups.append({"dests": list(dict.fromkeys(bucket["priority_dests"])), "priority": True})
+            all_ids.extend(bucket["priority_ids"])
+            all_dests.extend(bucket["priority_dests"])
+        if bucket["normal_dests"]:
+            submission_groups.append({"dests": list(dict.fromkeys(bucket["normal_dests"])), "priority": False})
+            all_ids.extend(bucket["normal_ids"])
+            all_dests.extend(bucket["normal_dests"])
+
+        has_priority = bool(bucket["priority_dests"])
+        raw_sets.append(
+            (
+                {
+                    "id": "/".join(dict.fromkeys(all_ids)) + (" (P)" if has_priority else ""),
+                    "dests": list(dict.fromkeys(all_dests)),
+                    "backbone": server.backbone[0] if server.backbone else "Unknown",
+                    "priority": has_priority,
+                    "submission_groups": submission_groups,
+                },
+                server,
+            )
+        )
+
+    raw_sets.sort(key=lambda value: value[0].get("priority", False), reverse=True)
+    return raw_sets
+
+
+def _run_single_upload_flow(
+    upload_set: dict[str, Any],
+    upload_server: Any,
+    *,
+    context: _SingleUploadContext,
+    state: _SingleUploadState,
+) -> bool:
+    """Run and isolate one posting/indexer destination flow."""
+    if context.job:
+        set_thread_job(context.job)
+
+    # A single upload_set may cover several indexer priority groups that share
+    # this server (see _plan_upload_runs). Only ONE physical NNTP upload happens
+    # below; submission_groups gives each priority group its own API submission
+    # (and its own "Priority " name prefix) against that same posted NZB.
+    submission_groups = upload_set.get("submission_groups") or [
+        {"dests": upload_set["dests"], "priority": upload_set.get("priority", False)}
+    ]
+    for group in submission_groups:
+        group_display = _upload_target_display({"id": "/".join(group["dests"]), "priority": group["priority"]})
+        log_info(
+            f"--- [UPLOAD] Targeting: {group_display} "
+            f"({upload_server.name} @ {upload_server.max_connections} conn) ---"
+        )
+
+    set_id_safe = upload_set["id"].replace("/", "_").replace(" ", "_")
+    unique_nzb = context.conf.get_nzb_path(
+        f"{context.name}.{set_id_safe}.{upload_server.name}"
+    )
+    try:
+        prepared_dir = (
+            Path(str(context.job.get("_current_prepare_tmp")))
+            if context.job and context.job.get("_current_prepare_tmp")
+            else None
+        )
+        upload_result = upload_item(
+            context.name,
+            upload_server,
+            nzb_path=unique_nzb,
+            progress_key=upload_set["id"],
+            prepared_dir=prepared_dir,
+        )
+        if not upload_result:
+            return False
+
+        if not context.test_mode and context.item_size > 0:
+            record_nntp_success(context.key, context.item_size, context.itype)
+            _record_folder_hierarchy_rows(
+                context.path,
+                base_folder=context.base_folder,
+                category=context.category,
+            )
+
+        _api_results, run_success = submit_and_record(
+            submission_groups,
+            conf=context.conf,
+            name=context.name,
+            nzb_path=unique_nzb,
+            submission_category=context.submission_category,
+            item_size=context.item_size,
+            key=context.key,
+            itype=context.itype,
+            item_path=context.path,
+            base_folder=context.base_folder,
+            category=context.category,
+            test_mode=context.test_mode,
+            upload_result=upload_result,
+            nfo_path=context.nfo_path,
+            mediainfo_path=context.mediainfo_path,
+        )
+
+        with state.lock:
+            state.any_success = run_success or state.any_success
+            if context.job:
+                context.job["total_bytes"] = context.job.get("total_bytes", 0) + context.item_size
+        return run_success
+    except Exception as exc:
+        logger.exception(
+            f"Upload target '{upload_set['id']}' failed for {context.name}: {exc}"
+        )
+        with state.lock:
+            state.errors.append(f"{upload_set['id']}: {exc}")
+        return False
+    finally:
+        if unique_nzb.exists():
+            try:
+                unique_nzb.unlink()
+            except OSError:
+                pass

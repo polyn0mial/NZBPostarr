@@ -171,7 +171,7 @@ def test_untrusted_nzb_xml_rejects_entity_expansion(tmp_path) -> None:
         usenet_stream._read_nzb_xml_root(source)
 
 def test_parse_nyuu_article_bytes_decimal_units():
-    from logic.uploaders import _parse_nyuu_article_bytes
+    from logic.pipeline.posting import _parse_nyuu_article_bytes
 
     # Nyuu config commonly uses "1M" style values; we parse in decimal.
     assert _parse_nyuu_article_bytes("1M") == 1_000_000

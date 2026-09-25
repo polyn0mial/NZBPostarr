@@ -127,7 +127,79 @@ from logic.services import ConsoleBuffer, console
 
 from logic.stats_engine import format_seconds, parse_speed_to_bps
 
-from logic.uploaders import SubmitResult
+from logic.pipeline import (
+    checkpoints as pipeline_checkpoints,
+    pack_filter as pipeline_pack_filter,
+    plan as pipeline_plan,
+    posting as pipeline_posting,
+    prepare as pipeline_prepare,
+    record as pipeline_record,
+    runner as pipeline_runner,
+    submission_category as pipeline_submission_category,
+    submit as pipeline_submit,
+    validate as pipeline_validate,
+)
+from logic.pipeline.submit import SubmitResult
+
+_PIPELINE_MODULES = (
+    pipeline_runner,
+    pipeline_plan,
+    pipeline_validate,
+    pipeline_prepare,
+    pipeline_posting,
+    pipeline_submit,
+    pipeline_record,
+    pipeline_checkpoints,
+    pipeline_pack_filter,
+    pipeline_submission_category,
+)
+
+
+class _PipelineFacade:
+    """Test stand-in for the removed logic.processing facade over logic/pipeline/*.
+
+    Reading a name returns it from the pipeline module that defines it (else the first module
+    that imports it). Setting a name - monkeypatch.setattr(pipeline_facade, "get_config", fake) -
+    rebinds it in EVERY pipeline module that holds it, so the patch reaches every caller.
+    A name no pipeline module holds raises AttributeError (the sentinel: a patch that would
+    silently miss fails loudly). monkeypatch's undo hands back the value it read first; that
+    restores each module's own original binding.
+    """
+
+    def __init__(self) -> None:
+        object.__setattr__(self, "_saved", {})
+
+    def _holders(self, name: str) -> list:
+        return [module for module in _PIPELINE_MODULES if name in vars(module)]
+
+    def __getattr__(self, name: str):
+        holders = self._holders(name)
+        if not holders:
+            raise AttributeError(f"no logic.pipeline module holds {name!r}")
+        for module in holders:
+            value = vars(module)[name]
+            if getattr(value, "__module__", None) == module.__name__:
+                return value
+        return vars(holders[0])[name]
+
+    def __setattr__(self, name: str, value) -> None:
+        holders = self._holders(name)
+        if not holders:
+            raise AttributeError(f"no logic.pipeline module holds {name!r}")
+        saved = self._saved
+        if name not in saved:
+            saved[name] = (self.__getattr__(name), {module: vars(module)[name] for module in holders})
+        canonical, originals = saved[name]
+        if value is canonical:
+            for module, original in originals.items():
+                setattr(module, name, original)
+            del saved[name]
+            return
+        for module in holders:
+            setattr(module, name, value)
+
+
+pipeline_facade = _PipelineFacade()
 
 from tests.webui._source import _queue_source
 
