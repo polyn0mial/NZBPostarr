@@ -105,7 +105,7 @@ class _QueueServiceMixinPart2:
         clear_active_fields: bool,
         remove_from_active: bool,
     ) -> None:
-        from logic.stats_engine import format_seconds
+        from logic.stats.collector import format_seconds
 
         job_id = str(job.get("job_id", ""))
         duration_str = format_seconds(duration_sec)

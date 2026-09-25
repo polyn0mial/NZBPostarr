@@ -1,0 +1,133 @@
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="nntp" v-show="sectionVisible('nntp')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('nntp')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.nntp ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="server" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Usenet Servers</h2>
+        </div>
+        <!-- Subtle Add Server Button -->
+        <button v-if="expandedSections.nntp" @click.stop="addServer" class="px-2 py-1 hover:bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent rounded font-medium transition-colors flex items-center border border-notion-border text-[11px] gap-1.5">
+            <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
+            Add Server
+        </button>
+    </div>
+    <div :class="sectionContentClass('nntp')">
+        <div class="p-4 overflow-x-hidden">
+            <table class="w-full text-left border-collapse table-fixed">
+                <thead>
+                    <tr class="uppercase tracking-wider text-notion-text-tertiary border-b border-notion-border text-[10px]">
+                        <th class="py-2 px-2 font-semibold text-center w-8.75">Use</th>
+                        <th class="py-2 px-2 font-semibold w-[15%]">Label</th>
+                        <th class="py-2 px-2 font-semibold w-[22%]">Host</th>
+                        <th class="py-2 px-2 font-semibold w-13.75 text-center">Port</th>
+                        <th class="py-2 px-2 font-semibold w-8.75 text-center">SSL</th>
+                        <th class="py-2 px-2 font-semibold w-13.75 text-center">Conns</th>
+                        <th class="py-2 px-2 font-semibold w-[18%]">User</th>
+                        <th class="py-2 px-2 font-semibold w-15">Pass</th>
+                        <th class="py-2 px-2 font-semibold w-8.75 text-right pr-4"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-notion-divider">
+                    <tr v-for="(server, index) in servers" :key="index" class="hover:bg-notion-bg-hover/30 transition-colors group">
+                        <td class="py-2 px-1 text-center">
+                            <div class="flex items-center justify-center">
+                                <input type="checkbox" v-model="server.enabled" class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg cursor-pointer" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-1">
+                            <input type="text" v-model="server.name" class="w-full bg-transparent border-0 text-notion-text-primary focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input type="text" v-model="server.host" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <input type="number" v-model.number="server.port" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <div class="flex items-center justify-center">
+                                <input type="checkbox" v-model="server.ssl" class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg cursor-pointer" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <input type="number" v-model.number="server.max_connections" class="w-full bg-transparent border-0 text-notion-text-secondary font-mono text-center focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input type="text" v-model="server.user" class="w-full bg-transparent border-0 text-notion-text-secondary focus:outline-none focus:bg-notion-bg-elevated rounded transition-colors text-[11px] px-1" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <div class="relative group/pass">
+                                <span class="block text-notion-text-tertiary text-[11px] px-1 tracking-[0.2em] group-focus-within/pass:invisible pointer-events-none select-none">•••••</span>
+                                <input type="password" v-model="server.password" autocomplete="off" class="absolute inset-0 w-full bg-transparent border-0 text-notion-text-secondary opacity-0 focus:opacity-100 focus:bg-notion-bg-elevated rounded transition-all text-[11px] px-1 cursor-text" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-1 text-right pr-4">
+                            <button @click="removeServer(index)" class="p-1 text-notion-text-tertiary hover:text-red-400 hover:bg-notion-bg-active rounded transition-all opacity-0 group-hover:opacity-100">
+                                <lucide-icon name="trash-2" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                        </td>
+                    </tr>
+                </tbody>
+                <tfoot class="bg-notion-bg/30">
+                    <tr class="border-t border-notion-divider">
+                        <td class="py-2 px-1 text-center">
+                            <span class="text-[9px] font-semibold uppercase tracking-wider text-notion-accent">Add</span>
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="text"
+                                v-model="newServer.name"
+                                placeholder="Name (e.g. Eweka)"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="text"
+                                v-model="newServer.host"
+                                placeholder="Server Address"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono text-[11px]" />
+                        </td>
+                        <td class="py-2 px-0 text-center">
+                            <input
+                                type="number"
+                                v-model.number="newServer.port"
+                                placeholder="port"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-0 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-center font-mono text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1 text-center">
+                            <div class="flex items-center justify-center">
+                                <input type="checkbox" v-model="newServer.ssl" class="size-3.5 rounded border-notion-border text-notion-accent focus:ring-0 bg-notion-bg cursor-pointer" />
+                            </div>
+                        </td>
+                        <td class="py-2 px-0 text-center">
+                            <input
+                                type="number"
+                                v-model.number="newServer.max_connections"
+                                placeholder="cons"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-0 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-center font-mono text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="text"
+                                v-model="newServer.user"
+                                placeholder="Username"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1">
+                            <input
+                                type="password"
+                                v-model="newServer.password"
+                                placeholder="Password"
+                                autocomplete="new-password"
+                                class="w-full bg-notion-bg-elevated border border-notion-border rounded px-1 py-1 text-notion-text-secondary placeholder:text-notion-text-placeholder focus:outline-none focus:ring-1 focus:ring-notion-accent text-[11px]" />
+                        </td>
+                        <td class="py-2 px-1 text-right pr-4">
+                            <button @click="addServer" class="w-6.5 h-6.5 inline-flex items-center justify-center shrink-0 bg-notion-bg-hover text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-bg-active rounded transition-colors" title="Add server">
+                                <lucide-icon name="plus" icon-class="size-3.5"></lucide-icon>
+                            </button>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>

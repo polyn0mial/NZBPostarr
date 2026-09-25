@@ -1,0 +1,61 @@
+<!-- Raw YAML Modal -->
+<modal
+    :open="showYamlModal"
+    title="Raw YAML Configuration"
+    :subtitle="rawConfigPath"
+    subtitle-class="font-mono"
+    icon="file-code"
+    max-width="max-w-3xl"
+    panel-class="bg-notion-bg-secondary max-h-[90vh]"
+    @close="closeYamlModal()">
+    <template #header-actions>
+        <div v-if="rawYamlDirty" class="flex items-center gap-1.5 text-amber-500">
+            <div class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></div>
+            <span class="text-[10px] font-medium">Unsaved changes</span>
+        </div>
+        <div v-else class="flex items-center gap-1.5 text-notion-text-tertiary">
+            <div class="w-1.5 h-1.5 rounded-full bg-notion-success animate-pulse"></div>
+            <span class="text-[10px] italic">Live Syncing</span>
+        </div>
+    </template>
+
+    <!-- Editor -->
+    <div class="flex-1 overflow-hidden p-4 min-h-0">
+        <div class="relative h-full min-h-100 rounded border overflow-hidden" :class="rawYamlDirty ? 'border-amber-500/40' : 'border-notion-border'">
+            <!-- Per-line diff highlight layer: transparent text, amber bg on changed lines, scrolls in sync with textarea -->
+            <div ref="yamlHighlight" aria-hidden="true" class="absolute inset-0 p-4 font-mono text-xs leading-[1.45rem] overflow-hidden pointer-events-none select-none bg-notion-bg text-transparent" style="white-space: pre; word-break: normal; overflow-wrap: normal; tab-size: 2">
+                <div v-for="(line, idx) in rawYamlLines" :key="idx" :class="yamlDiffLines[idx] ? 'bg-amber-500/20' : ''" style="min-height: 1.45rem; line-height: 1.45rem">{{ line || '\u200b' }}</div>
+            </div>
+            <!-- Editable textarea - bg transparent so highlights show through -->
+            <textarea
+                v-model="rawYaml"
+                ref="yamlEditor"
+                wrap="off"
+                @focus="isEditingRawYaml = true"
+                @blur="isEditingRawYaml = false"
+                @scroll="syncYamlScroll"
+                class="absolute inset-0 w-full h-full bg-transparent font-mono text-xs p-4 text-notion-text-primary focus:outline-none resize-none caret-amber-500"
+                style="line-height: 1.45rem; tab-size: 2; white-space: pre"
+                spellcheck="false"></textarea>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-6 py-4 border-t border-notion-border flex items-center justify-between gap-4 bg-notion-bg/30 shrink-0">
+        <button v-if="rawYamlDirty" @click="resetYaml()" class="text-xs text-notion-text-tertiary hover:text-notion-error transition-colors flex items-center gap-1.5">
+            <lucide-icon name="rotate-ccw" icon-class="size-3.5"></lucide-icon>
+            Discard changes
+        </button>
+        <span v-else class="text-[10px] text-notion-text-tertiary">Edit the YAML above to make changes</span>
+        <div class="flex items-center gap-3 ml-auto">
+            <button @click="closeYamlModal()" class="px-4 h-9 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Close</button>
+            <button
+                @click="saveRawSettings()"
+                :disabled="!rawYamlDirty"
+                :class="['px-6 h-9 rounded-md text-xs font-bold transition-all flex items-center gap-2', rawYamlDirty ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-notion-bg-hover text-notion-text-tertiary cursor-not-allowed opacity-50']">
+                <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
+                Save Config
+            </button>
+        </div>
+    </div>
+</modal>

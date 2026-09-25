@@ -93,7 +93,8 @@ from core.indexers.models import AuthConfig, IndexerDefinition
 from core.indexers.models import resolve_indexer_api_key, resolve_indexer_username
 from core.indexers.http_submit import submit_to_indexer
 
-from logic import updater
+from logic.system import backup as system_backup
+from logic.system import lifecycle, updater
 from logic import autoupload as autoupload
 from logic.pending import children as pending_children
 from logic.pending import completion as pending_completion
@@ -124,7 +125,7 @@ from cli.commands import upload as cli_upload
 
 from logic.services import ConsoleBuffer, console
 
-from logic.stats_engine import format_seconds, parse_speed_to_bps
+from logic.stats.collector import format_seconds, parse_speed_to_bps
 
 from core.indexers.models import SubmitResult
 

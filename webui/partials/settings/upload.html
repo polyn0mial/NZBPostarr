@@ -1,0 +1,62 @@
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="upload" v-show="sectionVisible('upload')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('upload')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections.upload ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="upload" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Upload Settings</h2>
+        </div>
+    </div>
+    <div :class="sectionContentClass('upload')">
+        <div class="p-4">
+            <div class="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-4">
+                <!-- Poster Name -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('poster username uploader name')" data-search="poster username uploader name">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Poster Name</label>
+                    <input type="text" v-model="settings.upload.poster_name" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="Name" />
+                </div>
+                <!-- Poster Email -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('poster email')" data-search="poster email">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Poster Email</label>
+                    <input type="text" v-model="settings.upload.poster_email" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="email@example.com" />
+                </div>
+                <!-- RAR Size -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('rar size split volume bits')" data-search="rar size split volume bits">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">RAR Size (e.g., 100m)</label>
+                    <input type="text" v-model="settings.upload.rar_size" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="100m" />
+                </div>
+                <!-- Article Size -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('article size chunk segment')" data-search="article size chunk segment">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Article Size (e.g., 1M)</label>
+                    <input type="text" v-model="settings.upload.article_size" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="1M" />
+                </div>
+                <!-- Max Retries -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('max retries upload failure attempts')" data-search="max retries upload failure attempts">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Max Retries</label>
+                    <input type="number" v-model.number="settings.upload.upload_max_retries" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="3" />
+                </div>
+                <!-- Retry Delay -->
+                <div class="setting-item flex flex-col gap-1.5" v-show="matchesSearch('retry delay wait time seconds')" data-search="retry delay wait time seconds">
+                    <label class="text-notion-text-tertiary uppercase font-bold text-[10px] px-0.5">Retry Delay (s)</label>
+                    <input type="number" v-model.number="settings.upload.upload_retry_delay_seconds" class="w-full bg-notion-bg text-notion-text-primary text-xs px-2 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" placeholder="5" />
+                </div>
+                <!-- Include Readme -->
+                <div
+                    class="setting-item flex items-center justify-between p-1 -mx-1 hover:bg-notion-bg-hover/10 transition-colors rounded-md col-span-1 xs:col-span-2 md:col-span-3"
+                    v-show="matchesSearch('include readme branding file info')"
+                    title="Include the branded readme.txt file from indexers/readme/ in all future uploads"
+                    data-search="include readme branding file info">
+                    <div class="flex items-center gap-3">
+                        <lucide-icon name="file-text" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                        <span class="text-notion-text-secondary text-[13px]">Include Readme</span>
+                        <button @click.stop="openReadmeModal()" title="Edit readme.txt" class="p-0.5 rounded text-notion-text-tertiary hover:text-notion-accent hover:bg-notion-bg-hover transition-colors">
+                            <lucide-icon name="pencil" icon-class="size-3"></lucide-icon>
+                        </button>
+                    </div>
+                    <button @click="toggleSetting('include_readme', 'upload')" :class="toggleBtnClass('include_readme', 'upload')">
+                        <span :class="toggleKnobClass('include_readme', 'upload')"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
