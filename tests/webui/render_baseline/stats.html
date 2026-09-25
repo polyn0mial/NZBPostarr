@@ -1,0 +1,1068 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="description" content="NZBPostarr - A powerful tool for managing and uploading NZB files to indexers with ease." />
+        <meta name="theme-color" content="#191919" />
+        <title>System Stats - NZBPostarr</title>
+        <link rel="icon" type="image/svg+xml" href="/assets/images/favicon.svg" />
+
+        <style>
+            [v-cloak] {
+                visibility: hidden;
+            }
+        </style>
+
+        <script>
+            (function () {
+                const savedTheme = localStorage.getItem('nzbpostarr_theme') || 'dark';
+                document.documentElement.setAttribute('data-theme', savedTheme);
+                if (savedTheme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                    document.documentElement.style.background = '#191919';
+                } else {
+                    document.documentElement.classList.remove('dark');
+                    document.documentElement.style.background = '#ffffff';
+                }
+            })();
+        </script>
+
+        <!-- UI Styles (Core) -->
+        <link rel="stylesheet" href="/assets/css/core.css?t=0" />
+        <link rel="stylesheet" href="/assets/css/tailwind.css?t=0" />
+
+        <script type="importmap">
+            {
+                "imports": {
+                    "page-base": "/assets/js/dist/page-base.js?t=0"
+                }
+            }
+        </script>
+
+        <script>
+            (function () {
+                const REVISION_STORAGE_KEY = 'nzbpostarr_ui_revision_signature';
+                const PERSIST_PREFIX = 'nzbpostarr_persist_';
+                const CLEAR_KEYS = new Set([
+                    'nzbpostarr_expanded_sections',
+                    'nzbpostarr_pending_cache',
+                ]);
+
+                function getStoredRevision() {
+                    try {
+                        return localStorage.getItem(REVISION_STORAGE_KEY) || '';
+                    } catch (_err) {
+                        return '';
+                    }
+                }
+
+                function setStoredRevision(signature) {
+                    try {
+                        localStorage.setItem(REVISION_STORAGE_KEY, signature);
+                    } catch (_err) {
+                        // Ignore storage failures and keep the page usable.
+                    }
+                }
+
+                function clearPersistedUiState() {
+                    try {
+                        const keysToRemove = [];
+                        for (let i = 0; i < localStorage.length; i += 1) {
+                            const key = localStorage.key(i);
+                            if (!key) continue;
+                            if (key === REVISION_STORAGE_KEY || CLEAR_KEYS.has(key) || key.startsWith(PERSIST_PREFIX)) {
+                                keysToRemove.push(key);
+                            }
+                        }
+                        keysToRemove.forEach((key) => localStorage.removeItem(key));
+                    } catch (_err) {
+                        // Ignore storage failures and keep the page usable.
+                    }
+                }
+
+                async function fetchRevisionSignal() {
+                    const response = await fetch('/api/system/revision', {
+                        cache: 'no-store',
+                        credentials: 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                        },
+                    });
+                    if (!response.ok) {
+                        return null;
+                    }
+                    return await response.json();
+                }
+
+                async function syncRevision() {
+                    try {
+                        const payload = await fetchRevisionSignal();
+                        if (!payload || !payload.revision) {
+                            return;
+                        }
+                        const signature = String(payload.revision);
+                        const previous = getStoredRevision();
+                        if (!previous) {
+                            setStoredRevision(signature);
+                            return;
+                        }
+                        if (previous !== signature) {
+                            clearPersistedUiState();
+                            setStoredRevision(signature);
+                        }
+                    } catch (_err) {
+                        // Silently ignore transient network problems.
+                    }
+                }
+
+                if (!window.__nzbpostarrRevisionSyncStarted) {
+                    window.__nzbpostarrRevisionSyncStarted = true;
+                    window.addEventListener('pageshow', () => {
+                        syncRevision();
+                    });
+                    document.addEventListener('visibilitychange', () => {
+                        if (!document.hidden) {
+                            syncRevision();
+                        }
+                    });
+                    window.setTimeout(syncRevision, 1500);
+                    window.setInterval(syncRevision, 30 * 1000);
+                }
+            })();
+        </script>
+
+        
+    </head>
+
+    <body class="bg-notion-bg text-notion-text-secondary font-sans min-h-dvh">
+        <div id="app" data-page-title="System Stats" v-cloak>
+            <div class="fixed right-3 top-1/2 -translate-y-1/2 z-50 hidden sm:flex flex-col gap-2">
+                <button
+                    type="button"
+                    onclick="window.scrollTo({ top: 0, behavior: 'smooth' })"
+                    class="size-9 rounded-full border border-notion-border bg-notion-bg-secondary/90 text-notion-text-secondary hover:text-notion-accent hover:border-notion-accent/60 shadow-lg backdrop-blur flex items-center justify-center transition-colors"
+                    title="Scroll to top"
+                    aria-label="Scroll to top">
+                    <lucide-icon name="chevron-up" icon-class="size-4"></lucide-icon>
+                </button>
+                <button
+                    type="button"
+                    onclick="window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' })"
+                    class="size-9 rounded-full border border-notion-border bg-notion-bg-secondary/90 text-notion-text-secondary hover:text-notion-accent hover:border-notion-accent/60 shadow-lg backdrop-blur flex items-center justify-center transition-colors"
+                    title="Scroll to bottom"
+                    aria-label="Scroll to bottom">
+                    <lucide-icon name="chevron-down" icon-class="size-4"></lucide-icon>
+                </button>
+            </div>
+            <!-- Shared Header -->
+            <header class="sticky top-0 z-40 bg-notion-bg/95 backdrop-blur border-b border-notion-divider">
+                <div class="mx-auto w-full max-w-5xl px-4 sm:px-5 md:px-6 lg:px-8">
+                    <div class="flex items-center justify-between h-12">
+                        <!-- Logo / Title -->
+                        <div class="flex items-center gap-2">
+                            <a href="/" class="group flex items-center gap-2 text-notion-text-primary font-semibold hover:text-notion-accent transition-colors duration-300" aria-label="NZBPostarr Dashboard">
+                                <div class="relative size-6 shrink-0">
+                                    <!-- Blue Logo (Visible in Light mode OR on Hover in Dark mode) -->
+                                    <img src="/assets/images/logo.png" alt="NZBPostarr Logo" class="absolute inset-0 w-full h-full object-contain transition-opacity duration-300 opacity-100 dark:opacity-0 group-hover:opacity-100" />
+                                    <!-- White Logo (Only visible in Dark mode, fades out on Hover) -->
+                                    <img src="/assets/images/logo_white.png" alt="NZBPostarr Logo" class="absolute inset-0 w-full h-full object-contain transition-opacity duration-300 hidden dark:block dark:opacity-100 group-hover:dark:opacity-0" />
+                                </div>
+                                <span class="hidden xs:inline tracking-tight">NZBPostarr</span>
+                            </a>
+                        </div>
+
+                        <!-- Navigation (desktop: full nav, mobile: hamburger) -->
+                        <nav class="flex items-center gap-0.5 xs:gap-1">
+                            <!-- Desktop nav links (hidden on mobile) -->
+                            <template v-for="item in visibleNavItems" :key="item.href">
+                                <!-- Item without children: simple link -->
+                                <a v-if="!item.children" :href="item.href" :class="navLinkClass(item)" :aria-label="item.label" :title="item.label" class="hidden sm:flex min-w-8 min-h-8 justify-center sm:justify-start transition-colors">
+                                    <lucide-icon :name="item.icon" icon-class="size-4"></lucide-icon>
+                                    <span v-if="!item.iconOnly" class="hidden md:inline ml-1.5 font-medium">{{ item.label }}</span>
+                                </a>
+                                <!-- Item with children: hover dropdown -->
+                                <div v-else class="hidden sm:block relative nav-dropdown-parent">
+                                    <a :href="item.href" :class="navLinkClass(item)" :aria-label="item.label" :title="item.label" class="flex min-w-8 min-h-8 justify-center sm:justify-start transition-colors items-center">
+                                        <lucide-icon :name="item.icon" icon-class="size-4"></lucide-icon>
+                                        <span class="hidden md:inline ml-1.5 font-medium">{{ item.label }}</span>
+                                        <lucide-icon name="chevron-down" icon-class="size-3 ml-0.5 opacity-40 hidden md:block"></lucide-icon>
+                                    </a>
+                                    <div class="nav-dropdown-menu absolute left-0 top-full pt-1 z-50 hidden">
+                                        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl py-1 min-w-40">
+                                            <a
+                                                v-for="child in item.children"
+                                                :key="child.href"
+                                                :href="child.href"
+                                                :title="child.label"
+                                                class="flex items-center gap-2 px-3 py-2 text-xs transition-colors"
+                                                :class="pageTitle === child.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-secondary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                                <lucide-icon :name="child.icon" icon-class="size-3.5"></lucide-icon>
+                                                {{ child.label }}
+                                            </a>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+
+                            <!-- Desktop Connection Status Indicator (hidden on mobile) -->
+                            <a href="/settings" role="status" class="hidden sm:flex ml-0.5 xs:ml-1 items-center justify-center size-8 infotip-trigger infotip-bottom-right" aria-label="Connection Status Indicator">
+                                <span class="relative flex h-1.5 w-1.5">
+                                    <span v-if="isConnected" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-notion-success opacity-75"></span>
+                                    <span class="status-dot relative inline-flex rounded-full h-1.5 w-1.5" :class="connectionDotClass"></span>
+                                </span>
+
+                                <!-- Fancy Hover Modal Content -->
+                                <div class="infotip-content p-0 shadow-2xl border-notion-border-strong w-48 overflow-hidden">
+                                    <div class="infotip-header bg-notion-bg-hover p-2 mb-0 border-none flex items-center justify-between">
+                                        <div class="flex items-center gap-1.5">
+                                            <lucide-icon name="activity" icon-class="size-3 text-notion-accent"></lucide-icon>
+                                            <span class="text-[9px]">SYSTEM STATUS</span>
+                                        </div>
+                                        <span class="text-[8px] px-1 bg-notion-bg-secondary rounded border border-notion-border text-notion-text-tertiary">{{ appVersionLabel }}</span>
+                                    </div>
+                                    <div class="p-2.5 flex flex-col">
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">API Status</span>
+                                            <div class="flex items-center gap-1.5">
+                                                <span class="infotip-value" :class="isConnected ? 'text-notion-success' : 'text-notion-error'">{{ isConnected ? 'Online' : 'Offline' }}</span>
+                                                <div class="w-1.5 h-1.5 rounded-full" :class="connectionDotClass"></div>
+                                            </div>
+                                        </div>
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Update</span>
+                                            <span class="infotip-value" :class="updateStatusClass">{{ updateStatusText }}</span>
+                                        </div>
+                                        <div v-if="updateStatus.update_available" class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Latest</span>
+                                            <span class="infotip-value">{{ latestVersionLabel }}</span>
+                                        </div>
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Latency</span>
+                                            <span class="infotip-value">{{ isConnected ? (apiLatency || '< 1ms') : '---' }}</span>
+                                        </div>
+                                        <div class="infotip-row">
+                                            <span class="text-notion-text-tertiary">Refresh Rate</span>
+                                            <span class="infotip-value">{{ uiRefreshRate / 1000 }}s</span>
+                                        </div>
+                                        <div v-if="lastUpdated" class="infotip-footer mt-2 pt-2 border-t border-notion-divider flex items-center justify-between">
+                                            <span>Last Heartbeat</span>
+                                            <span class="font-mono text-[8.5px]">{{ lastUpdatedLabel }}</span>
+                                        </div>
+                                    </div>
+                                    <div class="infotip-arrow"></div>
+                                </div>
+                            </a>
+
+                            <!-- Mobile hamburger button (visible only on mobile) -->
+                            <button @click="mobileMenuOpen = !mobileMenuOpen" class="sm:hidden flex items-center justify-center size-9 rounded-md text-notion-text-secondary hover:bg-notion-bg-hover transition-colors" aria-label="Open menu">
+                                <lucide-icon name="menu" icon-class="size-5"></lucide-icon>
+                            </button>
+                        </nav>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Mobile Menu Overlay & Drawer -->
+            <div class="mobile-menu-overlay" :class="{ active: mobileMenuOpen }" @click="mobileMenuOpen = false"></div>
+            <div class="mobile-menu-drawer flex flex-col overflow-hidden" :class="{ active: mobileMenuOpen }">
+                <div class="shrink-0 flex items-center justify-between px-4 py-3 border-b border-notion-divider">
+                    <div class="flex items-center gap-2">
+                        <img src="/assets/images/logo.png" alt="NZBPostarr Logo" class="dark:hidden size-6 object-contain" />
+                        <img src="/assets/images/logo_white.png" alt="NZBPostarr Logo" class="hidden dark:block size-6 object-contain" />
+                        <span class="text-sm font-semibold text-notion-text-primary tracking-tight">NZBPostarr</span>
+                    </div>
+                    <button @click="mobileMenuOpen = false" class="icon-btn" aria-label="Close menu">
+                        <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                    </button>
+                </div>
+
+                <div class="grow overflow-y-auto">
+                    <!-- Nav links -->
+                    <div class="py-2">
+                        <template v-for="item in visibleNavItems" :key="item.href">
+                            <a
+                                :href="item.href"
+                                @click="mobileMenuOpen = false"
+                                class="flex items-center gap-3 px-4 py-3 text-sm transition-colors"
+                                :class="pageTitle === item.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-secondary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                <lucide-icon :name="item.icon" icon-class="size-4"></lucide-icon>
+                                <span>{{ item.label }}</span>
+                            </a>
+                            <a
+                                v-for="child in (item.children || [])"
+                                :key="child.href"
+                                :href="child.href"
+                                @click="mobileMenuOpen = false"
+                                class="flex items-center gap-3 pl-11 pr-4 py-2.5 text-sm transition-colors"
+                                :class="pageTitle === child.title ? 'text-notion-text-primary bg-notion-bg-hover font-medium' : 'text-notion-text-tertiary hover:bg-notion-bg-hover hover:text-notion-text-primary'">
+                                <lucide-icon :name="child.icon" icon-class="size-3.5"></lucide-icon>
+                                <span class="text-xs">{{ child.label }}</span>
+                            </a>
+                        </template>
+                    </div>
+                    <!-- System Status in flyout -->
+                    <div class="mx-4 mt-2 mb-4 rounded-lg border border-notion-border bg-notion-bg p-3">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-1.5">
+                                <lucide-icon name="activity" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+                                <span class="text-[10px] text-notion-text-tertiary uppercase tracking-wider font-semibold">System Status</span>
+                            </div>
+                            <span class="text-[9px] px-1.5 py-0.5 bg-notion-bg-secondary rounded border border-notion-border text-notion-text-tertiary font-medium">{{ appVersionLabel }}</span>
+                        </div>
+                        <div class="space-y-2 text-xs">
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">API Status</span>
+                                <div class="flex items-center gap-1.5">
+                                    <span :class="isConnected ? 'text-notion-success' : 'text-notion-error'" class="font-medium">{{ isConnected ? 'Online' : 'Offline' }}</span>
+                                    <span class="relative flex h-2 w-2">
+                                        <span v-if="isConnected" class="animate-ping absolute inline-flex h-full w-full rounded-full bg-notion-success opacity-75"></span>
+                                        <span class="relative inline-flex rounded-full h-2 w-2" :class="connectionDotClass"></span>
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Update</span>
+                                <span :class="updateStatusClass" class="font-medium">{{ updateStatusText }}</span>
+                            </div>
+                            <div v-if="updateStatus.update_available" class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Latest</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ latestVersionLabel }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Latency</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ isConnected ? (apiLatency || '< 1ms') : '---' }}</span>
+                            </div>
+                            <div class="flex items-center justify-between">
+                                <span class="text-notion-text-tertiary">Refresh Rate</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ uiRefreshRate / 1000 }}s</span>
+                            </div>
+                            <div v-if="lastUpdated" class="flex items-center justify-between pt-2 border-t border-notion-divider">
+                                <span class="text-notion-text-tertiary">Last Heartbeat</span>
+                                <span class="text-notion-text-primary font-mono text-[11px]">{{ lastUpdatedLabel }}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Footer of sidebar pinned to bottom -->
+                <div class="shrink-0 px-4 py-4 border-t border-notion-divider bg-notion-bg-secondary/50">
+                    <div class="flex items-center gap-6">
+                        <a href="/docs" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="Documentation">
+                            <lucide-icon name="book-open" icon-class="size-3.5"></lucide-icon>
+                            Docs
+                        </a>
+                        <a href="/indexer-guides" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="Indexer Guides">
+                            <lucide-icon name="globe" icon-class="size-3.5"></lucide-icon>
+                            Indexers
+                        </a>
+                        <a href="https://github.com/polyn0mial/nzbpostarr" target="_blank" rel="noopener" class="text-xs text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-2" title="View Source on GitHub">
+                            <lucide-icon name="github" icon-class="size-3.5"></lucide-icon>
+                            GitHub
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Standardized Page Layout -->
+            <main class="mx-auto w-full max-w-5xl min-w-0 overflow-x-hidden px-4 py-6 sm:px-5 md:px-6 lg:px-8">
+                <div class="space-y-6 min-w-0">
+                    <!-- Unified Page Header -->
+                    <div class="flex flex-wrap items-center justify-between gap-4 pb-0 mb-0 border-b-0 px-1">
+                        <div class="space-y-0.5 min-w-0">
+                            <h1 class="text-2xl font-semibold text-notion-text-primary tracking-tight">System Stats</h1>
+                            <p class="text-xs text-notion-text-tertiary">Live resource monitoring and storage health</p>
+                        </div>
+                        <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3 min-w-0">
+<button @click="loadStats(true)" class="h-8 px-4 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded-md text-xs hover:bg-notion-bg-active active:scale-95 transition-all flex items-center justify-center gap-2">
+    <lucide-icon name="refresh-cw" icon-class="size-3.5"></lucide-icon>
+    <span>Refresh Insights</span>
+</button>
+</div>
+                    </div>
+
+                    
+<!-- Hardware Highlights Row -->
+<div class="space-y-6 pt-2">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 sm:gap-x-6 text-[11px] text-notion-text-tertiary px-1">
+        <span class="flex items-center gap-1">
+            <lucide-icon name="monitor" icon-class="size-3"></lucide-icon>
+            <span>{{ fullStats?.system?.platform || '-' }}</span>
+        </span>
+        <span class="flex items-center gap-1">
+            <lucide-icon name="clock" icon-class="size-3"></lucide-icon>
+            <span>Uptime: {{ formatUptime(fullStats?.system?.uptime_seconds || 0) }}</span>
+        </span>
+        <span class="flex items-center gap-1 hidden sm:flex">
+            <lucide-icon name="terminal" icon-class="size-3"></lucide-icon>
+            <span>{{ fullStats?.system?.hostname || '-' }}</span>
+        </span>
+        <span class="flex items-center gap-1 sm:ml-auto">
+            <lucide-icon name="history" icon-class="size-3 text-notion-text-tertiary"></lucide-icon>
+            <span>Updated: {{ lastUpdatedLabel }}</span>
+        </span>
+    </div>
+
+    <div class="bg-notion-bg-secondary border border-notion-border rounded-lg p-3 relative z-5">
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <!-- CPU -->
+            <stats-card title="CPU" icon="cpu" color="orange-400" :value="fullStats?.cpu?.percent" unit="%" :progress="fullStats?.cpu?.percent" :spark-data="sparkCpu" peak-key="cpu" value-suffix="%" value-id="cpu-value">
+                <template #extra>
+                    <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ fullStats?.cpu?.cores }} cores</p>
+                </template>
+            </stats-card>
+
+            <!-- Memory -->
+            <stats-card title="Memory" icon="memory-stick" color="green-400" :value="fullStats?.memory?.percent" unit="%" :progress="fullStats?.memory?.percent" :spark-data="sparkMemory" peak-key="memory" value-suffix="%">
+                <template #extra>
+                    <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ formatBytes(fullStats?.memory?.used_gb * 1024 * 1024 * 1024) }} / {{ formatBytes(fullStats?.memory?.total_gb * 1024 * 1024 * 1024) }}</p>
+                </template>
+            </stats-card>
+
+            <!-- Swap -->
+            <stats-card title="Swap" icon="hard-drive" color="yellow-400" :value="fullStats?.swap?.percent || 0" unit="%" :progress="fullStats?.swap?.percent || 0" :spark-data="sparkSwap" peak-key="swap" value-suffix="%">
+                <template #extra>
+                    <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ formatBytes(fullStats?.swap?.used_gb * 1024 * 1024 * 1024) }} / {{ formatBytes(fullStats?.swap?.total_gb * 1024 * 1024 * 1024) }}</p>
+                </template>
+            </stats-card>
+
+            <!-- Disk -->
+            <stats-card title="Disk" icon="hard-drive" color="blue-400" :value="fullStats?.disk?.percent" unit="%" :progress="fullStats?.disk?.percent" :spark-data="sparkDisk" peak-key="disk" value-suffix="%">
+                <template #extra>
+                    <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ formatBytes(fullStats?.disk?.used_gb * 1024 * 1024 * 1024) }} / {{ formatBytes(fullStats?.disk?.total_gb * 1024 * 1024 * 1024) }}</p>
+                </template>
+            </stats-card>
+
+            <!-- Free Space -->
+            <stats-card
+                title="Free Space"
+                icon="database"
+                color="cyan-400"
+                :value="(fullStats?.disk?.free_gb || 0).toFixed(1)"
+                unit=" GB"
+                :progress="(fullStats?.disk?.free_gb / (fullStats?.disk?.total_gb || 1) * 100)"
+                :spark-data="sparkFreeSpace"
+                peak-key="freeSpace"
+                value-suffix=" GB"></stats-card>
+
+            <!-- Load Avg -->
+            <stats-card title="Load Avg" icon="gauge" color="red-400" :value="(fullStats?.cpu?.load?.[0] || 0).toFixed(2)" :spark-data="sparkLoad" peak-key="load" :footer-label="'1m / 5m / 15m'">
+                <template #extra>
+                    <p class="text-notion-text-tertiary mt-1 text-[10px]">{{ (fullStats?.cpu?.load?.[1] || 0).toFixed(2) }} / {{ (fullStats?.cpu?.load?.[2] || 0).toFixed(2) }}</p>
+                </template>
+            </stats-card>
+        </div>
+    </div>
+</div>
+
+<!-- Collapsible Sections -->
+<div class="space-y-6 pt-2">
+    <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="cpu-cores">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('cpu-cores')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="isSectionExpanded('cpu-cores') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="cpu" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">CPU Cores</h2>
+            </div>
+            <span class="text-xs text-notion-text-tertiary"></span>
+        </div>
+        <div :class="sectionContentClass('cpu-cores')">
+            <div class="p-4">
+                <div :style="cpuGridStyle">
+                    <div v-for="(usage, index) in fullStats?.cpu?.per_core" :key="index" class="flex flex-col items-center gap-1 p-2 rounded bg-notion-bg-hover border border-notion-border min-w-12.5">
+                        <span class="text-notion-text-tertiary text-[10px]">#{{ index }}</span>
+                        <div class="w-full bg-notion-bg-secondary h-12 rounded relative">
+                            <div class="absolute bottom-0 left-0 right-0 bg-green-500/30 transition-all duration-500" :style="{ height: usage + '%' }"></div>
+                            <span class="absolute inset-0 flex items-center justify-center font-medium text-notion-text-primary text-[10px]">{{ Math.round(usage) }}%</span>
+                        </div>
+                    </div>
+                    <div v-if="!fullStats?.cpu?.per_core || fullStats?.cpu?.per_core.length === 0" class="col-span-full py-4 text-center text-notion-text-tertiary">
+                        <lucide-icon name="loader-2" icon-class="size-4 animate-spin inline-block mr-2"></lucide-icon>
+                        Loading per-core usage...
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="network">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('network')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="isSectionExpanded('network') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="network" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Network Interfaces</h2>
+            </div>
+            <span class="text-xs text-notion-text-tertiary"></span>
+        </div>
+        <div :class="sectionContentClass('network')">
+            <div class="p-4">
+                <!-- Main Network Stats -->
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
+                    <stats-card title="Upload" icon="arrow-up" color="purple-400" :value="(fullStats?.network?.upload_mbps || 0).toFixed(2)" unit=" Mbps" :spark-data="sparkUpload" peak-key="upload" value-suffix=" Mbps"></stats-card>
+
+                    <stats-card title="Download" icon="arrow-down" color="pink-400" :value="(fullStats?.network?.download_mbps || 0).toFixed(2)" unit=" Mbps" :spark-data="sparkDownload" peak-key="download" value-suffix=" Mbps"></stats-card>
+
+                    <stats-card title="Sent (Session)" icon="upload-cloud" color="cyan-400" :value="formatBytes((fullStats?.network?.total_sent_mb || 0) * 1024 * 1024)" :spark-data="sparkSent" peak-key="sent" value-suffix=" MB">
+                        <template #extra>
+                            <p class="text-[10px] text-notion-text-tertiary mt-1">1h Delta: {{ formatBytes((fullStats?.network?.total_sent_1h_mb || 0) * 1024 * 1024) }}</p>
+                        </template>
+                    </stats-card>
+
+                    <stats-card title="Received (Session)" icon="download-cloud" color="teal-400" :value="formatBytes((fullStats?.network?.total_recv_mb || 0) * 1024 * 1024)" :spark-data="sparkRecv" peak-key="recv" value-suffix=" MB">
+                        <template #extra>
+                            <p class="text-[10px] text-notion-text-tertiary mt-1">1h Delta: {{ formatBytes((fullStats?.network?.total_recv_1h_mb || 0) * 1024 * 1024) }}</p>
+                        </template>
+                    </stats-card>
+
+                    <stats-card title="Connections" icon="plug" color="green-400" :value="fullStats?.network?.connections_count || 0" :spark-data="sparkConns" peak-key="conns" value-suffix=" connections"></stats-card>
+
+                    <stats-card
+                        title="Errors / Drops"
+                        icon="alert-circle"
+                        color="orange-400"
+                        :value="(fullStats?.network?.errors_in || 0) + (fullStats?.network?.errors_out || 0) + ' / ' + ((fullStats?.network?.drops_in || 0) + (fullStats?.network?.drops_out || 0))"
+                        :spark-data="sparkErrors"
+                        peak-key="errors"
+                        value-suffix=" events"></stats-card>
+                </div>
+
+                <!-- Network Interfaces -->
+                <div class="mt-4">
+                    <h3 class="text-xs text-notion-text-tertiary uppercase tracking-wide mb-2">Interfaces</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div v-for="iface in fullStats?.network?.interfaces" :key="iface.name" class="bg-notion-bg border border-notion-border rounded-lg p-3 flex flex-col hover:border-notion-border-strong transition-colors">
+                            <div class="flex items-center justify-between mb-2">
+                                <span class="text-sm text-notion-text-primary font-mono font-semibold">{{ iface.name }}</span>
+                                <span class="text-[10px] text-notion-text-tertiary px-1.5 py-0.5 bg-notion-bg-hover rounded">{{ iface.ip || iface.addrs?.[0] || 'No IP' }}</span>
+                            </div>
+
+                            <div class="flex flex-col gap-2 mt-auto">
+                                <!-- Interface Upload -->
+                                <div class="flex items-center gap-2">
+                                    <div class="w-16 text-[9px] text-notion-text-tertiary flex justify-between">
+                                        <span>UP</span>
+                                        <span class="font-mono">{{ (iface.speeds?.upload || 0).toFixed(1) }}</span>
+                                    </div>
+                                    <sparkline class="flex-1 rounded-sm" height="h-4" :data="ifaceHistory[iface.name]?.upload" color-rgb="rgb(168, 85, 247)" :peak-key="'iface_' + iface.name + '_up'" value-suffix=" Mbps"></sparkline>
+                                </div>
+
+                                <!-- Interface Download -->
+                                <div class="flex items-center gap-2">
+                                    <div class="w-16 text-[9px] text-notion-text-tertiary flex justify-between">
+                                        <span>DOWN</span>
+                                        <span class="font-mono">{{ (iface.speeds?.download || 0).toFixed(1) }}</span>
+                                    </div>
+                                    <sparkline class="flex-1 rounded-sm" height="h-4" :data="ifaceHistory[iface.name]?.download" color-rgb="rgb(236, 72, 153)" :peak-key="'iface_' + iface.name + '_down'" value-suffix=" Mbps"></sparkline>
+                                </div>
+                            </div>
+                        </div>
+                        <div v-if="!fullStats?.network?.interfaces" class="col-span-full py-4 text-center text-notion-text-tertiary">
+                            <p class="text-sm text-notion-text-tertiary">Loading interfaces...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- /wrapper -->
+        </div>
+    </div>
+
+    <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="disk-io">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('disk-io')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="isSectionExpanded('disk-io') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="hard-drive" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Disk I/O Stats</h2>
+            </div>
+            <span class="text-xs text-notion-text-tertiary"></span>
+        </div>
+        <div :class="sectionContentClass('disk-io')">
+            <div class="p-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <stats-card title="Disk Read" icon="file-input" color="blue-400" :value="formatBytes(fullStats?.disk?.io?.read_bytes || 0)" unit="/s" :spark-data="sparkRead" peak-key="read" value-suffix="MB/s">
+                        <template #extra>
+                            <p class="text-xs text-notion-text-tertiary mt-2">Total: {{ formatBytes(fullStats?.disk?.io?.total_read || 0) }}</p>
+                        </template>
+                    </stats-card>
+
+                    <stats-card title="Disk Write" icon="file-output" color="orange-400" :value="formatBytes(fullStats?.disk?.io?.write_bytes || 0)" unit="/s" :spark-data="sparkWrite" peak-key="write" value-suffix="MB/s">
+                        <template #extra>
+                            <p class="text-xs text-notion-text-tertiary mt-2">Total: {{ formatBytes(fullStats?.disk?.io?.total_write || 0) }}</p>
+                        </template>
+                    </stats-card>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Temperature & Battery Section (collapsible, default collapsed) -->
+    <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="sensors">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('sensors')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="isSectionExpanded('sensors') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="thermometer" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Sensors / Temperatures</h2>
+            </div>
+            <span class="text-xs text-notion-text-tertiary"></span>
+        </div>
+        <div :class="sectionContentClass('sensors')">
+            <div class="p-4">
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+                    <div v-for="s in fullStats?.temperatures" :key="s.name" class="bg-notion-bg border border-notion-border rounded p-2 text-center overflow-hidden">
+                        <div class="text-xs text-notion-text-tertiary truncate" :title="s.name">{{ s.name }}</div>
+                        <div :class="temperatureClass(s.current)" class="text-xl font-semibold">{{ Math.round(s.current) }}°C</div>
+                    </div>
+                </div>
+                <div v-if="fullStats?.battery?.percent !== null" class="mt-4">
+                    <h3 class="text-xs text-notion-text-tertiary uppercase tracking-wide mb-2">Battery</h3>
+                    <div class="bg-notion-bg border border-notion-border rounded-lg p-3 inline-block">
+                        <div class="flex items-center gap-3">
+                            <lucide-icon :name="fullStats?.battery?.plugged ? 'battery-charging' : 'battery'" :icon-class="batteryIconClass()"></lucide-icon>
+                            <div>
+                                <p class="text-xl font-semibold text-notion-text-primary">{{ fullStats?.battery?.percent }}%</p>
+                                <p class="text-xs text-notion-text-tertiary" v-text="getBatteryStatus()"></p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Users Section (collapsible, default collapsed) -->
+
+    <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="users">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('users')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="isSectionExpanded('users') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="users" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Logged In Users</h2>
+            </div>
+            <span class="text-xs text-notion-text-tertiary"></span>
+        </div>
+        <div :class="sectionContentClass('users')">
+            <div class="p-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    <div v-for="u in fullStats?.users" :key="u.name + u.terminal" class="bg-notion-bg border border-notion-border rounded p-2 flex items-center gap-2">
+                        <lucide-icon name="user" icon-class="size-4 text-notion-text-tertiary"></lucide-icon>
+                        <div>
+                            <div class="text-sm text-notion-text-primary font-mono">{{ u.name }}</div>
+                            <div class="text-xs text-notion-text-tertiary">{{ u.terminal }} @ {{ u.host }}</div>
+                        </div>
+                    </div>
+                    <div v-if="!fullStats?.users || fullStats?.users?.length === 0" class="p-4 text-center text-notion-text-tertiary col-span-full">
+                        <span v-if="!fullStats?.users">Loading users...</span>
+                        <span v-else>No users logged in</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="system-info">
+            <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('system-info')">
+                <div class="flex items-center gap-2">
+                    <lucide-icon :name="isSectionExpanded('system-info') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                    <lucide-icon name="server" icon-class="size-4 text-notion-accent"></lucide-icon>
+                    <h2 class="text-sm font-semibold text-notion-text-primary">System Details</h2>
+                </div>
+                <span class="text-xs text-notion-text-tertiary"></span>
+            </div>
+            <div :class="sectionContentClass('system-info')">
+                <div class="p-4">
+                    <div class="space-y-1">
+                        <div class="flex justify-between items-center gap-4 py-1.5">
+                            <dt class="text-sm text-notion-text-tertiary">Hostname</dt>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.hostname || "-" }}</dd>
+                        </div>
+                        <div class="flex justify-between items-center gap-4 py-1.5">
+                            <dt class="text-sm text-notion-text-tertiary">Platform</dt>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.platform || "-" }}</dd>
+                        </div>
+                        <div class="flex justify-between items-center gap-4 py-1.5">
+                            <dt class="text-sm text-notion-text-tertiary">Kernel</dt>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.kernel || "-" }}</dd>
+                        </div>
+                        <div class="flex justify-between items-center gap-4 py-1.5">
+                            <dt class="text-sm text-notion-text-tertiary">Architecture</dt>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.architecture || "-" }}</dd>
+                        </div>
+                        <div class="flex justify-between items-center gap-4 py-1.5">
+                            <dt class="text-sm text-notion-text-tertiary">Python</dt>
+                            <dd class="text-sm text-notion-text-primary font-mono transition-colors truncate">{{ fullStats?.system?.python_version || "-" }}</dd>
+                        </div>
+                        <div class="flex justify-between items-center gap-4 py-1.5">
+                            <dt class="text-sm text-notion-text-tertiary">CPU Model</dt>
+                            <dd v-text="fullStats?.cpu?.model || '-'" class="text-sm text-notion-text-primary font-mono transition-colors text-right truncate max-w-50"></dd>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="disk-partitions-info">
+            <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('disk-partitions-info')">
+                <div class="flex items-center gap-2">
+                    <lucide-icon :name="isSectionExpanded('disk-partitions-info') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                    <lucide-icon name="database" icon-class="size-4 text-notion-accent"></lucide-icon>
+                    <h2 class="text-sm font-semibold text-notion-text-primary">Disk Partitions</h2>
+                </div>
+                <span class="text-xs text-notion-text-tertiary"></span>
+            </div>
+            <div :class="sectionContentClass('disk-partitions-info')">
+                <div class="p-4">
+                    <div class="space-y-3">
+                        <div v-for="p in fullStats?.disk?.partitions" :key="p.device" class="space-y-1">
+                            <div class="flex justify-between items-center text-xs">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-notion-text-primary font-medium">{{ p.mountpoint }}</span>
+                                    <span class="text-notion-text-tertiary font-mono italic">{{ p.device }}</span>
+                                </div>
+                                <span class="text-notion-text-secondary">{{ formatBytes(p.used) }} / {{ formatBytes(p.total) }} ({{ p.percent }}%)</span>
+                            </div>
+                            <div class="h-1.5 bg-notion-bg-hover rounded-full">
+                                <div class="h-full bg-blue-400 rounded-full" :style="{ width: p.percent + '%' }"></div>
+                            </div>
+                        </div>
+                        <div v-if="!fullStats?.disk?.partitions" class="text-sm text-notion-text-tertiary text-center py-4">
+                            <lucide-icon name="loader-2" icon-class="size-4 animate-spin inline-block mr-2"></lucide-icon>
+                            Loading partitions...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="top-dirs">
+        <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleStatsSection('top-dirs')">
+            <div class="flex items-center gap-2">
+                <lucide-icon :name="isSectionExpanded('top-dirs') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                <lucide-icon name="folder-tree" icon-class="size-4 text-notion-accent"></lucide-icon>
+                <h2 class="text-sm font-semibold text-notion-text-primary">Top 25 Directories by Size</h2>
+            </div>
+            <span class="text-xs text-notion-text-tertiary">{{ topDirsStatus }}</span>
+        </div>
+        <div :class="sectionContentClass('top-dirs')">
+            <div class="p-4">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left top-dirs-table">
+                        <thead>
+                            <tr class="text-notion-text-tertiary uppercase tracking-wider border-b border-notion-divider text-[10px]">
+                                <th class="px-2 py-2 font-medium">#</th>
+                                <th class="px-2 py-2 font-medium">Directory</th>
+                                <th class="px-2 py-2 font-medium text-right">Size</th>
+                                <th class="px-2 py-2 font-medium text-right hide-mobile">Files</th>
+                                <th class="px-2 py-2 font-medium w-32 hide-mobile">Usage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-if="topDirs.length === 0">
+                                <td colspan="5" class="empty-state py-8">
+                                    <div v-if="loadingTopDirs">
+                                        <lucide-icon name="loader-2" icon-class="size-5 animate-spin mx-auto mb-2"></lucide-icon>
+                                        Loading directory stats...
+                                    </div>
+                                    <div v-else class="empty-state-title">No directories found</div>
+                                </td>
+                            </tr>
+                            <tr v-for="(dir, index) in topDirs" :key="dir.path" class="hover:bg-notion-bg-hover">
+                                <td class="px-2 py-1.5 text-notion-text-tertiary">{{ index + 1 }}</td>
+                                <td :title="dir.path" class="px-2 text-notion-text-primary font-mono py-1.5 text-[11px] dir-name-cell truncate max-w-30 sm:max-w-md">{{ dir.name }}</td>
+                                <td class="px-2 text-right text-notion-text-secondary py-1.5 text-[11px] whitespace-nowrap">{{ formatBytes(dir.size) }}</td>
+                                <td class="px-2 text-right text-notion-text-tertiary py-1.5 text-[11px] hide-mobile">{{ (dir.files || 0).toLocaleString() }}</td>
+                                <td class="px-2 py-1.5 hide-mobile">
+                                    <div class="h-2 bg-notion-bg-hover rounded-full" :title="formatBytes(dir.size) + ' in ' + (dir.files || 0).toLocaleString() + ' files'">
+                                        <div class="h-full bg-blue-400 rounded-full" :style="{ width: getDirWidth(dir.size) + '%' }"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Processes Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <!-- Top CPU Processes -->
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="cpu-procs">
+            <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('cpu-procs')">
+                <div class="flex items-center gap-2">
+                    <lucide-icon :name="isSectionExpanded('cpu-procs') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                    <lucide-icon name="cpu" icon-class="size-4 text-orange-400"></lucide-icon>
+                    <h2 class="text-sm font-semibold text-notion-text-primary">Top CPU Consumers</h2>
+                </div>
+                <span class="text-xs text-notion-text-tertiary" v-text="(fullStats?.processes?.total_count || 0) + ' processes'"></span>
+            </div>
+            <div :class="sectionContentClass('cpu-procs')">
+                <div class="p-4">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead>
+                                <tr class="text-notion-text-tertiary uppercase tracking-wider border-b border-notion-divider text-[10px]">
+                                    <th class="px-2 py-2 font-medium">PID</th>
+                                    <th class="px-2 py-2 font-medium">Process</th>
+                                    <th class="px-2 py-2 font-medium text-right">CPU</th>
+                                    <th class="px-2 py-1 font-medium text-right">MEM</th>
+                                    <th class="px-2 py-2 font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-notion-divider">
+                                <tr v-for="p in fullStats?.processes?.top_cpu" :key="p.pid" class="hover:bg-notion-bg-hover">
+                                    <td class="px-2 py-1 text-notion-text-tertiary font-mono text-[11px]">{{ p.pid }}</td>
+                                    <td :title="p.name" class="px-2 py-1 text-notion-text-primary truncate max-w-30">{{ p.name }}</td>
+                                    <td :class="cpuCellClass(p.cpu)" class="px-2 py-1 text-right">{{ p.cpu.toFixed(1) }}%</td>
+                                    <td class="px-2 py-1 text-right text-notion-text-secondary">{{ p.memory.toFixed(1) }}%</td>
+                                    <td class="px-2 py-1">
+                                        <span :class="processStatusClass(p.status)">{{ p.status }}</span>
+                                    </td>
+                                </tr>
+                                <tr v-if="!fullStats?.processes?.top_cpu">
+                                    <td colspan="5" class="px-2 py-4 text-center text-notion-text-tertiary">Loading processes...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Memory Processes -->
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="mem-procs">
+            <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('mem-procs')">
+                <div class="flex items-center gap-2">
+                    <lucide-icon :name="isSectionExpanded('mem-procs') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                    <lucide-icon name="memory-stick" icon-class="size-4 text-green-400"></lucide-icon>
+                    <h2 class="text-sm font-semibold text-notion-text-primary">Top Memory Consumers</h2>
+                </div>
+                <span class="text-xs text-notion-text-tertiary">by RAM</span>
+            </div>
+            <div :class="sectionContentClass('mem-procs')">
+                <div class="p-4">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead>
+                                <tr class="text-notion-text-tertiary uppercase tracking-wider border-b border-notion-divider text-[10px]">
+                                    <th class="px-2 py-2 font-medium">PID</th>
+                                    <th class="px-2 py-2 font-medium">Process</th>
+                                    <th class="px-2 py-2 font-medium text-right">CPU</th>
+                                    <th class="px-2 py-1 font-medium text-right">MEM</th>
+                                    <th class="px-2 py-2 font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-notion-divider">
+                                <tr v-for="p in fullStats?.processes?.top_memory" :key="p.pid" class="hover:bg-notion-bg-hover">
+                                    <td class="px-2 py-1 text-notion-text-tertiary font-mono text-[11px]">{{ p.pid }}</td>
+                                    <td :title="p.name" class="px-2 py-1 text-notion-text-primary truncate max-w-30">{{ p.name }}</td>
+                                    <td class="px-2 py-1 text-right text-notion-text-secondary">{{ p.cpu.toFixed(1) }}%</td>
+                                    <td :class="memoryCellClass(p.memory)" class="px-2 py-1 text-right">{{ p.memory.toFixed(1) }}%</td>
+                                    <td class="px-2 py-1">
+                                        <span :class="processStatusClass(p.status)">{{ p.status }}</span>
+                                    </td>
+                                </tr>
+                                <tr v-if="!fullStats?.processes?.top_memory">
+                                    <td colspan="5" class="px-2 py-4 text-center text-notion-text-tertiary">Loading processes...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Network & Disk Consumers Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <!-- Top Network Consumers -->
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="net-procs">
+            <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('net-procs')">
+                <div class="flex items-center gap-2">
+                    <lucide-icon :name="isSectionExpanded('net-procs') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                    <lucide-icon name="network" icon-class="size-4 text-purple-400"></lucide-icon>
+                    <h2 class="text-sm font-semibold text-notion-text-primary">Top Network Consumers</h2>
+                </div>
+                <span class="text-xs text-notion-text-tertiary">by connections</span>
+            </div>
+            <div :class="sectionContentClass('net-procs')">
+                <div class="p-4">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead>
+                                <tr class="text-notion-text-tertiary uppercase tracking-wider border-b border-notion-divider text-[10px]">
+                                    <th class="px-2 py-2 font-medium">PID</th>
+                                    <th class="px-2 py-2 font-medium">Process</th>
+                                    <th class="px-2 py-2 font-medium text-right">Conns</th>
+                                    <th class="px-2 py-1 font-medium text-right">CPU</th>
+                                    <th class="px-2 py-2 font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-notion-divider">
+                                <tr v-for="p in fullStats?.processes?.top_network" :key="p.pid" class="hover:bg-notion-bg-hover">
+                                    <td class="px-2 py-1 text-notion-text-tertiary font-mono text-[11px]">{{ p.pid }}</td>
+                                    <td :title="p.name" class="px-2 py-1 text-notion-text-primary truncate max-w-30">{{ p.name }}</td>
+                                    <td :class="connectionsCellClass(p.connections)" class="px-2 py-1 text-right">{{ p.connections }}</td>
+                                    <td class="px-2 py-1 text-right text-notion-text-secondary">{{ p.cpu.toFixed(1) }}%</td>
+                                    <td class="px-2 py-1">
+                                        <span :class="processStatusClass(p.status)">{{ p.status }}</span>
+                                    </td>
+                                </tr>
+                                <tr v-if="!fullStats?.processes?.top_network">
+                                    <td colspan="5" class="px-2 py-4 text-center text-notion-text-tertiary">Loading network activity...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Disk Consumers -->
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg" data-section="disk-procs">
+            <div class="px-4 py-3 border-b border-notion-divider flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('disk-procs')">
+                <div class="flex items-center gap-2">
+                    <lucide-icon :name="isSectionExpanded('disk-procs') ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform"></lucide-icon>
+                    <lucide-icon name="hard-drive" icon-class="size-4 text-blue-400"></lucide-icon>
+                    <h2 class="text-sm font-semibold text-notion-text-primary">Top Disk Consumers</h2>
+                </div>
+                <span class="text-xs text-notion-text-tertiary">by I/O</span>
+            </div>
+            <div :class="sectionContentClass('disk-procs')">
+                <div class="p-4">
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-xs">
+                            <thead>
+                                <tr class="text-notion-text-tertiary uppercase tracking-wider border-b border-notion-divider text-[10px]">
+                                    <th class="px-2 py-2 font-medium">PID</th>
+                                    <th class="px-2 py-2 font-medium">Process</th>
+                                    <th class="px-2 py-2 font-medium text-right">Read</th>
+                                    <th class="px-2 py-1 font-medium text-right">Write</th>
+                                    <th class="px-2 py-2 font-medium">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-notion-divider">
+                                <tr v-for="p in fullStats?.processes?.top_disk" :key="p.pid" class="hover:bg-notion-bg-hover">
+                                    <td class="px-2 py-1 text-notion-text-tertiary font-mono text-[11px]">{{ p.pid }}</td>
+                                    <td :title="p.name" class="px-2 py-1 text-notion-text-primary truncate max-w-30">{{ p.name }}</td>
+                                    <td class="px-2 py-1 text-right text-cyan-400 font-mono">{{ formatBytes(p.read_rate) }}/s</td>
+                                    <td class="px-2 py-1 text-right text-orange-400 font-mono">{{ formatBytes(p.write_rate) }}/s</td>
+                                    <td class="px-2 py-1">
+                                        <span :class="processStatusClass(p.status)">{{ p.status }}</span>
+                                    </td>
+                                </tr>
+                                <tr v-if="!fullStats?.processes?.top_disk">
+                                    <td colspan="5" class="px-2 py-4 text-center text-notion-text-tertiary">Loading disk activity...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+                </div>
+            </main>
+
+            <!-- Unified Footer -->
+            <footer class="mx-auto w-full max-w-5xl px-4 py-6 sm:px-5 md:px-6 lg:px-8 border-t border-notion-divider mt-8">
+                <div class="flex items-center justify-end gap-4">
+                    <div class="flex items-center gap-2 text-notion-text-secondary mr-auto">
+                        <img src="/assets/images/logo.png" alt="NZBPostarr Logo" class="dark:hidden size-5 object-contain" />
+                        <img src="/assets/images/logo_white.png" alt="NZBPostarr Logo" class="hidden dark:block size-5 object-contain" />
+                        <span class="text-xs font-medium">NZBPostarr {{ appVersionLabel }}</span>
+                        <span class="text-[10px] px-1.5 py-0.5 bg-notion-bg-hover border border-notion-border rounded text-notion-text-secondary font-bold uppercase tracking-wider">STABLE</span>
+                    </div>
+
+                    <div class="hidden sm:flex items-center gap-4">
+                        <a href="/docs" class="min-h-8 px-2 text-[11px] text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-1.5" title="Documentation">
+                            <lucide-icon name="book-open" icon-class="size-3.5"></lucide-icon>
+                            Docs
+                        </a>
+                        <a href="/indexer-guides" class="min-h-8 px-2 text-[11px] text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-1.5" title="Indexer Guides">
+                            <lucide-icon name="globe" icon-class="size-3.5"></lucide-icon>
+                            Indexers
+                        </a>
+                        <a href="https://github.com/polyn0mial/nzbpostarr" target="_blank" rel="noopener" class="min-h-8 px-2 text-[11px] text-notion-text-secondary hover:text-notion-accent transition-colors flex items-center gap-1.5" title="View Source on GitHub">
+                            <lucide-icon name="github" icon-class="size-3.5"></lucide-icon>
+                            GitHub
+                        </a>
+                    </div>
+                </div>
+            </footer>
+
+            <!-- Toast Container (Vue-driven) -->
+            <div v-if="toasts.length" class="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-4 z-50 space-y-2 pointer-events-none">
+                <transition-group>
+                    <div v-for="toast in toasts" :key="toast.id" class="pointer-events-auto max-w-md bg-notion-bg-secondary border border-notion-border rounded-lg shadow-lg overflow-hidden min-w-0 sm:min-w-75">
+                        <div class="px-4 py-3 flex items-start gap-3">
+                            <div :class="toastIconClass(toast)">
+                                <lucide-icon :name="toastIcon(toast)" icon-class="size-5"></lucide-icon>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                                <h3 class="text-sm font-semibold text-notion-text-primary">{{ toast.title }}</h3>
+                                <p class="text-xs text-notion-text-secondary mt-1">{{ toast.message }}</p>
+                                <div v-if="toast.actions && toast.actions.length" class="flex items-center gap-2 mt-2">
+                                    <button
+                                        v-for="action in toast.actions"
+                                        :key="action.label"
+                                        @click="action.callback(); removeToast(toast.id)"
+                                        class="px-2.5 py-1 bg-notion-bg-hover border border-notion-border text-notion-text-secondary rounded text-[10px] font-medium hover:bg-notion-bg-active hover:text-notion-text-primary transition-colors flex items-center gap-1">
+                                        <lucide-icon v-if="action.icon" :name="action.icon" icon-class="size-3"></lucide-icon>
+                                        {{ action.label }}
+                                    </button>
+                                </div>
+                            </div>
+                            <button @click="removeToast(toast.id)" class="icon-btn shrink-0">
+                                <lucide-icon name="x" icon-class="size-4"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="h-0.5 bg-notion-border relative overflow-hidden">
+                            <div :class="toastProgressClass(toast)" class="h-full transition-colors duration-300"></div>
+                        </div>
+                    </div>
+                </transition-group>
+            </div>
+
+            <!-- Shared Confirm Dialog (Vue-driven, see confirmDialog() in page-base.js) -->
+            <Transition name="modal">
+                <div v-if="confirmState.open" class="fixed inset-0 z-60 flex items-end sm:items-center justify-center sm:p-4" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+                    <div class="absolute inset-0 bg-black/60" @click="cancelConfirmDialog()"></div>
+                    <div class="relative bg-notion-bg border border-notion-border rounded-t-xl sm:rounded-xl shadow-2xl w-full max-w-md flex flex-col">
+                        <div class="shrink-0 flex items-center justify-between px-5 py-4 border-b border-notion-border bg-notion-bg-secondary">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <lucide-icon :name="confirmState.icon" :icon-class="['size-5', confirmState.danger ? 'text-notion-error' : 'text-notion-accent']"></lucide-icon>
+                                <h3 id="confirm-dialog-title" class="text-lg font-semibold text-notion-text-primary truncate">{{ confirmState.title }}</h3>
+                            </div>
+                            <button @click="cancelConfirmDialog()" class="icon-btn shrink-0" aria-label="Cancel">
+                                <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="px-5 py-4 space-y-2">
+                            <p class="text-sm text-notion-text-primary whitespace-pre-line wrap-break-word">{{ confirmState.message }}</p>
+                            <p v-if="confirmState.detail" class="text-xs text-notion-text-tertiary whitespace-pre-line wrap-break-word">{{ confirmState.detail }}</p>
+                            <input
+                                v-if="confirmState.prompt"
+                                ref="confirmDialogInput"
+                                v-model="confirmState.value"
+                                :type="confirmState.inputType"
+                                :placeholder="confirmState.placeholder"
+                                class="mt-1 px-3 h-9 w-full bg-notion-bg border border-notion-border rounded-md text-sm text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+                        </div>
+                        <div class="shrink-0 flex items-center justify-end gap-2 px-5 py-3 border-t border-notion-border bg-notion-bg-secondary rounded-b-xl">
+                            <button @click="cancelConfirmDialog()" class="btn-secondary px-4 h-9 rounded-lg text-xs font-medium">{{ confirmState.cancelLabel }}</button>
+                            <button ref="confirmDialogAccept" @click="acceptConfirmDialog()" :class="confirmState.danger ? 'btn-danger' : 'btn-primary'" class="px-4 h-9 rounded-lg text-xs font-medium">{{ confirmState.confirmLabel }}</button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>
+        </div>
+        <!-- End #app -->
+
+        
+<script type="module" crossorigin src="/assets/js/dist/pages/stats.js?t=0"></script>
+
+    </body>
+</html>
