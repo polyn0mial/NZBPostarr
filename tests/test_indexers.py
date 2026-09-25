@@ -505,7 +505,7 @@ def test_submit_to_indexer_uses_expected_category_mapping(tmp_path, monkeypatch)
         assert seen[capture_key][capture_field] == expected_value, case_name
 
 def test_build_pending_summary_prefers_backfill_indexers_for_task_totals() -> None:
-    summary = pending_snapshot_mod.build_pending_summary(
+    summary = pending_view.build_pending_summary(
         {
             "tv": [{"episode_count": 1, "indexers": {"geek": True, "planet": False}}],
             "movies": [{"name": "Movie.1", "indexers": {"geek": False, "planet": True}}],

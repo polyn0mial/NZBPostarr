@@ -6,7 +6,7 @@ files = [
   "core/redaction.py",
   "core/utils.py",
   "logic/classify/anime.py",
-  "logic/pending_index.py",
+  "logic/pending/index.py",
   "logic/process_reaper.py",
   "logic/process_stats.py",
   "logic/queue_metrics.py",

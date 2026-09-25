@@ -114,7 +114,7 @@ async def get_current_settings() -> Dict[str, Any]:
 
 def _invalidate_pending_indexer_context() -> None:
     """Drop the pending tree's cached indexer ticks after an indexer change."""
-    from logic.pending_snapshot import invalidate_pending_indexer_context
+    from logic.pending.completion import invalidate_pending_indexer_context
 
     invalidate_pending_indexer_context()
 
@@ -165,7 +165,7 @@ async def update_settings(_section: str, updates: Dict[str, Any]) -> Dict[str, A
         if _section == "folders":
             monitor_status: Dict[str, Any] = {"attempted": True, "ok": True}
             try:
-                from logic.folder_monitor import restart_folder_monitor
+                from logic.autoupload import restart_folder_monitor
 
                 await restart_folder_monitor()
             except Exception as exc:

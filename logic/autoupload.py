@@ -1,12 +1,6 @@
-"""
-📦 NZBPostarr - Folder Monitor (Watchdog Edition)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Event-driven daemon that watches monitored folders
-for new content and auto-triggers upload jobs.
-Uses the watchdog library for native OS filesystem
-events instead of polling.
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-"""
+"""Auto-upload: watch the configured roots and queue items once they settle."""
+
+from __future__ import annotations
 
 import asyncio
 import os
@@ -24,17 +18,17 @@ from core.utils import start_watchdog_observer, stop_watchdog_observer
 from logic.classify.content import detect_auto_category
 from logic.classify.hints import infer_folder_category_hint
 
+
 # Settle time - wait this many seconds after the last modification before uploading
 SETTLE_SECONDS = 30
+
 # How often (seconds) the settle-checker evaluates pending items
 _SETTLE_CHECK_INTERVAL = 5
-
 
 @dataclass
 class _PendingItemState:
     last_event_monotonic: float
     configured_category: str
-
 
 @dataclass
 class _FolderMonitorRuntime:
@@ -49,9 +43,7 @@ class _FolderMonitorRuntime:
             self.pending_items.clear()
             self.known_items.clear()
 
-
 _runtime = _FolderMonitorRuntime()
-
 
 def _get_monitored_folders() -> list[Dict[str, Any]]:
     """Retrieve configured folder_paths entries that have monitor enabled."""
@@ -69,7 +61,6 @@ def _get_monitored_folders() -> list[Dict[str, Any]]:
             )
     return monitored
 
-
 def _scan_folder(folder_path: str) -> Set[str]:
     """Return the set of top-level item names (files/dirs) in a folder."""
     p = Path(folder_path)
@@ -79,7 +70,6 @@ def _scan_folder(folder_path: str) -> Set[str]:
         return {item.name for item in p.iterdir() if not item.name.startswith(".")}
     except PermissionError:
         return set()
-
 
 class _FolderEventHandler(FileSystemEventHandler):
     """Watchdog handler that records new top-level items as pending."""
@@ -138,13 +128,11 @@ class _FolderEventHandler(FileSystemEventHandler):
     def on_deleted(self, event: FileSystemEvent) -> None:
         self._discard_item(getattr(event, "src_path", ""))
 
-
 def _resolve_monitored_category(configured_category: str, item_path: Path, folder_path: str = "") -> str:
     normalized = str(configured_category or "").strip().lower()
     if normalized in {"", "external", "auto"}:
         return detect_auto_category(item_path, infer_folder_category_hint(folder_path or item_path.parent))
     return normalized
-
 
 def _trigger_uploads(folder_path: str, item_categories: Dict[str, str]) -> None:
     """Start explicit-path upload jobs grouped by auto-detected category."""
@@ -167,7 +155,6 @@ def _trigger_uploads(folder_path: str, item_categories: Dict[str, str]) -> None:
             logger.info(f"📡 Monitor auto-started upload job {started['job_id']} for category '{started['category']}'")
     except Exception as e:
         logger.error(f"📡 Monitor failed to start upload jobs for '{folder_path}': {e}")
-
 
 async def _settle_loop() -> None:
     """Periodically check if pending items have settled and trigger uploads."""
@@ -209,7 +196,6 @@ async def _settle_loop() -> None:
             logger.error(f"📡 Monitor settle-check error: {e}")
             await asyncio.sleep(5)
 
-
 async def start_folder_monitor() -> None:
     """Start the watchdog-based folder monitor."""
     folders = _get_monitored_folders()
@@ -249,7 +235,6 @@ async def start_folder_monitor() -> None:
 
     logger.info(f"📡 Folder Monitor watching {scheduled} folder(s) [watchdog]")
 
-
 async def stop_folder_monitor() -> None:
     """Stop the folder monitor."""
     if _runtime.settle_task and not _runtime.settle_task.done():
@@ -266,7 +251,6 @@ async def stop_folder_monitor() -> None:
 
     _runtime.clear()
     logger.info("📡 Folder Monitor stopped")
-
 
 async def restart_folder_monitor() -> None:
     """Restart the monitor (e.g. after settings change)."""

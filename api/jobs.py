@@ -17,6 +17,7 @@ from api.deps import (
 )
 from core.config import get_config
 from logic.pending.roots import scan_configured_items
+from logic.pending.selection import category_upload_itype
 from logic.queueing import ProcessingJobRequest
 from logic.services import get_upload_service, UploadService
 
@@ -187,17 +188,7 @@ class QueueRevalidateRequest(BaseModel):
     include_paused: bool = True
 
 def _default_itype_for_category(path: Path, category: str) -> str:
-    normalized = str(category or "").strip().lower()
-    if normalized == "tv":
-        return "TV Show" if path.is_dir() else "TV Episode"
-    return {
-        "movies": "Movie",
-        "anime": "Anime",
-        "music": "Music",
-        "audiobooks": "Audiobook",
-        "books": "Ebook",
-        "apps": "App",
-    }.get(normalized, "Misc")
+    return category_upload_itype(category, is_dir=path.is_dir())
 
 @router.get("/jobs")
 def get_jobs(
