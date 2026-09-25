@@ -94,7 +94,7 @@ def test_run_job_marks_missing_tools_as_failed(monkeypatch) -> None:
     assert "Missing required tools" in job["progress"]
 
 def test_validation_stop_request_preserves_current_item_for_resume(tmp_path, monkeypatch) -> None:
-    from core import registry
+    from core.indexers import categories
     from core.utils import reset_thread_job, set_thread_job
     from logic import processing
 
@@ -150,7 +150,7 @@ def test_validation_stop_request_preserves_current_item_for_resume(tmp_path, mon
     monkeypatch.setattr(processing, "resolve_explicit_path", lambda *_args, **_kwargs: resolution)
     monkeypatch.setattr(processing, "_build_duplicate_prefetch_state", lambda *_args, **_kwargs: ({}, {}, None))
     monkeypatch.setattr(processing, "_run_validation_with_timeout", stop_during_validation)
-    monkeypatch.setattr(registry, "get_available_categories", lambda: [{"id": "movies"}])
+    monkeypatch.setattr(categories, "get_available_categories", lambda: [{"id": "movies"}])
 
     token = set_thread_job(job)
     try:
@@ -1977,7 +1977,7 @@ def test_staged_queue_preview_is_non_mutating(monkeypatch) -> None:
     }
 
 def test_check_success_duplicate_pattern_detected() -> None:
-    from core.registry import _check_success
+    from core.indexers.http_submit import _check_success
 
     idx = _make_success_indexer(["OK"], ["DUPLICATE"])
     ok, is_dup = _check_success(idx, _fake_success_response("DUPLICATE ENTRY"))
@@ -2001,7 +2001,7 @@ def test_preview_processing_items_reports_ready_and_duplicate_destinations(tmp_p
         "get_enabled_indexers",
         lambda _conf: [SimpleNamespace(id="geek", name="NZBGeek", enabled=True)],
     )
-    monkeypatch.setattr(registry_mod, "resolve_indexer_enabled", lambda _indexer, _conf: True)
+    monkeypatch.setattr(models_mod, "resolve_indexer_enabled", lambda _indexer, _conf: True)
     first_key = processing._normalize_runtime_path(first)
     second_key = processing._normalize_runtime_path(second)
     monkeypatch.setattr(

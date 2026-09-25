@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/indexers", tags=["indexers"])
 @router.get("/")
 async def get_all_indexers_route() -> List[Dict[str, Any]]:
     """Retrieve all loaded indexer definitions."""
-    from core.registry import get_all_indexers
+    from core.indexers.registry import get_all_indexers
 
     conf = get_config()
     return [idx.to_ui_dict(conf) for idx in get_all_indexers()]
@@ -23,7 +23,7 @@ async def get_all_indexers_route() -> List[Dict[str, Any]]:
 @router.get("/{indexer_id}")
 async def get_indexer_route(indexer_id: str) -> Dict[str, Any]:
     """Get a specific indexer definition."""
-    from core.registry import get_indexer
+    from core.indexers.registry import get_indexer
 
     idx = get_indexer(indexer_id)
     if not idx:
@@ -45,7 +45,7 @@ async def get_indexer_route(indexer_id: str) -> Dict[str, Any]:
 @router.post("/reload")
 async def reload_indexers_route() -> Dict[str, Any]:
     """Reload all indexer definitions from YAML files."""
-    from core.registry import get_all_indexers, reload_indexers
+    from core.indexers.registry import get_all_indexers, reload_indexers
     from logic.pending.completion import invalidate_pending_indexer_context
 
     reload_indexers()

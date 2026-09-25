@@ -400,7 +400,8 @@ def prewarm_pending_indexer_context() -> None:
     threading.Thread(target=_get_pending_indexer_context, daemon=True).start()
 
 def _get_pending_indexer_context_fresh() -> _IndexerContext:
-    from core.registry import get_registry, resolve_indexer_backfill
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_backfill
 
     conf = get_config()
     registry = get_registry()

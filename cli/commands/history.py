@@ -94,7 +94,8 @@ def cmd_indexers(args: argparse.Namespace) -> int:
     """
     from core import database
     from core.config import get_config
-    from core.registry import get_registry, resolve_indexer_enabled
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_enabled
 
     conf = get_config()
     registry = get_registry()

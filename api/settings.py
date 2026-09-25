@@ -22,13 +22,9 @@ router = APIRouter(prefix="/api/settings", tags=["settings"])
 @router.get("/")
 async def get_current_settings() -> Dict[str, Any]:
     """Retrieve the current active configuration grouped for the UI."""
-    from core.registry import (
-        get_all_indexers,
-        get_available_categories,
-        resolve_indexer_backfill,
-        resolve_indexer_enabled,
-        resolve_indexer_priority,
-    )
+    from core.indexers.registry import get_all_indexers
+    from core.indexers.models import resolve_indexer_backfill, resolve_indexer_enabled, resolve_indexer_priority
+    from core.indexers.categories import get_available_categories
 
     conf = get_config()
 

@@ -642,11 +642,9 @@ def _scan_regular_category_folder(
 def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     """Inner snapshot builder, wrapped by ``scan_pending_snapshot`` for caching."""
     started = time.perf_counter()
-    from core.registry import (
-        get_available_categories,
-        get_registry,
-        resolve_indexer_backfill,
-    )
+    from core.indexers.categories import get_available_categories
+    from core.indexers.registry import get_registry
+    from core.indexers.models import resolve_indexer_backfill
 
     conf = get_config()
     registry = get_registry()

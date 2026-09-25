@@ -37,7 +37,7 @@ from core.database import (
     record_nntp_success,
     update_db_destination,
 )
-from core.registry import get_enabled_indexers
+from core.indexers.registry import get_enabled_indexers
 from core.utils import (
     get_thread_job,
     log_info,
