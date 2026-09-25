@@ -11,8 +11,7 @@ def _history_html() -> str:
 
 def _history_js() -> str:
     # The page script is split into modules under pages/history/ (index.js + helpers).
-    return "
-".join(
+    return "\n".join(
         _read_repo_text("webui", "assets", "js", "pages", "history", name)
         for name in ("index.js", "groups.js", "known-issues.js", "selection.js")
     )

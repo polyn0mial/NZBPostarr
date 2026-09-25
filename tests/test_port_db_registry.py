@@ -235,7 +235,7 @@ def _curl_indexer(**overrides) -> IndexerDefinition:
         submit_url="https://example.invalid/api-upload.php",
         method="CURL",
         auth=AuthConfig(method="none"),
-        success=registry_mod.SuccessPatterns(text_patterns=["upload successful"], duplicate_patterns=["duplicate"]),
+        success=models_mod.SuccessPatterns(text_patterns=["upload successful"], duplicate_patterns=["duplicate"]),
     )
     values.update(overrides)
     return IndexerDefinition(**values)
@@ -247,12 +247,12 @@ def _api_indexer() -> IndexerDefinition:
         name="NZBGeek",
         submit_url="https://example.invalid/api",
         auth=AuthConfig(method="query_param", api_key_param="apikey"),
-        success=registry_mod.SuccessPatterns(text_patterns=["OK"]),
+        success=models_mod.SuccessPatterns(text_patterns=["OK"]),
     )
 
 
-def _response(status_code: int, body: str, reason: str = "") -> registry_mod.requests.Response:
-    response = registry_mod.requests.Response()
+def _response(status_code: int, body: str, reason: str = "") -> http_submit_mod.requests.Response:
+    response = http_submit_mod.requests.Response()
     response.status_code = status_code
     response.reason = reason
     response.encoding = "utf-8"
@@ -274,13 +274,14 @@ def test_curl_submission_follows_redirects_and_uses_final_page(tmp_path, monkeyp
         seen.update(kwargs)
         return _response(200, "<html><body>Upload successful</body></html>", "OK")
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
-    ok, status, _reason = submit_to_indexer(
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
+    result = submit_to_indexer(
         indexer=_curl_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key=""),
     )
+    ok, status, _reason = result.success, result.status, result.reason
 
     assert "allow_redirects" not in seen  # requests follows redirects by default
     assert seen["verify"] is False
@@ -290,16 +291,17 @@ def test_curl_submission_follows_redirects_and_uses_final_page(tmp_path, monkeyp
 
 def test_curl_submission_error_page_after_redirect_is_a_network_error(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        registry_mod.requests,
+        http_submit_mod.requests,
         "request",
         lambda *_args, **_kwargs: _response(500, "<html><title>Error</title><p>inf=err3</p></html>", "Internal Server Error"),
     )
-    ok, status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=_curl_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key=""),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert (ok, status) == (False, "network_error")
     assert reason == "HTTP 500 Internal Server Error | Body: Error inf=err3"
@@ -310,13 +312,14 @@ def test_http_error_message_uses_status_line_and_meta_description(tmp_path, monk
         '<html><head><meta content="Upload rejected for secret-key-123" name="description">'
         "</head><body><h1>Nope</h1></body></html>"
     )
-    monkeypatch.setattr(registry_mod.requests, "request", lambda *_args, **_kwargs: _response(400, body, "Bad Request"))
-    ok, status, reason = submit_to_indexer(
+    monkeypatch.setattr(http_submit_mod.requests, "request", lambda *_args, **_kwargs: _response(400, body, "Bad Request"))
+    result = submit_to_indexer(
         indexer=_api_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key="secret-key-123"),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert (ok, status) == (False, "network_error")
     assert reason.startswith("HTTP 400 Bad Request | Body: Upload rejected for ")
@@ -326,32 +329,34 @@ def test_http_error_message_uses_status_line_and_meta_description(tmp_path, monk
 
 def test_http_error_message_plain_text_body(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        registry_mod.requests,
+        http_submit_mod.requests,
         "request",
         lambda *_args, **_kwargs: _response(503, "Service\nUnavailable", ""),
     )
-    _ok, _status, reason = submit_to_indexer(
+    result = submit_to_indexer(
         indexer=_api_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key="secret-key-123"),
     )
+    _ok, _status, reason = result.success, result.status, result.reason
     assert reason == "HTTP 503 Error | Body: Service Unavailable"
 
 
 def test_connection_error_message_names_the_failure_and_redacts(tmp_path, monkeypatch) -> None:
     def fake_request(*_args, **_kwargs):
-        raise registry_mod.requests.exceptions.SSLError(
+        raise http_submit_mod.requests.exceptions.SSLError(
             "HTTPSConnectionPool: Max retries exceeded with url: /api?apikey=secret-key-123 (certificate verify failed)"
         )
 
-    monkeypatch.setattr(registry_mod.requests, "request", fake_request)
-    ok, status, reason = submit_to_indexer(
+    monkeypatch.setattr(http_submit_mod.requests, "request", fake_request)
+    result = submit_to_indexer(
         indexer=_api_indexer(),
         rls_name="Some.Release.2026.1080p.WEB-DL",
         nzb_path=_make_sample_nzb(tmp_path),
         config=_DummySubmitConfig(api_key="secret-key-123"),
     )
+    ok, status, reason = result.success, result.status, result.reason
 
     assert (ok, status) == (False, "network_error")
     assert reason.startswith("SSLError: ")
@@ -361,18 +366,19 @@ def test_connection_error_message_names_the_failure_and_redacts(tmp_path, monkey
 
 def test_successful_submission_logs_redacted_response_body(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(
-        registry_mod.requests,
+        http_submit_mod.requests,
         "request",
         lambda *_args, **_kwargs: _response(200, "OK\nuploaded with key secret-key-123", "OK"),
     )
     messages, sink_id = _capture_logs()
     try:
-        ok, _status, _reason = submit_to_indexer(
+        result = submit_to_indexer(
             indexer=_api_indexer(),
             rls_name="Some.Release.2026.1080p.WEB-DL",
             nzb_path=_make_sample_nzb(tmp_path),
             config=_DummySubmitConfig(api_key="secret-key-123"),
         )
+        ok, _status, _reason = result.success, result.status, result.reason
     finally:
         logger.remove(sink_id)
 
@@ -386,11 +392,11 @@ def test_successful_submission_logs_redacted_response_body(tmp_path, monkeypatch
 
 
 def test_available_categories_do_not_mirror_audiobooks(monkeypatch) -> None:
-    books = registry_mod.CategoryMapping(books="7020")
+    books = models_mod.CategoryMapping(books="7020")
     indexer = _api_indexer().model_copy(update={"categories": books})
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(all=lambda: [indexer]))
 
-    assert [cat["id"] for cat in registry_mod.get_available_categories()] == ["books"]
+    assert [cat["id"] for cat in categories_mod.get_available_categories()] == ["books"]
     assert books.resolve_code("audiobooks")[0] == "7020"  # submit-time fallback stays
 
 

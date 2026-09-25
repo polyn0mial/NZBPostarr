@@ -12,7 +12,7 @@ from typing import Any
 
 def cmd_upload(args: argparse.Namespace) -> int:
     """Run an upload job synchronously via UploadService (blocking until complete)."""
-    from core.registry import get_available_categories
+    from core.indexers.categories import get_available_categories
     from logic.services import get_upload_service
 
     category = args.category.lower()

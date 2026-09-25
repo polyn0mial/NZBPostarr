@@ -13,7 +13,7 @@ from typing import Any, Optional, Sequence
 
 from core.config import NNTPServer, get_config
 from core.database import check_duplicate_dynamic, record_nntp_success, update_db_destination
-from core.registry import get_enabled_indexers
+from core.indexers.registry import get_enabled_indexers
 from core.utils import get_thread_job, log_info, run_command, update_job_progress
 from logic.uploaders import (
     _build_nyuu_command,
