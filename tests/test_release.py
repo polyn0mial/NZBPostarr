@@ -19,7 +19,7 @@ def test_public_release_tree_has_no_private_runtime_files() -> None:
 
 def test_source_layout_stays_flat() -> None:
     assert not (REPO_ROOT / "nzbpostarr").exists()
-    for expected in ("app.py", "main.py", "api", "core", "logic", "indexers", "webui"):
+    for expected in ("app.py", "main.py", "api", "cli", "core", "logic", "indexers", "webui"):
         assert (REPO_ROOT / expected).exists()
 
 

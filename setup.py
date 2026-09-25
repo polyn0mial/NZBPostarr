@@ -26,6 +26,10 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from cli.launcher.bootstrap import REQS as REQS_FILE
+from cli.launcher.bootstrap import VENV as VENV_DIR
+from cli.launcher.bootstrap import VENV_PY, create_venv, install_requirements
+
 # ── Paths ────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
 
@@ -39,9 +43,6 @@ def _get_setup_config_path() -> Path:
 
 CONFIG_FILE = _get_setup_config_path()
 DEFAULTS_FILE = ROOT / "core" / "config.defaults.yaml"
-REQS_FILE = ROOT / "requirements.lock"
-VENV_DIR = ROOT / ".venv"
-VENV_PY = VENV_DIR / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 # ── Styling ──────────────────────────────────────────────────────────
 _COLOR = {
@@ -271,7 +272,7 @@ def setup_venv(total: int) -> None:
             return
 
     info(f"Creating virtual environment at {VENV_DIR}...")
-    run(f"{sys.executable} -m venv {VENV_DIR}")
+    create_venv()
     if VENV_PY.exists():
         ok("venv created")
     else:
@@ -287,11 +288,7 @@ def _install_pip_deps() -> None:
         return
 
     info(f"Installing Python packages from {REQS_FILE.name}...")
-    r = run(
-        f"{VENV_PY} -m pip install -q --disable-pip-version-check -r {REQS_FILE}",
-        check=False,
-        capture=True,
-    )
+    r = install_requirements(capture=True)
     if r.returncode == 0:
         ok("All Python packages installed")
     else:

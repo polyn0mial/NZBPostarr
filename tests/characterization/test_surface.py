@@ -7,7 +7,7 @@ from typing import Any, Iterator
 import pytest
 
 import app as app_mod
-from logic import headless as headless_mod
+from cli import parser as cli_parser
 from api.mcp import MCP_PATH
 from tests.characterization._snapshot import HERE, assert_json_snapshot, assert_text_snapshot, updating
 
@@ -132,7 +132,7 @@ def _describe_action(action: argparse.Action) -> dict[str, Any]:
 
 def _cli_surface() -> dict[str, Any]:
     surface: dict[str, Any] = {}
-    for names, parser in _walk_parsers(headless_mod.build_headless_parser()):
+    for names, parser in _walk_parsers(cli_parser.build_headless_parser()):
         surface[" ".join(names) or "(root)"] = {
             "prog": parser.prog,
             "description": parser.description,
@@ -165,7 +165,7 @@ def test_cli_help_text_matches_snapshot(monkeypatch) -> None:
 
     helps = {
         "-".join(("headless", *names)): parser.format_help()
-        for names, parser in _walk_parsers(headless_mod.build_headless_parser())
+        for names, parser in _walk_parsers(cli_parser.build_headless_parser())
     }
     assert_json_snapshot(CLI_HELP_DIR / "index.json", sorted(helps))
     for name, text in helps.items():

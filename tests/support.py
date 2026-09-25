@@ -104,7 +104,17 @@ from logic.pending import roots as pending_roots
 
 from logic import pending_snapshot as pending_snapshot_mod
 
-from logic import headless as headless_mod
+from cli import parser as cli_parser
+from cli import run as cli_run
+from cli.commands import config as cli_config
+from cli.commands import history as cli_history
+from cli.commands import logs as cli_logs
+from cli.commands import pending as cli_pending
+from cli.commands import queue as cli_queue
+from cli.commands import stats as cli_stats
+from cli.commands import status as cli_status
+from cli.commands import system as cli_system
+from cli.commands import upload as cli_upload
 
 from logic.services import ConsoleBuffer, console
 

@@ -127,7 +127,7 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
 
     monkeypatch.setattr(stats_engine, "start_collector", fail_start_collector)
 
-    rc = headless_mod.run_headless(["stats", "--json", "--sample-seconds", "0.05"])
+    rc = cli_run.run_headless(["stats", "--json", "--sample-seconds", "0.05"])
 
     assert rc == 0
     payload = json.loads(capsys.readouterr().out)
@@ -142,14 +142,14 @@ def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
         "collect_instant_system_info",
         lambda interval_seconds=0.25: {"hostname": "test-host", "platform": "TestOS", "uptime_seconds": 0},
     )
-    monkeypatch.setattr(headless_mod, "_render_stats_summary", lambda _info: "stats snapshot")
+    monkeypatch.setattr(cli_stats, "_render_stats_summary", lambda _info: "stats snapshot")
 
     def stop_immediately(_seconds: float) -> None:
         raise KeyboardInterrupt()
 
-    monkeypatch.setattr(headless_mod.time, "sleep", stop_immediately)
+    monkeypatch.setattr(cli_stats.time, "sleep", stop_immediately)
 
-    rc = headless_mod.cmd_stats(
+    rc = cli_stats.cmd_stats(
         SimpleNamespace(
             json=False,
             watch=True,
