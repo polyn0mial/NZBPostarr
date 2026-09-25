@@ -1,0 +1,68 @@
+<!-- Upload Item Details Modal -->
+<modal
+    :open="uploadDetailModalOpen"
+    title="Upload Details"
+    icon="info"
+    max-width="max-w-3xl"
+    panel-class="bg-notion-bg max-h-[90vh] sm:max-h-[85vh]"
+    @close="closeUploadDetails()">
+    <div v-if="uploadDetailItem" class="p-5 overflow-y-auto flex-1 space-y-4">
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg p-4 space-y-2">
+            <div class="text-sm font-semibold text-notion-text-primary break-all">{{ uploadDetailItem.item_name }}</div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                <div class="text-notion-text-tertiary">
+                    Category:
+                    <span class="text-notion-text-primary">{{ getCategoryLabel(uploadDetailItem.media_type) }}</span>
+                </div>
+                <div class="text-notion-text-tertiary">
+                    Size:
+                    <span class="text-notion-text-primary">{{ formatSize(uploadDetailItem.filesize) }}</span>
+                </div>
+                <div class="text-notion-text-tertiary">
+                    Updated:
+                    <span class="text-notion-text-primary">{{ formatDateFull(uploadDetailItem.updated_at) || '-' }}</span>
+                </div>
+                <div class="text-notion-text-tertiary">
+                    Created:
+                    <span class="text-notion-text-primary">{{ formatDateFull(uploadDetailItem.created_at) || '-' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden">
+            <div class="px-4 py-2 border-b border-notion-divider text-xs font-semibold uppercase tracking-wider text-notion-text-tertiary">Destinations</div>
+            <div v-if="getUploadDetailDestinations(uploadDetailItem).length === 0" class="px-4 py-4 text-xs text-notion-text-tertiary">No destination metadata recorded.</div>
+            <div v-else class="divide-y divide-notion-divider">
+                <div v-for="dest in getUploadDetailDestinations(uploadDetailItem)" :key="dest.id + '-' + dest.name" class="px-4 py-2 text-xs">
+                    <div class="flex items-center justify-between gap-3">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <img v-if="dest.favicon" :src="dest.favicon" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="size-3.5 object-contain rounded-sm" />
+                            <lucide-icon v-else :name="dest.icon || 'database'" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                            <span class="text-notion-text-primary truncate">{{ dest.name }}</span>
+                        </div>
+                        <span :class="dest.status === 'failed' ? 'text-notion-error bg-notion-error/10' : 'text-notion-success bg-notion-success/10'" class="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase">{{ dest.status || 'success' }}</span>
+                    </div>
+                    <div class="mt-1 grid grid-cols-1 sm:grid-cols-3 gap-1 text-[11px] text-notion-text-tertiary">
+                        <div>
+                            Duration:
+                            <span class="text-notion-text-secondary">{{ formatDuration(dest.duration) }}</span>
+                        </div>
+                        <div>
+                            Speed:
+                            <span class="text-notion-text-secondary">{{ formatSpeed(dest.speed) }}</span>
+                        </div>
+                        <div>
+                            Server:
+                            <span class="text-notion-text-secondary">{{ dest.server || '-' }}</span>
+                        </div>
+                    </div>
+                    <div v-if="dest.error" class="mt-1 text-[11px] text-notion-error wrap-break-word">Error: {{ dest.error }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-lg overflow-hidden">
+            <div class="px-4 py-2 border-b border-notion-divider text-xs font-semibold uppercase tracking-wider text-notion-text-tertiary">Raw Data</div>
+            <pre class="p-4 text-[11px] leading-4 overflow-auto text-notion-text-secondary">{{ prettyJson(uploadDetailItem) }}</pre>
+        </div>
+    </div>

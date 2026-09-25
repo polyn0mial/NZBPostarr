@@ -1,0 +1,269 @@
+/* Docs and indexer guides (docs.html, indexer-guides.html). The two pages share every rule
+   here; .badge-put/.badge-delete, .endpoint-row and .step-badge are used only by the docs page,
+   .idx-badge and .badge-required/.badge-optional only by the indexer guides. */
+.doc-sidebar a {
+    font-size: 0.75rem;
+    color: var(--notion-text-secondary);
+    transition: all 0.15s;
+    padding: 5px 10px;
+    display: block;
+    border-radius: 4px;
+}
+.doc-sidebar a:hover {
+    color: var(--notion-text-primary);
+    background: var(--notion-bg-hover);
+}
+.doc-sidebar a.active {
+    color: var(--notion-accent);
+    background: color-mix(in srgb, var(--notion-accent) 8%, transparent);
+    font-weight: 500;
+}
+.doc-sidebar .sidebar-group {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--notion-text-tertiary);
+    padding: 8px 10px 4px;
+    margin-top: 8px;
+}
+.doc-sidebar .sidebar-group:first-child {
+    margin-top: 0;
+}
+
+.doc-section {
+    scroll-margin-top: 80px;
+}
+
+.doc-code {
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-size: 12px;
+    background: var(--notion-bg);
+    border: 1px solid var(--notion-border);
+    border-radius: 4px;
+    padding: 1px 6px;
+    color: #fbbf24;
+}
+.doc-pre {
+    background: var(--notion-bg);
+    border: 1px solid var(--notion-border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-size: 12px;
+    line-height: 1.6;
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+    color: var(--notion-text-secondary);
+    margin: 10px 0;
+    white-space: pre;
+}
+.doc-table {
+    width: 100%;
+    font-size: 0.75rem;
+    border-collapse: collapse;
+}
+.doc-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--notion-bg-hover);
+    border: 1px solid var(--notion-border);
+    color: var(--notion-accent);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+}
+.doc-table td {
+    padding: 8px 12px;
+    border: 1px solid var(--notion-border);
+    color: var(--notion-text-secondary);
+}
+.doc-table tr:hover td {
+    background: color-mix(in srgb, var(--notion-bg-hover) 50%, transparent);
+}
+
+.doc-badge {
+    display: inline-block;
+    font-family: 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+.badge-get {
+    background: rgba(34, 197, 94, 0.15);
+    color: #4ade80;
+    border: 1px solid rgba(34, 197, 94, 0.3);
+}
+.badge-post {
+    background: rgba(245, 158, 11, 0.15);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+}
+.badge-put {
+    background: rgba(59, 130, 246, 0.15);
+    color: #60a5fa;
+    border: 1px solid rgba(59, 130, 246, 0.3);
+}
+.badge-delete {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.doc-callout {
+    border: 1px solid;
+    border-radius: 8px;
+    padding: 12px;
+    margin: 10px 0;
+    font-size: 0.75rem;
+    line-height: 1.6;
+}
+.doc-callout-warn {
+    background: rgba(245, 158, 11, 0.05);
+    border-color: rgba(245, 158, 11, 0.2);
+    color: #fde68a;
+}
+.doc-callout-ok {
+    background: rgba(34, 197, 94, 0.05);
+    border-color: rgba(34, 197, 94, 0.2);
+    color: #86efac;
+}
+.doc-callout-err {
+    background: rgba(239, 68, 68, 0.05);
+    border-color: rgba(239, 68, 68, 0.2);
+    color: #fca5a5;
+}
+.doc-callout strong {
+    color: var(--notion-text-primary);
+}
+
+.doc-h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--notion-text-primary);
+    margin: 1.5rem 0 0.75rem;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--notion-divider);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.doc-h2:first-child {
+    margin-top: 0;
+}
+.doc-h3 {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--notion-text-primary);
+    margin: 1rem 0 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.endpoint-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 6px;
+    transition: background 0.15s;
+    font-size: 0.75rem;
+    border-bottom: 1px solid color-mix(in srgb, var(--notion-border) 50%, transparent);
+}
+.endpoint-row:last-child {
+    border-bottom: none;
+}
+.endpoint-row:hover {
+    background: color-mix(in srgb, var(--notion-bg-hover) 50%, transparent);
+}
+
+/* Tab bar */
+.doc-tab {
+    padding: 8px 16px;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--notion-text-secondary);
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    cursor: pointer;
+    white-space: nowrap;
+    text-decoration: none;
+}
+.doc-tab:hover {
+    color: var(--notion-text-primary);
+}
+.doc-tab.active {
+    color: var(--notion-accent);
+    border-bottom-color: var(--notion-accent);
+}
+
+/* Prev/next footer */
+.doc-nav-btn {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    border: 1px solid var(--notion-border);
+    border-radius: 8px;
+    transition: all 0.15s;
+    min-width: 0;
+    flex: 1;
+}
+.doc-nav-btn:hover {
+    background: var(--notion-bg-hover);
+    border-color: var(--notion-accent);
+}
+.doc-nav-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--notion-text-tertiary);
+    margin-bottom: 2px;
+}
+.doc-nav-title {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--notion-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Step badge (docs) */
+.step-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* Indexer guides: indexer letter badge and field requirement badges */
+.idx-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+}
+.badge-required {
+    background: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.badge-optional {
+    background: rgba(100, 116, 139, 0.15);
+    color: #94a3b8;
+    border: 1px solid rgba(100, 116, 139, 0.3);
+}

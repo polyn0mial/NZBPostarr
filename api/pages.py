@@ -5,12 +5,12 @@ from __future__ import annotations
 import re
 from typing import Awaitable, Callable
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from loguru import logger
 
 from api.assets import templates
-from api.deps import _stats_page_enabled
+from api.deps import check_feature
 
 
 router = APIRouter()
@@ -95,8 +95,8 @@ def _page_paths(name: str) -> tuple[str, ...]:
 
 def _page_route(template: str) -> Callable[[Request], Awaitable[Response]]:
     async def render_page(request: Request) -> Response:
-        if template == "stats.html" and not _stats_page_enabled():
-            raise HTTPException(status_code=404, detail="Stats page is disabled")
+        if template == "stats.html":
+            check_feature("stats_page")
         return templates.TemplateResponse(request, template, {"request": request})
 
     return render_page
