@@ -47,8 +47,8 @@ def test_updater_version_compare_and_restart_behavior(monkeypatch) -> None:
             if self._target:
                 self._target()
 
-    monkeypatch.setattr(updater.threading, "Thread", ImmediateThread)
-    monkeypatch.setattr(updater.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(lifecycle.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(lifecycle.time, "sleep", lambda _seconds: None)
 
     restart_cases = [
         ("spawn-fails", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("spawn failed")), [], 1),
@@ -63,10 +63,10 @@ def test_updater_version_compare_and_restart_behavior(monkeypatch) -> None:
             spawn_calls.append((args, kwargs))
             return fake_popen(*args, **kwargs)
 
-        monkeypatch.setattr(updater.subprocess, "Popen", wrapped_popen)
-        monkeypatch.setattr(updater.os, "_exit", lambda code: exit_codes.append(code))
+        monkeypatch.setattr(lifecycle.subprocess, "Popen", wrapped_popen)
+        monkeypatch.setattr(lifecycle.os, "_exit", lambda code: exit_codes.append(code))
 
-        updater.schedule_restart(delay_seconds=0)
+        lifecycle.schedule_restart(delay_seconds=0)
 
         assert exit_codes == expected_exit_codes, case_name
         assert len(spawn_calls) == expected_spawn_calls, case_name

@@ -146,7 +146,7 @@ def init_app() -> None:
     from core.database import init_database
     from core.registry import get_registry
     from core.utils import run_global_purge
-    from logic.process_reaper import get_scheduler
+    from logic.system.reaper import get_scheduler
 
     logger.info("Initializing database...")
     init_database()

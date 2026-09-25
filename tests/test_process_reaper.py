@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 
-from logic import process_reaper
+from logic.system import reaper as process_reaper
 
 
 class _Proc:

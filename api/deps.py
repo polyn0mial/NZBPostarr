@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set
 from loguru import logger
 
 from core.config import get_config
-from logic.stats_engine import dashboard_stats_enabled, history_tracking_enabled, stats_page_enabled
+from logic.stats.collector import dashboard_stats_enabled, history_tracking_enabled, stats_page_enabled
 
 
 def _stats_page_enabled(conf: Optional[Any] = None) -> bool:
@@ -28,7 +28,7 @@ def _stats_collector_required(conf: Optional[Any] = None) -> bool:
 
 async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
     current = conf or get_config()
-    from logic.stats_engine import (
+    from logic.stats.collector import (
         start_collector,
         stop_collector,
         sync_collector_schedule,
