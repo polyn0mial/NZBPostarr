@@ -963,7 +963,7 @@ def test_log_pack_completion_state_uses_verbose_level(monkeypatch) -> None:
     ]
 
 def test_parse_nzb_structure_collects_files_and_segments(tmp_path) -> None:
-    from logic.usenet_stream import parse_nzb_structure
+    from logic.stream.nzb import parse_nzb_structure
 
     source = tmp_path / "sample.nzb"
     source.write_text(
@@ -993,7 +993,7 @@ def test_parse_nzb_structure_collects_files_and_segments(tmp_path) -> None:
     assert file_entry["segments"][1]["message_id"] == "<part2@example>"
 
 def test_build_procjson_inputs_points_back_to_helper(tmp_path) -> None:
-    from logic.usenet_stream import build_procjson_inputs
+    from logic.stream.manifest import build_procjson_inputs
 
     manifest_path = tmp_path / "release.stream.json"
     manifest = {
@@ -1010,10 +1010,27 @@ def test_build_procjson_inputs_points_back_to_helper(tmp_path) -> None:
     first = json.loads(inputs[0][len("procjson://") :])
     assert first[0] == "one.bin"
     assert first[1] == 111
-    assert "logic.usenet_stream" in first[2]
+    assert "logic.stream.manifest" in first[2]
+    assert "-m logic.stream.manifest emit --manifest" in first[2]
+
+
+def test_stream_manifest_module_is_runnable_helper() -> None:
+    import subprocess
+    import sys
+
+    result = subprocess.run(
+        [sys.executable, "-m", "logic.stream.manifest", "emit", "--help"],
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "python -m logic.stream.manifest emit" in result.stdout
 
 def test_resolve_source_nzb_paths_supports_file_and_directory(tmp_path) -> None:
-    from logic.usenet_stream import resolve_source_nzb_paths
+    from logic.stream.repost import resolve_source_nzb_paths
 
     single = tmp_path / "single.nzb"
     single.write_text("<nzb></nzb>", encoding="utf-8")
