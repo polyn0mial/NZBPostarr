@@ -21,7 +21,7 @@ from api.deps import _stats_collector_required, _sync_stats_collector_state
 from api.pages import not_found_exception_handler, server_error_exception_handler
 from api.pending import _pending_index, _pending_watch_folders, _scan_pending_all
 from core.config import get_config
-from logic import usenet_stream
+from logic.stream import monitors as stream_monitors
 
 
 _boot_reaper_task: Optional[asyncio.Task[Any]] = None
@@ -88,7 +88,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     await start_folder_monitor()
     logger.debug(f"  [3/3] Folder Monitor checked ({time.time() - start:.3f}s)")
 
-    await usenet_stream.start_stream_monitors()
+    await stream_monitors.start_stream_monitors()
     logger.debug(f"  [3.25/4] Stream Monitor checked ({time.time() - start:.3f}s)")
 
     # Pending index manager (request-path offload): watcher invalidation + periodic reconcile.
@@ -123,7 +123,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     await _stop_startup_reaper()
     _asset_cache_bust.stop()
     _pending_index.stop()
-    await usenet_stream.stop_stream_monitors()
+    await stream_monitors.stop_stream_monitors()
     await stop_folder_monitor()
     await stop_collector()
     checkpoint_wal()  # flush WAL before process exits
