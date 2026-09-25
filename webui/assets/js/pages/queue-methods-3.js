@@ -1,5 +1,5 @@
 // Auto-split from queue.js - verbatim methods bodies.
-import { queueCategoryMeta as categoryMeta, categoryLabel } from "page-base";
+import { queueCategoryMeta as categoryMeta } from "page-base";
 export default {
 async correctAnimeCache(item, isAnime) {
       if (!item || !item.name) return;
@@ -336,61 +336,6 @@ getCategoryBadgeStyle(catId) {
       };
     },
 
-getCategoryBadgeLabel(catId) {
-      const normalized = String(catId || "").trim().toLowerCase();
-      if (!normalized) return "Type";
-      const hit = Object.values(categoryMeta).find((cat) => cat.id === normalized);
-      return hit?.label || categoryLabel(normalized) || "Type";
-    },
-
-/**
-     * Returns label + Tailwind classes for a content-type badge,
-     * or null if the itype has no dedicated badge style.
-     */
-    itypeBadge(itype) {
-      const map = {
-        "TV Show": { label: "TV", classes: "bg-cyan-500/15 text-cyan-400" },
-        "Movie": { label: "Movie", classes: "bg-purple-500/15 text-purple-400" },
-        "Anime": { label: "Anime", classes: "bg-pink-500/15 text-pink-400" },
-        "Music": { label: "Music", classes: "bg-green-500/15 text-green-400" },
-        "Audiobook": { label: "Audiobook", classes: "bg-indigo-500/15 text-indigo-400" },
-        "Ebook": { label: "Ebook", classes: "bg-orange-500/15 text-orange-400" },
-        "Misc": { label: "Misc", classes: "bg-slate-500/15 text-slate-400" }
-      };
-      return map[itype] || null;
-    },
-
-toggleExternalSelection(checked) {
-      const nextSet = new Set(this.selectedItems);
-      (this.items.external || []).forEach((group) => {
-        (group.items || []).forEach((item) => {
-          const visit = (node) => {
-            if (!node || !node.key || !this.extItemPassesFilters(node)) return;
-            if (checked) {
-              nextSet.add(node.key);
-            } else {
-              nextSet.delete(node.key);
-            }
-            (node.children || []).forEach(visit);
-          };
-          visit(item);
-        });
-      });
-      this.selectedItems = nextSet;
-    },
-
-areAllExternalSelected() {
-      if (!this.items.external || this.totalExternalItems === 0) return false;
-      const selectable = [];
-      this.items.external.forEach((group) => {
-        (group.items || []).forEach((item) => {
-          selectable.push(...this.collectVisibleSelectableExternalNodes(item));
-        });
-      });
-      if (selectable.length === 0) return false;
-      return selectable.every((item) => this.selectedItems.has(item.key));
-    },
-
 async toggleExtGroupSelection(groupOrIdx, checked) {
       const initialGroup = typeof groupOrIdx === "number" ? (this.items.external || [])[groupOrIdx] : groupOrIdx;
       if (!initialGroup || !initialGroup.items) return;
@@ -429,10 +374,6 @@ areAllExtGroupSelected(groupOrIdx) {
       return selectable.every((item) => this.selectedItems.has(item.key));
     },
 
-getAutoCategoryLabel(item) {
-      return categoryLabel(this.getExternalItemCategory(item));
-    },
-
 getExternalItemCategory(item) {
       const cat = this.getCategoryForItem(item);
       return cat && cat !== "external" ? cat : "";
@@ -443,14 +384,6 @@ getUploadCategoryForItem(item) {
       if (this.isPackOnlyExternalChild(item)) return "";
       const cat = this.getCategoryForItem(item);
       return cat && cat !== "external" ? cat : "";
-    },
-
-getExternalItemColor(item) {
-      return this.getCategoryColor(this.getExternalItemCategory(item));
-    },
-
-getExternalItemIcon(item) {
-      return this.getCategoryIcon(this.getExternalItemCategory(item));
     },
 
 getFolderStateTooltip(item) {

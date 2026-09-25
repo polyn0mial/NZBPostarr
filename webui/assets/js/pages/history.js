@@ -549,7 +549,6 @@ const vm = createVuePage({
                 }
             } finally {
                 this.loading = false;
-                this.$nextTick(() => this.refreshIcons());
             }
         },
 
@@ -558,7 +557,6 @@ const vm = createVuePage({
             this.jobModalUploads = [];
             this.jobModalLoading = true;
             this.jobModalOpen = true;
-            this.$nextTick(() => this.refreshIcons());
             try {
                 this.jobModalUploads = throwIfHistoryError(await this.apiFetch(`/api/uploads/history/${job.job_id}/uploads`));
             } catch (e) {
@@ -567,7 +565,6 @@ const vm = createVuePage({
                 }
             } finally {
                 this.jobModalLoading = false;
-                this.$nextTick(() => this.refreshIcons());
             }
         },
 
@@ -575,7 +572,6 @@ const vm = createVuePage({
             if (!item) return;
             this.uploadDetailItem = item;
             this.uploadDetailModalOpen = true;
-            this.$nextTick(() => this.refreshIcons());
         },
 
         closeUploadDetails() {
@@ -786,7 +782,6 @@ const vm = createVuePage({
             } finally {
                 if (requestSeq === this._uploadsRequestSeq) {
                     this.loading = false;
-                    this.$nextTick(() => this.refreshIcons());
                 }
             }
         },
@@ -807,10 +802,6 @@ const vm = createVuePage({
         getSortIcon(column) {
             if (this.sortColumn !== column) return 'chevrons-up-down';
             return this.sortOrder === 'asc' ? 'chevron-up' : 'chevron-down';
-        },
-
-        isSortActive(column) {
-            return this.sortColumn === column;
         },
 
         // Prettier-safe sort icon class helper
@@ -834,10 +825,6 @@ const vm = createVuePage({
 
         nextPage() {
             if (!this.isLastPage) this.goToPage(this.currentPage + 1);
-        },
-
-        goToLastPage() {
-            this.goToPage(this.totalPages);
         },
 
         // ============================================================
@@ -990,7 +977,6 @@ const vm = createVuePage({
                 const next = { ...this.loadingGroups };
                 delete next[group.key];
                 this.loadingGroups = next;
-                this.$nextTick(() => this.refreshIcons());
             }
         },
 

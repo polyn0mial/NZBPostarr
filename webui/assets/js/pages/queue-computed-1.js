@@ -196,10 +196,6 @@ isMoviesEnabled() {
       return true;
     },
 
-isExternalEnabled() {
-      return this.items.external && this.items.external.some((g2) => g2.items && g2.items.length > 0);
-    },
-
 orderedExternalGroups() {
       const groups = (this.items.external || []).slice();
       void this._externalGroupOrderVersion;
@@ -312,15 +308,6 @@ cacheAge() {
       if (age < 2) return "just now";
       if (age < 60) return `${age}s ago`;
       return `${Math.floor(age / 60)}m ago`;
-    },
-
-queueCategoryCounts() {
-      const counts = {};
-      for (const item of this.queueItems) {
-        const cat = (item.category || "other").toLowerCase();
-        counts[cat] = (counts[cat] || 0) + 1;
-      }
-      return Object.entries(counts).sort(([a2], [b2]) => a2.localeCompare(b2)).map(([cat, count]) => ({ cat, count, label: categoryLabel(cat) }));
     },
 
 finishedPreview() {

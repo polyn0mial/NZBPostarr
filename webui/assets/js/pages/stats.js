@@ -193,8 +193,6 @@ vue = createVuePage({
                 if (manual && this.isSectionExpanded('top-dirs')) {
                     this.loadTopDirectories();
                 }
-
-                this.refreshIcons();
             } catch (e) {
                 console.error('Failed to load stats:', e);
             }
@@ -227,7 +225,6 @@ vue = createVuePage({
                 this.topDirsStatus = 'Error loading';
             } finally {
                 this.loadingTopDirs = false;
-                this.refreshIcons();
             }
         },
 

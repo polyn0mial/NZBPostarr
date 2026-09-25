@@ -1815,7 +1815,7 @@ apt install rar   # or your OS equivalent</pre
             <div class="doc-h2" style="margin-top: 0">
                 <lucide-icon name="database" icon-class="w-4.5 h-4.5 text-orange-400"></lucide-icon>
                 Indexers
-                <span class="text-[10px] px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-orange-400 font-mono ml-2">3 endpoints</span>
+                <span class="text-[10px] px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-orange-400 font-mono ml-2">2 endpoints</span>
             </div>
             <div>
                 <div class="endpoint-row">
@@ -1827,53 +1827,6 @@ apt install rar   # or your OS equivalent</pre
                     <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
                     <code class="doc-code flex-1">/api/indexers/{id}</code>
                     <span class="text-notion-text-tertiary text-[11px] ml-auto">Get indexer details</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
-                    <code class="doc-code flex-1">/api/indexers/{id}/test</code>
-                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Test indexer connection</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Pending API -->
-        <div v-if="activeTab==='api' && activeSection==='api-pending'" id="api-pending" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
-            <div class="doc-h2" style="margin-top: 0">
-                <lucide-icon name="clock" icon-class="w-4.5 h-4.5 text-blue-400"></lucide-icon>
-                Pending
-                <span class="text-[10px] px-1.5 py-0.5 bg-blue-500/10 border border-blue-500/20 rounded text-blue-400 font-mono ml-2">2 endpoints</span>
-            </div>
-            <div>
-                <div class="endpoint-row">
-                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
-                    <code class="doc-code flex-1">/api/pending/</code>
-                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Pending items per category</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="doc-badge badge-get w-12 text-center shrink-0">GET</span>
-                    <code class="doc-code flex-1">/api/pending/{category}</code>
-                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Pending for specific category</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Tests API -->
-        <div v-if="activeTab==='api' && activeSection==='api-tests'" id="api-tests" class="doc-section space-y-4 text-xs text-notion-text-secondary leading-relaxed">
-            <div class="doc-h2" style="margin-top: 0">
-                <lucide-icon name="flask-conical" icon-class="w-4.5 h-4.5 text-violet-400"></lucide-icon>
-                Tests
-                <span class="text-[10px] px-1.5 py-0.5 bg-violet-500/10 border border-violet-500/20 rounded text-violet-400 font-mono ml-2">2 endpoints</span>
-            </div>
-            <div>
-                <div class="endpoint-row">
-                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
-                    <code class="doc-code flex-1">/api/tests/nntp</code>
-                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Test NNTP server connection</span>
-                </div>
-                <div class="endpoint-row">
-                    <span class="doc-badge badge-post w-12 text-center shrink-0">POST</span>
-                    <code class="doc-code flex-1">/api/tests/indexer/{id}</code>
-                    <span class="text-notion-text-tertiary text-[11px] ml-auto">Test indexer API key</span>
                 </div>
             </div>
         </div>
@@ -1938,9 +1891,7 @@ apt install rar   # or your OS equivalent</pre
                             { id: 'api-settings', title: 'Settings', group: 'Endpoints', keywords: 'settings config browse reset raw preview update' },
                             { id: 'api-console', title: 'Console', group: 'Endpoints', keywords: 'console logs' },
                             { id: 'api-stats', title: 'Stats', group: 'Endpoints', keywords: 'stats summary full mini top directories history record' },
-                            { id: 'api-indexers', title: 'Indexers', group: 'Endpoints', keywords: 'indexers list details test connection' },
-                            { id: 'api-pending', title: 'Pending', group: 'Endpoints', keywords: 'pending category queue items' },
-                            { id: 'api-tests', title: 'Tests', group: 'Endpoints', keywords: 'tests nntp indexer connection verify' },
+                            { id: 'api-indexers', title: 'Indexers', group: 'Endpoints', keywords: 'indexers list details' },
                         ],
                     },
                 ],

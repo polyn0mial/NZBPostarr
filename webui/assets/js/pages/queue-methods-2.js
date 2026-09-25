@@ -274,25 +274,6 @@ _collectPresentCategories(items) {
     },
 
 /**
-     * Return a copy of `items` filtered to only contain entries whose
-     * `itype` matches the given string.  Preserves the structural shape
-     * (external group nesting, flat arrays).
-     */
-    _filterItemsByItype(items, itype) {
-      if (!items || !itype) return items;
-      const result = {};
-      result.external = (items.external || []).map((g2) => {
-        const fitems = (g2.items || []).filter((it2) => it2.itype === itype);
-        return fitems.length ? { ...g2, items: fitems } : null;
-      }).filter(Boolean);
-      for (const [key, val] of Object.entries(items)) {
-        if (key === "external") continue;
-        result[key] = Array.isArray(val) ? val.filter((it2) => it2.itype === itype) : val;
-      }
-      return result;
-    },
-
-/**
      * Map an itype string to the best matching upload category id.
      * Delegates to the shared itypeToCategory utility from page-base.
      */

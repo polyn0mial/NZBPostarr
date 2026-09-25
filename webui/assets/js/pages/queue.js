@@ -298,7 +298,6 @@ function normalizePendingExternalGroups(self, items) {
 try {
   createVuePage({
 persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterMode", "ignoredPaths", "unignoredPaths", "queueSectionExpanded", "manualExternalCategories", "bulkSelectCategoriesSelected"],
-revisionSensitivePersistKeys: ["ignoredPaths", "unignoredPaths"],
   data() {
     return {
       loading: true,

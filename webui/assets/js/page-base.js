@@ -167,9 +167,6 @@ export const formatUtils = {
     },
 };
 
-// Re-export library utilities for page scripts that need them directly
-export { copy, computePosition, flip, shift, offset, escapeStringRegexp };
-
 // ============================================================
 //  COLOR MAP FOR INDEXERS
 // ============================================================
@@ -1012,14 +1009,6 @@ export function createVuePage(pageOptions = {}) {
         visibleNavItems() {
             return this.navItems.filter(item => this.isNavItemVisible(item));
         },
-        flatNavItems() {
-            const flat = [];
-            this.visibleNavItems.forEach(item => {
-                flat.push(item);
-                if (item.children) item.children.forEach(c => flat.push({ ...c, isChild: true }));
-            });
-            return flat;
-        },
         ...(pageOptions.computed || {}),
     };
 
@@ -1283,7 +1272,6 @@ export function createVuePage(pageOptions = {}) {
             if (item) {
                 // Use Vue.set-like approach for reactivity in case it wasn't pre-defined
                 item.faviconError = true;
-                this.refreshIcons();
             }
         },
 
@@ -1456,8 +1444,6 @@ export function createVuePage(pageOptions = {}) {
             } catch (e) {
                 console.error('Failed to save theme to localStorage:', e);
             }
-
-            this.refreshIcons();
         },
 
         // ============================================================
@@ -1658,11 +1644,6 @@ export function createVuePage(pageOptions = {}) {
 
         // Managed Interval Helper
         startInterval(fn, ms) {
-            // Under Lighthouse audit, slow down polling to allow the page to "finish" loading
-            if (navigator.userAgent.includes('Lighthouse') || window.location.search.includes('lighthouse=1')) {
-                ms = Math.max(ms, 120000); // 2 minutes! Basically stop polling.
-            }
-
             const existing = this._intervalMap.get(fn);
             if (existing) {
                 existing.cancelled = true;
@@ -1740,7 +1721,6 @@ export function createVuePage(pageOptions = {}) {
 
         // Global formatting aliases for templates
         formatSize(val) { return this.$format.formatBytes(val); },
-        formatRelative(val) { return this.$format.formatRelativeDate(val); },
 
         // Shared search/escape utilities (consolidated from per-page duplicates)
         escapeRegex(str) { return formatUtils.escapeRegex(str); },
@@ -1769,11 +1749,6 @@ export function createVuePage(pageOptions = {}) {
                 ],
             });
             return { x, y };
-        },
-
-        // Refresh icons after Vue updates
-        refreshIcons() {
-            // No-op: most icons are rendered via the <lucide-icon> component without DOM scans.
         },
 
         ...(pageOptions.methods || {}),
@@ -1876,22 +1851,6 @@ export function createVuePage(pageOptions = {}) {
     app.component('modal', Modal);
     Object.entries(pageOptions.components || {}).forEach(([name, component]) => {
         app.component(name, component);
-    });
-
-    // Register v-click-outside directive
-    app.directive('click-outside', {
-        mounted(el, binding) {
-            el._clickOutsideHandler = (event) => {
-                if (!(el === event.target || el.contains(event.target))) {
-                    binding.value(event);
-                }
-            };
-            document.addEventListener('click', el._clickOutsideHandler, true);
-        },
-        unmounted(el) {
-            document.removeEventListener('click', el._clickOutsideHandler, true);
-            delete el._clickOutsideHandler;
-        }
     });
 
     // Global Properties for templates

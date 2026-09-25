@@ -2,36 +2,10 @@
 @config '../../tailwind.config.cjs';
 
 @layer components {
-    .nav-link {
-        display: flex;
-        align-items: center;
-        padding: 0.375rem 0.75rem;
-        border-radius: var(--radius-md);
-        font-size: var(--text-sm);
-        line-height: var(--text-sm--line-height);
-        color: var(--notion-text-secondary);
-        transition-property: color, background-color;
-        transition-timing-function: var(--default-transition-timing-function);
-        transition-duration: var(--default-transition-duration);
-        &:hover {
-            color: var(--notion-text-primary);
-            background-color: var(--notion-bg-hover);
-        }
-        &.active {
-            color: var(--notion-text-primary);
-            background-color: var(--notion-bg-active);
-        }
-    }
     /* Desktop nav dropdown on hover */
     .nav-dropdown-parent:hover .nav-dropdown-menu,
     .nav-dropdown-menu:hover {
         display: block !important;
-    }
-    .notion-card {
-        border: 1px solid var(--notion-border);
-        border-radius: var(--radius-lg);
-        background-color: var(--notion-bg-secondary);
-        overflow: clip;
     }
     .icon-btn {
         padding: 0.375rem;
