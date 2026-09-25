@@ -1,6 +1,5 @@
 import {
     createVuePage,
-    colorClassMap,
     categoryIcon as _categoryIcon,
     categoryMeta,
     hexToRgba,
@@ -394,10 +393,6 @@ const vm = createVuePage({
             return Array.from({ length: len }, (_, i) => orig[i] !== curr[i]);
         },
 
-        yamlChangedLineCount() {
-            return this.yamlDiffLines.filter(Boolean).length;
-        },
-
         rawYamlLines() {
             return (this.rawYaml || '').split('\n');
         },
@@ -442,29 +437,6 @@ const vm = createVuePage({
             const base = 'inline-block size-2.5 transform rounded-full bg-white transition-transform';
             const isOn = this.getToggleState(key, section);
             return isOn ? `${base} translate-x-3` : `${base} translate-x-0.5`;
-        },
-
-        // Indexer toggle button class
-        indexerToggleBtnClass(indexerId) {
-            const base = 'toggle-switch relative inline-flex h-3.5 w-6 items-center rounded-full transition-colors focus:outline-none';
-            const isOn = this.settings.destinations[`enable_${indexerId}`];
-            return isOn ? `${base} bg-notion-accent` : `${base} bg-notion-bg-hover`;
-        },
-
-        // Indexer toggle knob class
-        indexerToggleKnobClass(indexerId) {
-            const base = 'inline-block size-2.5 transform rounded-full bg-white transition-transform';
-            const isOn = this.settings.destinations[`enable_${indexerId}`];
-            return isOn ? `${base} translate-x-3` : `${base} translate-x-0.5`;
-        },
-
-        // Backfill pill class
-        backfillPillClass(indexerId) {
-            const base = 'flex items-center gap-1.5 px-2 py-0.5 bg-notion-bg-hover/20 rounded-full backfill-pill transition-opacity';
-            const isEnabled = this.settings.destinations[`backfill_${indexerId}`];
-            return this.canBackfill(indexerId)
-                ? `${base} ${isEnabled ? 'opacity-100' : 'opacity-60'}`
-                : `${base} opacity-40 pointer-events-none`;
         },
 
         // ============================================================
@@ -812,8 +784,6 @@ const vm = createVuePage({
                         this.settings.destinations[`backfill_${indexer.id}`] = false;
                     }
                 });
-
-                this.refreshIcons();
             } catch (e) {
                 console.error('Failed to load indexers:', e);
                 this.showToast('error', 'Error', 'Failed to load indexers');
@@ -853,8 +823,6 @@ const vm = createVuePage({
                 await this.loadUpdateData();
 
                 this.updateBackfillStates();
-                this.refreshIcons();
-
             } catch (e) {
                 console.error('Failed to load settings:', e);
                 this.showStatus('Failed to load settings', true);
@@ -1463,8 +1431,6 @@ const vm = createVuePage({
                 ssl: true,
                 enabled: true,
             };
-
-            this.refreshIcons();
         },
 
         removeServer(index) {
@@ -1496,7 +1462,6 @@ const vm = createVuePage({
         // ============================================================
         addFolderPath() {
             this.settings.folders.folder_paths.push(this.normalizeFolderPathEntry());
-            this.refreshIcons();
         },
 
         // Direct toggle class helpers (for inline boolean props like fp.monitor)
@@ -1569,20 +1534,6 @@ const vm = createVuePage({
             return _categoryIcon(category);
         },
 
-        getCategoryIndexers(category) {
-            const cat = this.availableCategories.find(c => c.id === category);
-            return cat ? (cat.indexers || []) : [];
-        },
-
-        toggleServer(index) {
-            this.servers[index].enabled = !this.servers[index].enabled;
-        },
-
-        updateServerProp(index, prop, value) {
-            if (prop === 'pass' && value === '') return;
-            this.servers[index][prop] = value;
-        },
-
         // ============================================================
         //  UI Helpers
         // ============================================================
@@ -1594,10 +1545,6 @@ const vm = createVuePage({
                     this.saveStatus = '';
                 }
             }, 3000);
-        },
-
-        getIndexerColors(color) {
-            return colorClassMap[color] || colorClassMap['gray'];
         },
 
         // ============================================================
@@ -1678,7 +1625,5 @@ const vm = createVuePage({
 
     mounted() {
         this.loadSettings();
-        // Click-away for dropdowns now handled via v-click-outside directive in the template.
-        // No manual document.addEventListener needed.
     }
 });

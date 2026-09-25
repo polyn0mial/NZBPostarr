@@ -415,13 +415,6 @@ body {
         min-width: unset !important;
     }
 
-    /* Nav links - ensure comfortable touch */
-    .nav-link {
-        min-height: 44px;
-        padding-left: 0.75rem;
-        padding-right: 0.75rem;
-    }
-
     /* Hover-only tooltip behavior is intentionally omitted on touch devices. */
 }
 
@@ -475,20 +468,6 @@ body {
     }
 }
 
-/* ---- Settings Page Mobile ---- */
-@media (max-width: 767px) {
-    /* Stack indexer row controls vertically on mobile */
-    .indexer-mobile-stack {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 0.5rem;
-    }
-    .indexer-mobile-stack > .flex.items-center.gap-3 {
-        width: 100%;
-        justify-content: flex-end;
-    }
-}
-
 /* ---- Indexer toggle group: always below name on mobile ---- */
 @media (max-width: 639px) {
     .grid-cols-1 > .space-y-0\.5 > .setting-item[data-search*='indexer'],
@@ -514,26 +493,6 @@ body {
     .grid-cols-2.sm\:grid-cols-4 > div p.text-xs {
         font-size: 9px;
         line-height: 1.2;
-    }
-}
-
-/* ---- Pending page: mobile collapsed row simplification ---- */
-@media (max-width: 639px) {
-    /* Hide size column on collapsed show/movie rows */
-    .pending-row-mobile .pending-hide-mobile {
-        display: none !important;
-    }
-    /* Pending sub-items: indented MORE than season for visual step */
-    .pending-subitem-mobile {
-        padding-left: 1.65rem !important;
-    }
-    /* Pending season headers: less indent than items */
-    .pending-season-mobile {
-        padding-left: 1rem !important;
-    }
-    /* Hide elements on pending sub-items */
-    .pending-sub-hide-mobile {
-        display: none !important;
     }
 }
 
@@ -642,13 +601,6 @@ body {
     .pending-scroll-inner .group-hover\:opacity-100 {
         opacity: 1 !important;
     }
-    /* Restore proper indentation inside scroll (was reduced for mobile) */
-    .pending-scroll-inner .pending-subitem-mobile {
-        padding-left: 3.5rem !important;
-    }
-    .pending-scroll-inner .pending-season-mobile {
-        padding-left: 2rem !important;
-    }
 }
 
 /* ---- Upload Queue items: show hover-only buttons on mobile ---- */
@@ -696,43 +648,6 @@ table tbody tr:nth-child(even) {
 }
 table tbody tr:nth-child(odd) {
     background-color: transparent;
-}
-
-/* ---- Jobs page: mobile compact ---- */
-@media (max-width: 639px) {
-    .jobs-table .col-jobid {
-        font-size: 10px !important;
-    }
-    .jobs-table .col-jobid .font-mono {
-        font-size: 10px !important;
-    }
-    .jobs-table .col-category {
-        display: none !important;
-    }
-    .jobs-table .status-text-mobile {
-        display: none;
-    }
-    .jobs-table .status-badge-mobile {
-        padding: 0.25rem !important;
-        min-width: 0 !important;
-        gap: 0 !important;
-    }
-    .jobs-table .col-started {
-        font-size: 9px !important;
-        padding-right: 0.375rem !important;
-    }
-    .jobs-table .col-items {
-        font-size: 10px !important;
-        padding-left: 0.25rem !important;
-        padding-right: 0.25rem !important;
-        white-space: nowrap;
-    }
-    .jobs-table .col-size {
-        font-size: 9px !important;
-        padding-left: 0.25rem !important;
-        padding-right: 0.25rem !important;
-        white-space: nowrap;
-    }
 }
 
 /* ---- Scrollbar Styling ---- */
@@ -810,38 +725,6 @@ table tbody tr:nth-child(odd) {
     .infotip-trigger.infotip-active .infotip-content {
         visibility: visible !important;
         opacity: 1 !important;
-    }
-}
-
-/* ---- Console section mobile ---- */
-@media (max-width: 639px) {
-    /* Console controls wrap on mobile */
-    .console-controls {
-        flex-wrap: wrap;
-        gap: 0.375rem;
-    }
-}
-
-/* ---- Active Jobs mobile ---- */
-@media (max-width: 639px) {
-    .job-card-header {
-        flex-direction: column;
-        align-items: flex-start !important;
-        gap: 0.5rem;
-    }
-    .job-card-header .job-actions {
-        width: 100%;
-        justify-content: flex-start;
-    }
-    .job-card-title {
-        max-width: 100%;
-        overflow: hidden;
-    }
-    .job-card-title h3 {
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        max-width: calc(100vw - 6rem);
     }
 }
 
@@ -963,21 +846,6 @@ table tbody tr:nth-child(odd) {
     width: 100%;
     z-index: 0;
     pointer-events: none;
-}
-
-/* ---- Pending page: excluded item visuals ---- */
-/* Row-level dim for excluded episodes (non-uploadable extras like NCEDs, NCOPs) */
-.pending-excluded-row {
-    opacity: 0.55;
-}
-.pending-excluded-row:hover {
-    opacity: 0.7;
-}
-/* Red border around the filename text of excluded items */
-.pending-excluded-name {
-    border: 1px solid var(--notion-error);
-    border-radius: 3px;
-    padding: 1px 5px;
 }
 
 /*

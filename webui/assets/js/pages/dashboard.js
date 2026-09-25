@@ -224,9 +224,6 @@ const dashboard = createVuePage({
         isJobRunning() {
             return this.jobs.some(j => j.status === 'running');
         },
-        runningJobsCount() {
-            return this.jobs.filter(j => j.status === 'running' || j.status === 'queued').length;
-        },
         primaryRunningJob() {
             return this.jobs.find(j => j.status === 'running');
         },
@@ -339,9 +336,6 @@ const dashboard = createVuePage({
             if (this.loading) return 'Starting...';
             if (this.isJobRunning) return 'Stop Upload';
             return 'Start Bulk Upload';
-        },
-        categorySelectClass() {
-            return this.uploadForm.file_path ? 'opacity-50 cursor-not-allowed' : '';
         },
         connectionDotClass() {
             return this.isConnected ? 'bg-green-500' : 'bg-yellow-500';
@@ -718,13 +712,6 @@ const dashboard = createVuePage({
                 dashboard_stats_modules: this.normalizedServerStatsOrder.filter(moduleId => enabledSet.has(moduleId)).slice(0, 6),
             };
         },
-        isServerStatsModuleEnabled(moduleId) {
-            return (this.uiSettings.dashboard_stats_modules || []).includes(moduleId);
-        },
-        getServerStatsModuleOrder(moduleId) {
-            const idx = this.orderedEnabledServerStatsModules.indexOf(moduleId);
-            return idx >= 0 ? idx + 1 : null;
-        },
         toggleServerStatsModule(moduleId) {
             const enabledSet = new Set((this.uiSettings.dashboard_stats_modules || []).slice(0, 6));
             if (enabledSet.has(moduleId)) {
@@ -967,8 +954,6 @@ const dashboard = createVuePage({
             }
         },
 
-        browseFile() { if (this.$refs.filePicker) this.$refs.filePicker.click(); },
-        browseFolder() { if (this.$refs.folderPicker) this.$refs.folderPicker.click(); },
         browseStreamFile() { if (this.$refs.streamNzbPicker) this.$refs.streamNzbPicker.click(); },
         async openStreamFolderBrowser() {
             this.streamFolderBrowser.open = true;
@@ -1005,19 +990,6 @@ const dashboard = createVuePage({
                 this.clearStreamFile();
             }
         },
-        handleFileSelect(e) {
-            const file = e.target.files[0];
-            if (file) this.uploadForm.file_path = file.name;
-            e.target.value = '';
-        },
-        handleFolderSelect(e) {
-            const files = e.target.files;
-            if (files && files.length > 0) {
-                const pathParts = files[0].webkitRelativePath.split('/');
-                this.uploadForm.file_path = pathParts[0] || files[0].name;
-            }
-            e.target.value = '';
-        },
         handleStreamNzbSelect(e) {
             const file = e.target.files && e.target.files[0];
             if (file) {
@@ -1030,7 +1002,6 @@ const dashboard = createVuePage({
             }
             e.target.value = '';
         },
-        clearFilePath() { this.uploadForm.file_path = ''; },
         clearStreamFile() {
             this.streamForm.selectedFile = null;
             this.streamForm.selectedFileName = '';
@@ -1141,7 +1112,6 @@ const dashboard = createVuePage({
             try {
                 const data = await this.apiFetch('/api/dashboard/summary');
                 this._applyDashboardSummary(data);
-                this.refreshIcons();
             } catch (e) {
                 console.error('Failed to load dashboard:', e);
             } finally {
@@ -1270,7 +1240,6 @@ const dashboard = createVuePage({
                 const seenIds = new Set();
                 this.jobs = jobs.filter(j => !seenIds.has(j.job_id) && seenIds.add(j.job_id))
                     .sort((a, b) => (a.status === 'running' ? -1 : 1) || new Date(b.started_at) - new Date(a.started_at));
-                this.refreshIcons();
             } catch (e) {
                 console.error('Failed to load jobs:', e);
             } finally {
@@ -1296,21 +1265,6 @@ const dashboard = createVuePage({
             } catch (e) {
                 this.jobs.splice(idx, 0, removed); // Rollback
                 this.showToast('error', 'Error', 'Failed to dismiss job');
-            }
-        },
-
-        async clearCompletedJobs() {
-            const originalJobs = [...this.jobs];
-            const toClear = this.jobs.filter(j => j.status === 'completed' || j.status === 'failed');
-            if (toClear.length === 0) return;
-
-            this.jobs = this.jobs.filter(j => j.status !== 'completed' && j.status !== 'failed');
-
-            try {
-                await this.apiFetch('/api/uploads/jobs/completed', { method: 'DELETE' });
-            } catch (e) {
-                this.jobs = originalJobs; // Rollback
-                this.showToast('error', 'Error', 'Failed to clear completed jobs');
             }
         },
 
@@ -1522,7 +1476,6 @@ const dashboard = createVuePage({
             return out;
         },
 
-        startDotsAnimation() { },
         stopDotsForMessage(msg) { },
 
         scrollConsoleToBottom() {
@@ -1557,14 +1510,6 @@ const dashboard = createVuePage({
             document.addEventListener('mouseup', onMouseUp);
         },
 
-        getBreakdownTooltip(category) {
-            const b = this.stats.breakdown[category];
-            if (!b || Object.keys(b).length === 0) return 'No data';
-            return Object.entries(b).map(([id, s]) => {
-                const total = (s.complete || 0) + (s.pending || 0);
-                return `${id.toUpperCase()}: ${s.complete}/${total}`;
-            }).join('\n');
-        },
         getBreakdownList(category) {
             if (!this.stats || !this.stats.breakdown) return [];
             const b = this.stats.breakdown[category];

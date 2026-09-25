@@ -112,11 +112,6 @@
                         if (previous !== signature) {
                             clearPersistedUiState();
                             setStoredRevision(signature);
-                            window.dispatchEvent(
-                                new CustomEvent('nzbpostarr:revision-changed', {
-                                    detail: { previous, current: signature },
-                                })
-                            );
                         }
                     } catch (_err) {
                         // Silently ignore transient network problems.
@@ -416,7 +411,7 @@
 
             <!-- Toast Container (Vue-driven) -->
             <div v-if="toasts.length" class="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-4 z-50 space-y-2 pointer-events-none">
-                <transition-group name="toast">
+                <transition-group>
                     <div v-for="toast in toasts" :key="toast.id" class="pointer-events-auto max-w-md bg-notion-bg-secondary border border-notion-border rounded-lg shadow-lg overflow-hidden min-w-0 sm:min-w-75">
                         <div class="px-4 py-3 flex items-start gap-3">
                             <div :class="toastIconClass(toast)">
