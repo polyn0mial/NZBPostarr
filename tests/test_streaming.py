@@ -216,6 +216,7 @@ def test_upload_stream_manifest_does_not_override_nzb_subject(tmp_path, monkeypa
     conf.nyuu_path = "nyuu"
     conf.poster = "Anonymous"
     conf.script_dir = tmp_path
+    conf.verbose = False
 
     server = SimpleNamespace(
         name="Primary",
@@ -455,6 +456,38 @@ def test_stream_nzb_upload_respects_post_only_and_selected_server(tmp_path, monk
     assert result["posting_server_name"] == "Backup"
     assert result["submit_mode"] == "post_only"
     assert submit_called["value"] is False
+
+def test_stream_duplicate_check_passes_release_size(tmp_path, monkeypatch) -> None:
+    from logic.stream import repost as stream_repost
+
+    source = tmp_path / "input.nzb"
+    source.write_text("<nzb></nzb>", encoding="utf-8")
+    server = SimpleNamespace(name="Primary", max_connections=10)
+    seen: dict[str, object] = {}
+
+    def fake_destinations_for(item_key, itype, indexer_ids, filesize=None):
+        seen.update(item_key=item_key, filesize=filesize)
+        return {idx: "2026-01-01T00:00:00" for idx in indexer_ids}
+
+    monkeypatch.setattr(stream_repost, "_enabled_servers", lambda: [server])
+    monkeypatch.setattr(stream_repost, "_target_indexers", lambda _target: ["geek"])
+    monkeypatch.setattr(
+        stream_repost,
+        "prepare_stream_manifest",
+        lambda _source, _release: {"files": [{"name": "one.bin", "size": 10}], "total_size": 10},
+    )
+    monkeypatch.setattr(stream_repost, "write_stream_manifest", lambda manifest, destination: destination)
+    monkeypatch.setattr(stream_repost, "destinations_for", fake_destinations_for)
+
+    result = stream_repost.stream_nzb_upload(
+        source_path=source,
+        category="misc",
+        release_name="Custom.Release",
+        manifest_path=tmp_path / "manifest.json",
+    )
+
+    assert result["status"] == "skipped"
+    assert seen == {"item_key": "Custom.Release", "filesize": 10}
 
 def test_add_stream_monitor_persists_configuration(tmp_path, monkeypatch) -> None:
     from logic.stream import monitors as stream_monitors, repost as stream_repost

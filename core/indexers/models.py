@@ -75,7 +75,7 @@ class CategoryMapping(BaseModel):
     @staticmethod
     def normalize_key(category: str) -> str:
         """Normalize internal category ids into YAML mapping keys."""
-        cleaned = str(category or "").strip().lower()
+        cleaned = category.strip().lower()
         if cleaned in _INDEXER_CATEGORY_ALIASES:
             return _INDEXER_CATEGORY_ALIASES[cleaned]
         normalized = normalize_category(cleaned)

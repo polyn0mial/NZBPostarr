@@ -278,7 +278,8 @@ def _load_cache() -> None:
                 else:
                     _cache = {k: bool(v) for k, v in raw.items() if k != "__version__"}
                     logger.debug(f"Anime cache loaded: {len(_cache)} entries from {load_path}")
-        except Exception as e:
+        # OSError: unreadable file; ValueError: corrupt JSON or bad encoding.
+        except (OSError, ValueError) as e:
             logger.warning(f"Failed to load anime cache: {e}")
             _cache = {}
     _cache_loaded = True
@@ -290,7 +291,8 @@ def _save_cache() -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump({"__version__": _CACHE_VERSION, **_cache}, f, indent=2)
-    except Exception as e:
+    # The cache holds only str -> bool, so json.dump cannot fail; only the disk can.
+    except OSError as e:
         logger.warning(f"Failed to save anime cache: {e}")
 
 def _can_request() -> bool:
@@ -622,7 +624,7 @@ def _anime_lookup_candidates(entry: Path, video_files: Tuple[Path, ...]) -> Tupl
     candidates: list[str] = []
 
     def add(value: str) -> None:
-        raw_text = str(value or "").strip()
+        raw_text = value.strip()
         if not raw_text or not _normalize_lookup_title(raw_text):
             return
         if raw_text not in candidates:

@@ -156,13 +156,13 @@ class StatsFeatures:
     dashboard_enabled: bool
 
     @classmethod
-    def from_config(cls, conf: Any) -> "StatsFeatures":
-        modules = getattr(conf, "dashboard_stats_modules", []) or []
-        cleaned = tuple(str(module).strip() for module in modules if str(module).strip())[:6]
+    def from_config(cls, conf: "Config") -> "StatsFeatures":
+        modules = conf.dashboard_stats_modules
+        cleaned = tuple(module.strip() for module in modules if module.strip())[:6]
         return cls(
-            stats_page=bool(getattr(conf, "stats_page_enabled", True)),
+            stats_page=conf.stats_page_enabled,
             dashboard_modules=cleaned,
-            dashboard_enabled=bool(getattr(conf, "dashboard_stats_enabled", True)),
+            dashboard_enabled=conf.dashboard_stats_enabled,
         )
 
     @property

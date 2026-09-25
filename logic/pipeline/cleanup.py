@@ -60,7 +60,7 @@ def run_global_purge() -> None:
                     else:
                         item.unlink()
                     count += 1
-                except Exception as e:
+                except OSError as e:
                     logger.debug(f"Failed to purge {item}: {e}")
 
     elapsed = time.time() - start_time

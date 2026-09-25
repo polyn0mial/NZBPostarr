@@ -144,6 +144,7 @@ def normalize_paths(paths: Any) -> list[str]:
 
 
 def normalize_job_path_identity(path: Any) -> Optional[str]:
+    # Not core.paths.path_key: job identity stays non-resolving (a symlink and its target are distinct jobs).
     text = str(path or "").strip()
     if not text:
         return None

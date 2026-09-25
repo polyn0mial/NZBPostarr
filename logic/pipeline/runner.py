@@ -27,9 +27,9 @@ from logic.pipeline.plan import (
     _guard_no_raw_items,
     _item_exceeds_size_limit,
     _iter_work_items,
+    _no_indexers_reason,
     _plan_sorted_items,
     _resolve_job_categories,
-    _resolve_target_indexers_for_single,
     _selected_indexers,
 )
 from logic.pipeline.posting import (
@@ -509,8 +509,11 @@ def process_single(
     if _item_exceeds_size_limit(path, conf, item_size_gb, name):
         return 1  # treat as skip
 
-    all_indexers = _resolve_target_indexers_for_single(conf, target_indexer_id, target_indexer_ids)
-    if all_indexers is None:
+    all_indexers = _selected_indexers(conf, target_indexer_id, target_indexer_ids)
+    if not all_indexers:
+        reason = _no_indexers_reason(target_indexer_id, target_indexer_ids)
+        if reason:
+            log_info(reason)
         return 2
 
     indexer_ids = [idx.id for idx in all_indexers]

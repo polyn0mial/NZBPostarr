@@ -9,10 +9,11 @@ from core.db.uploads import pin_folder_ts_to_children, record_nntp_success, upda
 from core.fs import compute_size_uncached
 from core.paths import path_key
 from logic.jobs.context import get_thread_job
+from logic.queue_metrics import request_live_queue_refresh
 
 
 def _folder_log_itype(category: str) -> str:
-    normalized = str(category or "").strip().lower()
+    normalized = category.lower()
     if normalized == "tv":
         return "TV Folder"
     if normalized == "movies":
@@ -91,6 +92,14 @@ def _record_folder_hierarchy_rows(
                 **upload_result,
             )
         pin_folder_ts_to_children(folder_key)
+
+
+def refresh_queue_after_destination_write() -> None:
+    """Refresh the live queue view and statistics after an upload wrote a destination row.
+
+    The DB layer no longer triggers this refresh when it records a destination; the pipeline does.
+    """
+    request_live_queue_refresh(reason="upload-success")
 
 
 def refresh_pending_after_upload() -> None:

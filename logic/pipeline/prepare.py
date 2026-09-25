@@ -124,7 +124,7 @@ def _find_nfo_path(path: Path) -> Optional[Path]:
 
 def _safe_fs_component(value: str, *, fallback: str = "item", max_length: int = 120) -> str:
     """Return a stable path component safe for temporary workspace names."""
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(value or "").strip()).strip("._-")
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-")
     if not cleaned:
         cleaned = fallback
     return cleaned[:max_length]

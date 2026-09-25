@@ -6,7 +6,7 @@ import threading
 import time
 from contextlib import contextmanager
 from functools import wraps
-from typing import Any, Callable, Dict, Generator, Optional, TypeVar
+from typing import Any, Callable, cast, Dict, Generator, Optional, TypeVar
 
 from loguru import logger
 from sqlalchemy import create_engine, desc, Engine, event, text
@@ -45,9 +45,11 @@ def _retry_on_lock(max_retries: int = 3, base_delay: float = 0.25) -> Callable[[
                         logger.debug(f"DB locked on {func.__name__}, retry {attempt + 1}/{max_retries} in {delay:.2f}s")
                         time.sleep(delay)
             # All retries exhausted - raise last exception
-            raise last_exc  # type: ignore[misc]
+            if last_exc is None:
+                raise ValueError(f"_retry_on_lock needs max_retries >= 1, got {max_retries}")
+            raise last_exc
 
-        return wrapper  # type: ignore[return-value]
+        return cast(_F, wrapper)
 
     return decorator
 
@@ -145,7 +147,7 @@ def checkpoint_wal() -> None:
                     logger.debug(f"[db] WAL checkpoint: blocked by active reader - {checkpointed}/{log} pages flushed")
                 else:
                     logger.debug(f"[db] WAL checkpoint: {checkpointed}/{log} pages flushed, WAL truncated")
-    except Exception as exc:
+    except Exception as exc:  # broad on purpose: the docstring promises this never raises
         logger.warning(f"[db] WAL checkpoint failed: {exc}")
 
 def get_session_factory() -> Any:
@@ -204,7 +206,7 @@ def get_database_health() -> Dict[str, Any]:
                 try:
                     count = session.query(model).count()
                     result["tables"][name] = {"count": count, "status": "ok"}
-                except Exception as e:
+                except SQLAlchemyError as e:
                     result["tables"][name] = {
                         "count": 0,
                         "status": "error",
@@ -237,7 +239,7 @@ def get_database_health() -> Dict[str, Any]:
 
         result["status"] = "healthy" if not result["errors"] else "degraded"
 
-    except Exception as e:
+    except Exception as e:  # broad on purpose: a health report records every failure instead of raising
         result["errors"].append(f"Database connection error: {e}")
         result["status"] = "error"
 

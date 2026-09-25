@@ -126,7 +126,7 @@ _SOURCE_TAG_PATTERN = re.compile(
 
 def _source_matrix_ignore_reason(category: str, title: str) -> str:
     """Return ignore reason when MOVIES/TV/ANIME item lacks source/episode signals."""
-    cat = str(category or "").strip().lower()
+    cat = category.strip().lower()
     if cat not in {"movies", "tv", "anime"}:
         return ""
     title_text = str(title or "").lower()
@@ -253,7 +253,7 @@ def _validate_child_video_items(node: Dict[str, Any]) -> None:
 
 def _force_tree_category(node: Dict[str, Any], category: str) -> None:
     """Force a category across a node and all descendants (case-insensitive safe-zone use)."""
-    cat = str(category or "").strip().lower()
+    cat = category.strip().lower()
     if not isinstance(node, dict) or not cat:
         return
     node["detected_category"] = cat

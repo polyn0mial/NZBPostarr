@@ -88,7 +88,7 @@ _ITYPE_TO_CATEGORY = {
 
 def category_for_itype(itype: str, default: str = "misc") -> str:
     """Map a display item type to its canonical submission category."""
-    return _ITYPE_TO_CATEGORY.get(str(itype or "").strip().lower(), default)
+    return _ITYPE_TO_CATEGORY.get(itype.strip().lower(), default)
 
 
 # Item-type labels per writer dialect. "tv" is not in the tables: it depends on whether the
@@ -129,7 +129,7 @@ def processing_itype(category: str, *, season_pack: bool) -> str:
 
 def default_itype(category: str, *, is_dir: bool) -> str:
     """Item type an upload of this category is posted with when no classifier verdict applies."""
-    normalized = str(category or "").strip().lower()
+    normalized = category.strip().lower()
     if normalized == "tv":
         return "TV Show" if is_dir else "TV Episode"
     return _ITYPE_DIALECTS["default"].get(normalized, "Misc")

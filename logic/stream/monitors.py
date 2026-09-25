@@ -233,7 +233,7 @@ def _scan_monitor_nzb_files(folder_path: str) -> set[str]:
     return results
 
 
-class _StreamMonitorEventHandler(FileSystemEventHandler):  # type: ignore[misc]
+class _StreamMonitorEventHandler(FileSystemEventHandler):  # type: ignore[misc]  # follow_imports=skip makes the base Any
     def __init__(self, monitor_id: str, folder_path: str):
         super().__init__()
         self.monitor_id = monitor_id
@@ -287,7 +287,7 @@ def _queue_monitored_stream(entry: dict[str, Any], nzb_path: Path) -> None:
         )
         record_stream_monitor_job(str(entry.get("id") or ""), service.get_job(job_id))
         logger.info(f"📡 Stream monitor queued job {job_id} for {nzb_path.name}")
-    except Exception as exc:  # pylint: disable=broad-exception-caught
+    except Exception as exc:  # pylint: disable=broad-exception-caught  # one bad file must not stop the monitor loop
         logger.error(f"📡 Stream monitor failed to queue {nzb_path}: {exc}")
 
 
@@ -316,7 +316,7 @@ async def _stream_monitor_loop() -> None:
                 _queue_monitored_stream(entry, nzb_path)
         except asyncio.CancelledError:
             break
-        except Exception as exc:  # pylint: disable=broad-exception-caught
+        except Exception as exc:  # pylint: disable=broad-exception-caught  # the watcher loop must outlive any tick
             logger.error(f"📡 Stream monitor loop error: {exc}")
             await asyncio.sleep(5)
 

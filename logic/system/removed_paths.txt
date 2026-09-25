@@ -37,8 +37,15 @@ logic/stats_engine.py
 logic/updater.py
 logic/uploaders.py
 logic/usenet_stream.py
+webui/assets/js/dist/chunks/chunk-FVZXKIAT.js
+webui/assets/js/dist/chunks/chunk-OICZ5KQC.js
 webui/assets/js/dist/chunks/chunk-SYVIZCQF.js
 webui/assets/js/dist/chunks/chunk-XIRJKHHV.js
+webui/assets/js/dist/pages/dashboard.js
+webui/assets/js/dist/pages/history.js
+webui/assets/js/dist/pages/queue.js
+webui/assets/js/dist/pages/settings.js
+webui/assets/js/dist/pages/stats.js
 webui/assets/js/pages/dashboard.js
 webui/assets/js/pages/history.js
 webui/assets/js/pages/queue-computed-1.js
@@ -53,3 +60,5 @@ webui/assets/js/pages/queue.js
 webui/assets/js/pages/settings.js
 webui/assets/js/pages/stats.js
 webui/assets/js/vendor/lucide.min.js
+webui/scripts/build-js.mjs
+webui/tailwind.config.cjs

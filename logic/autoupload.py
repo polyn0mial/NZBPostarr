@@ -77,7 +77,7 @@ class _FolderEventHandler(FileSystemEventHandler):
     def __init__(self, folder_path: str, configured_category: str):
         super().__init__()
         self.folder_path = folder_path
-        self.configured_category = str(configured_category or "external").strip().lower() or "external"
+        self.configured_category = configured_category.strip().lower() or "external"
         self._folder = Path(folder_path)
 
     def _extract_top_level_name(self, src_path: str) -> Optional[str]:
@@ -129,7 +129,7 @@ class _FolderEventHandler(FileSystemEventHandler):
         self._discard_item(getattr(event, "src_path", ""))
 
 def _resolve_monitored_category(configured_category: str, item_path: Path, folder_path: str = "") -> str:
-    normalized = str(configured_category or "").strip().lower()
+    normalized = configured_category.strip().lower()
     if normalized in {"", "external", "auto"}:
         return detect_auto_category(item_path, infer_folder_category_hint(folder_path or item_path.parent))
     return normalized
@@ -153,7 +153,9 @@ def _trigger_uploads(folder_path: str, item_categories: Dict[str, str]) -> None:
 
         for started in service.start_path_jobs(grouped_paths, reuse_running=False, source="folder-monitor"):
             logger.info(f"📡 Monitor auto-started upload job {started['job_id']} for category '{started['category']}'")
-    except Exception as e:
+    # Broad on purpose: engine start, classification and job creation can raise
+    # anything, and one folder's failure must not stop the settle loop.
+    except Exception as e:  # pylint: disable=broad-exception-caught
         logger.error(f"📡 Monitor failed to start upload jobs for '{folder_path}': {e}")
 
 async def _settle_loop() -> None:
@@ -192,7 +194,9 @@ async def _settle_loop() -> None:
 
         except asyncio.CancelledError:
             break
-        except Exception as e:
+        # Broad on purpose: this loop is the monitor's only task, so any error is
+        # logged and the loop retries instead of letting the monitor die silently.
+        except Exception as e:  # pylint: disable=broad-exception-caught
             logger.error(f"📡 Monitor settle-check error: {e}")
             await asyncio.sleep(5)
 

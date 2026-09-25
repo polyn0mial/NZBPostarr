@@ -46,7 +46,8 @@ def _load() -> None:
             if isinstance(raw, dict):
                 _store = {k: str(v) for k, v in raw.items() if isinstance(k, str) and v}
                 logger.debug(f"Category overrides loaded: {len(_store)} entries from {load_path}")
-        except Exception as e:
+        # OSError: unreadable file; ValueError: corrupt JSON or bad encoding.
+        except (OSError, ValueError) as e:
             logger.warning(f"Failed to load category overrides: {e}")
             _store = {}
     _loaded = True
@@ -63,7 +64,8 @@ def _save() -> None:
         except BaseException:
             Path(tmp_name).unlink(missing_ok=True)
             raise
-    except Exception as e:
+    # The store holds only str -> str, so json.dump cannot fail; only the disk can.
+    except OSError as e:
         logger.warning(f"Failed to save category overrides: {e}")
 
 def get_all() -> Dict[str, str]:

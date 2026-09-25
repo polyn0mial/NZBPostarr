@@ -18,7 +18,11 @@ from core.indexers.models import SubmitResult
 from core.indexers.registry import get_indexer
 from core.logging import log_info
 from logic.jobs.context import get_thread_job
-from logic.pipeline.record import _record_folder_hierarchy_rows, refresh_pending_after_upload
+from logic.pipeline.record import (
+    _record_folder_hierarchy_rows,
+    refresh_pending_after_upload,
+    refresh_queue_after_destination_write,
+)
 
 
 # Error statuses that should NOT be retried (permanent failures)
@@ -82,8 +86,8 @@ def submit_api(
         rls_name = re.sub(r"[^a-zA-Z0-9.\-_]", ".", rls_name)
         rls_name = re.sub(r"\.{2,}", ".", rls_name).strip(".")
 
-        max_retries = getattr(config, "upload_max_retries", 3)
-        retry_delay = getattr(config, "upload_retry_delay_seconds", 5)
+        max_retries = config.upload_max_retries
+        retry_delay = config.upload_retry_delay_seconds
         last_reason = ""
 
         for attempt in range(1, max_retries + 1):
@@ -190,8 +194,6 @@ def _persist_submission_results(
     upload_result: dict[str, Any],
 ) -> bool:
     """Persist per-indexer submission results and return whether any succeeded."""
-    from logic.queue_metrics import request_live_queue_refresh
-
     any_success = False
     for dest_id, ok, reason, sub_status in api_results:
         if ok:
@@ -199,7 +201,7 @@ def _persist_submission_results(
             any_success = True
             if not test_mode and item_size > 0:
                 if update_db_destination(dest_id, name, item_size, key, itype=itype, **upload_result):
-                    request_live_queue_refresh(reason="upload-success")
+                    refresh_queue_after_destination_write()
                 _record_folder_hierarchy_rows(
                     item_path,
                     base_folder=base_folder,
@@ -215,7 +217,7 @@ def _persist_submission_results(
             any_success = True
             if not test_mode and item_size > 0:
                 if update_db_destination(dest_id, name, item_size, key, itype=itype, **upload_result):
-                    request_live_queue_refresh(reason="upload-success")
+                    refresh_queue_after_destination_write()
             continue
         if not test_mode and item_size > 0:
             update_db_destination(

@@ -6,11 +6,15 @@ import os
 import re
 from pathlib import Path
 
+from loguru import logger
+
 from core.media import (
     AUDIOBOOK_EXTENSIONS,
+    CATEGORIES,
     EBOOK_EXTENSIONS,
     MUSIC_EXTENSIONS,
     VIDEO_EXTENSIONS,
+    category_for_itype,
     normalize_category,
     processing_itype,
 )
@@ -20,19 +24,20 @@ from logic.classify.tv_packs import is_season_pack
 from logic.pipeline.prepare import _APP_EXTENSIONS
 
 
+# DISC is never submitted as such: _resolve_submission_category maps it to movies or tv first.
+_SUBMITTABLE_CATEGORIES = frozenset(cat.id for cat in CATEGORIES if cat.id != "disc")
+
+
 def _normalize_processing_type(raw: str) -> str:
-    """Normalize DB/display item types for strict submission-category decisions."""
-    key = str(raw or "").strip().lower()
-    special_types = {
-        "tv episode": "tv_episode",
-        "tv show": "tv",
-        "tv pack": "tv",
-        "season pack": "tv",
-        "movie pack": "movie",
-    }
-    if key in special_types:
-        return special_types[key]
-    normalized = normalize_category(key)
+    """Normalize DB/display item types for strict submission-category decisions.
+
+    Item types map through core.media's item-type table, except that a single TV episode stays
+    "tv_episode" (the rules below tell it apart from a show) and the movie category reads "movie".
+    """
+    key = raw.strip().lower()
+    if key == "tv episode":
+        return "tv_episode"
+    normalized = category_for_itype(key, default=normalize_category(key))
     return "movie" if normalized == "movies" else normalized
 
 
@@ -164,7 +169,9 @@ def _resolve_ambiguous_submission_category(path: Path, normalized_category: str,
         try:
             if get_cached(candidate) is True:
                 return "anime"
-        except Exception:
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            # The anime cache is advisory: an unreadable cache keeps the configured category.
+            logger.debug(f"Anime cache lookup failed for {candidate}: {exc}")
             return normalized_category
     else:
         if normalized_itype in {"tv", "tv_episode"} and normalized_category != "movies":
@@ -196,9 +203,8 @@ def _resolve_submission_category(path: Path, category: str, itype: str) -> str:
         else:
             normalized_category = "movies"
 
-    allowed_categories = {"movies", "tv", "anime", "music", "audiobooks", "books", "apps", "misc"}
-    if normalized_category not in allowed_categories:
-        if normalized_itype in allowed_categories:
+    if normalized_category not in _SUBMITTABLE_CATEGORIES:
+        if normalized_itype in _SUBMITTABLE_CATEGORIES:
             raise ValueError(
                 f"explicit category '{category}' is invalid; detected type '{itype}' cannot override the configured category"
             )

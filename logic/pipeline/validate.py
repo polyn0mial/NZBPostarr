@@ -18,7 +18,7 @@ from core.logging import log_verbose
 from core.paths import path_key
 from logic.jobs.context import set_thread_job
 from logic.pending.roots import find_configured_root
-from logic.pipeline.plan import _selected_indexers
+from logic.pipeline.plan import _no_indexers_reason, _selected_indexers
 from logic.pipeline.prepare import _ONE_GIB
 from logic.pipeline.record import _live_size_bytes
 from logic.pipeline.submission_category import _processing_db_type, _resolve_submission_category
@@ -338,12 +338,9 @@ def _validate_queue_item(
     source_root = prefetched_base_folder if prefetched_base_folder is not None else find_configured_root(path, configured_folders)
     all_indexers = _selected_indexers(conf, target_indexer_id, target_indexer_ids)
     if not all_indexers:
-        if target_indexer_ids:
-            reason = "Selected indexers were not found or are not enabled."
-        elif target_indexer_id:
-            reason = f"Indexer '{target_indexer_id}' not found or not enabled."
-        else:
-            reason = "No enabled indexers are available for upload."
+        reason = _no_indexers_reason(
+            target_indexer_id, target_indexer_ids, default="No enabled indexers are available for upload."
+        )
         return QueueItemValidation("stopped", path, category, db_type, message=reason, base_folder=source_root)
 
     indexer_ids = [idx.id for idx in all_indexers]

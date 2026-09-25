@@ -40,6 +40,10 @@ self-titled `nzbpostarr/` source directory.
 - `logic/stats/`, `logic/system/`: statistics collection; backup, updater,
   lifecycle, and process reaper. `logic/system/removed_paths.txt` lists files a
   release deleted so the updater removes them at startup.
+- `logic/runtime.py`: ordered start and stop of the long-lived services and the
+  job engine. `logic/settings.py`: the settings view, secret masking, and every
+  config write. `logic/autoupload.py`: the folder monitor that queues items once
+  they settle.
 - `indexers/`: public YAML indexer definitions, the extension template, and the
   generic `newznab.example.yaml` profile. Files named `*.example.yaml`,
   `*.template.yaml`, or starting with `_` are never loaded as live indexers.
@@ -48,6 +52,9 @@ self-titled `nzbpostarr/` source directory.
 - `tools/classifier_benchmark.py`: measured accuracy benchmark for the media
   classifier. Run it before and after any change to the classification code and do
   not let the score drop. It reports 100.0% (44/44) today.
+- `tools/classify_dump.py`: prints the pending classifier's verdict for every row
+  under one root, offline.
+- `docs/`: project notes (`docs/ABOUT.md`) and the to-do folder, whose items are git-ignored.
 - `.github/release.py`: public-tree validation and release archive builder.
 - `.github/workflows/`: CI and tagged-release automation.
 
@@ -161,6 +168,7 @@ Run the same core checks enforced by CI:
 ```bash
 python -m compileall -q app.py main.py setup.py version.py api cli core logic
 python .github/release.py check
+go run github.com/zricethezav/gitleaks/v8@v8.30.1 dir --redact --no-banner .
 ruff check app.py main.py setup.py version.py api cli core logic .github/*.py tests
 mypy
 pytest tests -q
@@ -172,10 +180,14 @@ Frontend checks:
 ```bash
 cd webui
 npm ci
+npm run lint
+npm test
 npm run build
 npm audit --audit-level=high
 cd ..
 git diff --exit-code -- webui/assets
+python -m playwright install chromium
+pytest tests/e2e -q
 ```
 
 Add regression tests for behavior changes. Do not fix a failing test by

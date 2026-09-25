@@ -44,6 +44,17 @@ def _selected_indexers(
     return indexers
 
 
+def _no_indexers_reason(
+    target_indexer_id: Optional[str], target_indexer_ids: Optional[List[str]], default: str = ""
+) -> str:
+    """Why _selected_indexers came back empty; ``default`` covers a run that targeted no indexer."""
+    if target_indexer_ids:
+        return "Selected indexers were not found or are not enabled."
+    if target_indexer_id:
+        return f"Indexer '{target_indexer_id}' not found or not enabled."
+    return default
+
+
 def _log_explicit_resolution(resolution: Any) -> None:
     """Emit user-facing logs for explicit-path classification and ignored extras."""
     type_label = _submission_category_label(str(getattr(resolution, "category", "")))
@@ -125,24 +136,6 @@ def _item_exceeds_size_limit(path: Path, conf: Any, item_size_gb: float, name: s
             return True
 
     return False
-
-
-def _resolve_target_indexers_for_single(
-    conf: Any,
-    target_indexer_id: Optional[str],
-    target_indexer_ids: Optional[List[str]],
-):
-    """Resolve + log-on-empty the selected indexers for process_single.
-    Extracted to keep process_single's own branching down; returns None
-    (having already logged) where the caller previously returned 2."""
-    all_indexers = _selected_indexers(conf, target_indexer_id, target_indexer_ids)
-    if not all_indexers:
-        if target_indexer_ids:
-            log_info("Selected indexers were not found or are not enabled.")
-        elif target_indexer_id:
-            log_info(f"Indexer '{target_indexer_id}' not found or not enabled.")
-        return None
-    return all_indexers
 
 
 def _resolve_job_categories(category: str) -> list[str]:

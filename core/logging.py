@@ -68,8 +68,8 @@ def log_backend_timing(
     """Emit timing details for expensive backend work when verbose logging is enabled."""
     from core import config as config_mod
 
-    conf = getattr(config_mod, "_GLOBAL_CONFIG", None)
-    if not bool(getattr(conf, "verbose", False)):
+    conf = config_mod._GLOBAL_CONFIG
+    if conf is None or not conf.verbose:
         return
 
     elapsed = time.perf_counter() - start_time
@@ -127,7 +127,9 @@ class ConsoleBuffer:
 
         # Avoid get_config() during early startup/config load: calling it from the sink can
         # deadlock if config loading itself emits logs. core.config imports this module, so
-        # read its loaded config through sys.modules instead of importing it.
+        # read its loaded config through sys.modules instead of importing it. Duck-typed on
+        # purpose: a sink must never raise, and tests swap _GLOBAL_CONFIG for stand-ins
+        # without a ``verbose`` field.
         conf = getattr(sys.modules.get("core.config"), "_GLOBAL_CONFIG", None)
         verbose_enabled = bool(getattr(conf, "verbose", False)) if conf is not None else False
 

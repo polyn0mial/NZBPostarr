@@ -57,8 +57,8 @@ def normalize_stream_request(
     submit_mode: Optional[str],
 ) -> StreamRequestOptions:
     """Validate mutually exclusive request sources before route orchestration."""
-    normalized_source = str(source_path or "").strip()
-    normalized_filename = str(upload_filename or "").strip()
+    normalized_source = (source_path or "").strip()
+    normalized_filename = (upload_filename or "").strip()
     has_upload = bool(normalized_filename)
     has_source = bool(normalized_source)
 
@@ -73,7 +73,7 @@ def normalize_stream_request(
 
     return StreamRequestOptions(
         source_path=normalized_source,
-        category=str(category or "").strip(),
+        category=(category or "").strip(),
         submit_mode=normalize_submit_mode(submit_mode),
     )
 
@@ -119,7 +119,8 @@ def resolve_posting_server(
 
 
 def _normalize_stream_category(raw: Optional[str]) -> str:
-    text = str(raw or "").strip()
+    # Not core.media.normalize_category: this parses free-form NZB meta text ("Movies > HD") into a slug.
+    text = (raw or "").strip()
     if not text:
         return ""
 
@@ -205,7 +206,7 @@ def upload_stream_manifest(
         article_size=conf.article_size,
         action_label="Streaming",
         completion_label="Stream complete",
-        verbose=bool(getattr(conf, "verbose", False)),
+        verbose=bool(conf.verbose),
     )
     success, output = run_command(cmd, f"Nyuu-{server.name}", job, parser=parser, quiet=True)
     if not success:
@@ -261,7 +262,7 @@ def stream_nzb_upload(
     update_job_progress(total=1, processed=0, skipped=0, percent=0)
 
     if target_ids and not force:
-        dupes = destinations_for(chosen_release, itype, target_ids)
+        dupes = destinations_for(chosen_release, itype, target_ids, filesize=total_size)
         if all(dupes.get(dest) is not None for dest in target_ids):
             log_info(f"Skipping stream for {chosen_release}: already present on all target indexers.")
             update_job_progress(processed=0, skipped=1, percent=100, msg="Skipped - already uploaded")

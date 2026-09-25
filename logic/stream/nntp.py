@@ -29,7 +29,7 @@ def _enabled_servers() -> list[NNTPServer]:
 
 
 def _ensure_message_id(message_id: str) -> str:
-    text = str(message_id or "").strip()
+    text = message_id.strip()
     if not text:
         raise StreamError("NZB segment is missing a Message-ID")
     if text.startswith("<") and text.endswith(">"):
@@ -226,7 +226,7 @@ class UsenetReader:
             except ArticleUnavailableError as exc:
                 last_error = exc
                 continue
-            except Exception as exc:  # pylint: disable=broad-exception-caught
+            except (StreamError, OSError, ValueError) as exc:  # protocol, socket/TLS, bad port: try the next server
                 last_error = exc
                 old = self._connections.pop(server.name, None)
                 if old is not None:

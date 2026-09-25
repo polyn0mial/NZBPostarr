@@ -1,4 +1,8 @@
-"""Upload history reads: recent, grouped and per-job uploads."""
+"""Upload history reads: recent, grouped and per-job uploads.
+
+Each read turns any failure, not only SQLAlchemyError, into DatabaseOperationalError: the API renders
+its degraded state from that one type.
+"""
 
 from __future__ import annotations
 
@@ -251,7 +255,7 @@ def get_grouped_uploads(
                     for it in items:
                         mt = it.get("media_type", "other")
                         type_counts[mt] = type_counts.get(mt, 0) + 1
-                    dominant_type = max(type_counts, key=type_counts.get)  # type: ignore[arg-type]
+                    dominant_type = max(type_counts, key=type_counts.__getitem__)
 
                     result_groups.append(
                         {

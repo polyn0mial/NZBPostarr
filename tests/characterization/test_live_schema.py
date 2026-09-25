@@ -1,5 +1,6 @@
 """The live history database schema keeps opening, migrating and reading unchanged."""
 
+import re
 import sqlite3
 from pathlib import Path
 from typing import Iterator
@@ -12,6 +13,7 @@ from core.db import history as db_history
 from core.db import ledger as db_ledger
 from core.db import models as db_models
 from core.db import schema as db_schema
+from core.db import uploads as db_uploads
 from tests.characterization._snapshot import HERE
 
 LIVE_SCHEMA = HERE / "live_schema.sql"
@@ -128,3 +130,21 @@ def test_live_schema_serves_history_duplicate_and_dashboard_reads(live_db: Path)
     assert fully_done == set()
     assert success_map[ITEM] == {"in"}
     assert failed_map[ITEM] == {"geek": "HTTP 500"}
+
+
+def test_legacy_uploaded_at_column_is_written_in_the_orm_format(live_db: Path) -> None:
+    assert db_schema.init_database() is True
+
+    assert db_uploads.update_db_destination("geek", ITEM, 1234, ITEM, "Movie", status="success") is True
+
+    con = sqlite3.connect(live_db)
+    try:
+        legacy, result = con.execute(
+            "SELECT u.uploaded_at_geek, r.uploaded_at FROM uploads u "
+            "JOIN upload_results r ON r.upload_id = u.id AND r.indexer_id = 'geek' WHERE u.item_name = ?",
+            (ITEM,),
+        ).fetchone()
+    finally:
+        con.close()
+    assert re.fullmatch(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d{6}", legacy)
+    assert legacy == result

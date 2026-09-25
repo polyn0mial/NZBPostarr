@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional, Union, cast
 
+# humanfriendly 10 ships no py.typed marker and typeshed has no stubs for it.
 import humanfriendly  # type: ignore[import-untyped]
 
 

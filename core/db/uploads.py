@@ -1,4 +1,8 @@
-"""Upload ledger writes: NNTP success, per-destination results, manual marks and deletes."""
+"""Upload ledger writes: NNTP success, per-destination results, manual marks and deletes.
+
+The broad excepts are deliberate: a ledger write must never crash an upload job, so writers log and
+return their failure value, and deletes re-raise any failure as DatabaseOperationalError for the API.
+"""
 
 from __future__ import annotations
 
@@ -147,8 +151,9 @@ def update_db_destination(
             # Don't overwrite a prior success with a failure -- dupe check relies on
             # success records to skip already-uploaded items.  A failed re-upload attempt
             # should not erase the fact that the item was previously delivered.
+            now = datetime.now(timezone.utc)
             if new_status == "success" or not prior_success:
-                result.uploaded_at = datetime.now(timezone.utc)
+                result.uploaded_at = now
                 result.duration = stats.get("duration")
                 result.speed_bps = stats.get("speed_bps")
                 result.server_name = stats.get("server_name")
@@ -159,9 +164,10 @@ def update_db_destination(
             legacy_column = legacy_columns.get(dest)
             if legacy_column and result.status == "success":
                 if legacy_column in uploads_columns(session):
+                    # The ORM's stored DateTime format, not CURRENT_TIMESTAMP (DECISIONS: data safety).
                     session.execute(
-                        text(f"UPDATE uploads SET {legacy_column} = CURRENT_TIMESTAMP WHERE id = :upload_id"),
-                        {"upload_id": upload.id},
+                        text(f"UPDATE uploads SET {legacy_column} = :ts WHERE id = :upload_id"),
+                        {"ts": sql_timestamp(now.replace(tzinfo=None)), "upload_id": upload.id},
                     )
 
             if size is not None and size > 0:

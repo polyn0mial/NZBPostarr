@@ -53,6 +53,8 @@ coverage.xml
 htmlcov/
 /build/
 /dist/
+# Written into each release ZIP by .github/release.py; the updater keeps it in the app root.
+/release-manifest.json
 *.egg-info/
 .eggs/
 

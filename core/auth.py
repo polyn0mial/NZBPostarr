@@ -32,5 +32,8 @@ def verify_auth_cookie(token: str) -> bool:
         msg = f"{username}:{ts_str}".encode()
         expected = hmac.new(auth_secret().encode(), msg, hashlib.sha256).hexdigest()
         return hmac.compare_digest(sig, expected)
-    except Exception:
+    # A malformed cookie is simply not a login: too few parts or a non-numeric timestamp
+    # (ValueError), a timestamp too large for float arithmetic (OverflowError), or a
+    # non-ASCII signature that compare_digest refuses (TypeError).
+    except (ValueError, OverflowError, TypeError):
         return False

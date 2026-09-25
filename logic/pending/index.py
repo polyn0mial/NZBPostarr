@@ -15,7 +15,7 @@ from core.fs import start_watchdog_observer, stop_watchdog_observer
 from logic.classify.anime import cached_lookup
 
 
-class _PendingIndexEventHandler(FileSystemEventHandler):  # type: ignore[misc]
+class _PendingIndexEventHandler(FileSystemEventHandler):  # type: ignore[misc]  # follow_imports=skip makes the base Any
     def __init__(self, manager: "PendingIndexManager"):
         super().__init__()
         self._manager = manager
@@ -161,7 +161,7 @@ class PendingIndexManager:
             total = summary.get("total", 0) if isinstance(summary, dict) else 0
             message = f"Pending index refresh completed in {elapsed:.3f}s ({reason}, total={total})"
             conf = getattr(config_mod, "_GLOBAL_CONFIG", None)
-            if bool(getattr(conf, "verbose", False)):
+            if conf is not None and conf.verbose:
                 if elapsed >= 1.0:
                     logger.debug(message)
                 else:
@@ -212,7 +212,7 @@ def collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
     video_itypes = {"TV Show", "Movie", "Anime"}
 
     def _add(name: str) -> None:
-        cleaned = str(name or "").strip()
+        cleaned = name.strip()
         identity = cleaned.casefold()
         if cleaned and identity not in seen:
             seen.add(identity)

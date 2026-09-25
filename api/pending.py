@@ -17,6 +17,7 @@ from api.deps import _filter_bulk_selectable_items, _log_selected_payload
 from core.db import uploads as db_uploads
 from core.config import get_config
 from core.media import VIDEO_EXTENSIONS
+from core.paths import resolve_path
 from logic.pending import children as pending_children
 from logic.pending import index as pending_index
 from logic.pending import tree as pending_tree
@@ -71,10 +72,7 @@ def _refresh_pending_snapshot_now(reason: str = "manual") -> Dict[str, Any]:
     start = time.perf_counter()
     try:
         data = _scan_pending_all()
-        try:
-            _pending_index.set_snapshot(data)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            logger.warning(f"Pending snapshot cache update failed ({reason}); returning live scan: {exc}")
+        _pending_index.set_snapshot(data)
         summary = data.get("summary", {}) if isinstance(data, dict) else {}
         logger.debug(
             "Pending index synchronous refresh completed "
@@ -101,7 +99,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
         _anime_check_inflight = True
     try:
         # Check if anime checking is enabled in config
-        if not getattr(get_config(), "enable_anime_checking", False):
+        if not get_config().enable_anime_checking:
             logger.debug("Anime check: disabled in settings - skipping Jikan lookups")
             return
 
@@ -115,8 +113,8 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
                 fresh_data = _scan_pending_all()
                 _pending_index.set_snapshot(fresh_data)
                 logger.debug("Anime check: pending cache updated with anime classifications")
-            except Exception as _exc:
-                logger.debug(f"Anime check re-scan failed: {_exc}")
+            except Exception as exc:  # pylint: disable=broad-exception-caught  # daemon-thread boundary
+                logger.debug(f"Anime check re-scan failed: {exc}")
         else:
             logger.debug("Anime check: no new anime found among candidate titles")
     finally:
@@ -162,12 +160,9 @@ def get_pending_summary() -> Dict[str, Any]:
 def get_pending_group_order() -> Dict[str, Any]:
     """Return the shared pending-directory order and lock state."""
     conf = get_config()
-    order = getattr(conf, "pending_external_group_order", []) or []
-    if not isinstance(order, list):
-        order = []
     return {
-        "order": [str(key) for key in order if str(key).strip()],
-        "locked": bool(getattr(conf, "pending_external_group_order_locked", False)),
+        "order": [key for key in conf.pending_external_group_order if key.strip()],
+        "locked": conf.pending_external_group_order_locked,
     }
 
 @router.get("/items")
@@ -216,8 +211,7 @@ def get_pending_items(
             "anime_detecting": _anime_check_inflight,
         }
 
-    anime_enabled = bool(getattr(get_config(), "enable_anime_checking", False))
-    if anime_enabled and pending_index.collect_uncached_anime_check_names(data):
+    if get_config().enable_anime_checking and pending_index.collect_uncached_anime_check_names(data):
         with _anime_check_lock:
             can_start = not _anime_check_inflight and (_anime_check_thread is None or not _anime_check_thread.is_alive())
             if can_start:
@@ -307,12 +301,12 @@ async def force_upload_items(
         )
 
     collapsed_items = _collapse_force_upload_items(selected_items)
-    valid_items = [item for item in collapsed_items if str(item.get("path") or "").strip() and str(item.get("category") or "").strip()]
+    valid_items = [item for item in collapsed_items if item.get("path", "").strip() and item.get("category", "").strip()]
     if len(valid_items) != len(collapsed_items):
         raise HTTPException(status_code=400, detail="One or more items are missing a valid category")
     _log_selected_payload("FORCE-UPLOAD", valid_items)
 
-    categories = {str(item.get("category") or "").strip().lower() for item in valid_items if str(item.get("category") or "").strip()}
+    categories = {item["category"].strip().lower() for item in valid_items}
     request_category = next(iter(categories)) if len(categories) == 1 else "mixed"
     job_ids = service.start_processing_job_requests(
         [
@@ -381,14 +375,10 @@ class AnimeCacheCorrectionRequest(BaseModel):
     is_anime: bool
 
 def _normalize_force_upload_path(path: Any) -> str:
-    text = str(path or "").strip()
-    if not text:
+    """Symlink-resolved '/'-form key, so ancestor checks can match on a '/'-joined prefix."""
+    if not str(path or "").strip():
         return ""
-    try:
-        normalized = Path(text).resolve().as_posix()
-    except OSError:
-        normalized = Path(text).as_posix()
-    normalized = normalized.rstrip("/")
+    normalized = resolve_path(path).as_posix().rstrip("/")
     return normalized.casefold() if os.name == "nt" else normalized
 
 def _force_upload_dir_direct_video_count(path: Path) -> int:
@@ -514,7 +504,7 @@ def set_category_override(req: CategoryOverrideRequest) -> Dict[str, Any]:
     """Persist (or clear, when category is empty) a manual category override."""
     from logic.pending import overrides as pending_overrides
 
-    key = (req.key or "").strip()
+    key = req.key.strip()
     if not key:
         raise HTTPException(status_code=400, detail="Missing item key")
     category = (req.category or "").strip().lower() or None

@@ -382,6 +382,9 @@ def _refresh_indexer_ctx_bg() -> None:
         result = _get_pending_indexer_context_fresh()
         if not result[5]:
             _store_indexer_context(result)
+    # Broad on purpose: this is a thread entry point and database errors are
+    # already handled inside; whatever the registry or config load raises is
+    # logged here instead of dying silently in the thread.
     except Exception:  # pylint: disable=broad-exception-caught
         logger.exception("[pending] Background indexer ctx refresh failed")
     finally:

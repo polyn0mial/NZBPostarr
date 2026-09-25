@@ -154,8 +154,8 @@ def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Di
         "",
     )
     if ignored_reason:
-        detected_category = str(resolution.category or "").strip().lower()
-        detected_itype = str(resolution.itype or "").strip().lower()
+        detected_category = resolution.category.strip().lower()
+        detected_itype = resolution.itype.strip().lower()
         if detected_category in {"music", "books", "ebooks", "audiobooks", "disc"} or detected_itype in {
             "music",
             "ebook",
@@ -316,7 +316,7 @@ def _apply_nested_external_item_category(item: Dict[str, Any], node: Path, folde
     Extracted from _build_external_tree_item to keep its own branching down;
     mutates item in place.
     """
-    hint_category = str(folder_category_hint or "").strip().lower()
+    hint_category = folder_category_hint.strip().lower()
     if node.is_file():
         item["itype"] = detect_content_itype(node.name, node, folder_category_hint)
         # Nested rows keep their parent's category (as on the server) so a

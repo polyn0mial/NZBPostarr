@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
-from defusedxml import ElementTree as ET  # type: ignore[import-untyped]
+from defusedxml import ElementTree as ET  # type: ignore[import-untyped]  # defusedxml ships no stubs
 from defusedxml.common import DefusedXmlException  # type: ignore[import-untyped]
 
 from logic.stream.nntp import StreamError, UsenetReader, _ensure_message_id, decode_yenc_article
@@ -39,8 +39,8 @@ def read_nzb_head_metadata(source_path: Path, *, root: Optional[ET.Element] = No
     metadata: dict[str, str] = {}
     meta_nodes = root.findall(".//{*}head/{*}meta") + root.findall(".//head/meta")
     for meta_node in meta_nodes:
-        key = str(meta_node.attrib.get("type") or "").strip().lower()
-        value = str(meta_node.text or "").strip()
+        key = (meta_node.attrib.get("type") or "").strip().lower()
+        value = (meta_node.text or "").strip()
         if key and value and key not in metadata:
             metadata[key] = value
     return metadata
@@ -53,9 +53,9 @@ def parse_nzb_structure(source_path: Path) -> dict[str, Any]:
 
     files: list[dict[str, Any]] = []
     for file_node in root.findall(".//{*}file") + root.findall(".//file"):
-        subject = str(file_node.attrib.get("subject") or "").strip()
-        poster = str(file_node.attrib.get("poster") or "").strip()
-        date = str(file_node.attrib.get("date") or "").strip()
+        subject = (file_node.attrib.get("subject") or "").strip()
+        poster = (file_node.attrib.get("poster") or "").strip()
+        date = (file_node.attrib.get("date") or "").strip()
         groups = [grp.text.strip() for grp in file_node.findall(".//{*}group") if grp.text and grp.text.strip()]
         if not groups:
             groups = [grp.text.strip() for grp in file_node.findall(".//group") if grp.text and grp.text.strip()]

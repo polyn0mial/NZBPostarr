@@ -20,7 +20,7 @@ def resolve_tool(name: str, configured_path: Any = None) -> Optional[str]:
     A configured path wins over PATH: an explicit path (absolute or with a directory part)
     must exist; a bare command name is looked up on PATH.
     """
-    text = str(configured_path or "").strip() or str(name or "").strip()
+    text = str(configured_path or "").strip() or name.strip()
     if not text:
         return None
     candidate = Path(text)
