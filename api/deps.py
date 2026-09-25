@@ -3,33 +3,50 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from loguru import logger
 
+from fastapi import HTTPException
+
+from core.config import StatsFeatures, get_config
 from core.paths import is_at_or_below, resolve_path
-from core.config import get_config
-from logic.stats_engine import dashboard_stats_enabled, history_tracking_enabled, stats_page_enabled
+
+# The 404 detail each disabled stats feature answers with.
+_FEATURE_DISABLED_DETAIL: Dict[str, str] = {
+    "stats_page": "Stats page is disabled",
+    "dashboard": "Dashboard server stats are disabled",
+    "history": "Stats history is disabled",
+}
 
 
-def _stats_page_enabled(conf: Optional[Any] = None) -> bool:
-    current = conf or get_config()
-    return stats_page_enabled(current)
+def stats_features(conf: Optional[Any] = None) -> StatsFeatures:
+    return StatsFeatures.from_config(conf or get_config())
 
-def _dashboard_server_stats_enabled(conf: Optional[Any] = None) -> bool:
-    current = conf or get_config()
-    return dashboard_stats_enabled(current)
+def feature_enabled(name: str, conf: Optional[Any] = None) -> bool:
+    return bool(getattr(stats_features(conf), name))
 
-def _stats_history_enabled(conf: Optional[Any] = None) -> bool:
-    current = conf or get_config()
-    return history_tracking_enabled(current)
+def check_feature(name: str) -> None:
+    """Answer 404 while the named stats feature is off."""
+    if not feature_enabled(name):
+        raise HTTPException(status_code=404, detail=_FEATURE_DISABLED_DETAIL[name])
+
+def require_feature(name: str) -> Callable[[], None]:
+    """check_feature as a FastAPI dependency."""
+    if name not in _FEATURE_DISABLED_DETAIL:
+        raise KeyError(f"Unknown stats feature: {name}")
+
+    def _require() -> None:
+        check_feature(name)
+
+    return _require
 
 def _stats_collector_required(conf: Optional[Any] = None) -> bool:
-    return _stats_history_enabled(conf)
+    return feature_enabled("history", conf)
 
 async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
     current = conf or get_config()
-    from logic.stats_engine import (
+    from logic.stats.collector import (
         start_collector,
         stop_collector,
         sync_collector_schedule,

@@ -1,0 +1,38 @@
+<!-- Mark Uploaded Modal -->
+<modal
+    :open="showMarkModal"
+    title="Mark as Uploaded"
+    icon="check-circle"
+    icon-class="text-notion-success"
+    max-width="max-w-md"
+    panel-class="bg-notion-bg-secondary"
+    @close="showMarkModal = false">
+    <div class="p-4 space-y-3">
+        <p class="text-xs text-notion-text-secondary">
+            Select which indexers to mark
+            <strong>{{ selectedCount }}</strong>
+            item(s) as uploaded to:
+        </p>
+        <label class="flex items-center gap-2 px-3 py-2 bg-notion-bg border border-notion-border rounded-md cursor-pointer hover:bg-notion-bg-hover transition-colors">
+            <input type="checkbox" v-model="markAllIndexers" @change="toggleMarkAll" class="w-3.5 h-3.5 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+            <span class="text-xs font-medium text-notion-text-primary">All Indexers</span>
+        </label>
+        <div class="space-y-1">
+            <label v-for="idx in activeIndexers" :key="idx.id" class="flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer hover:bg-notion-bg-hover transition-colors">
+                <input type="checkbox" v-model="markIndexerSelection[idx.id]" class="w-3 h-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent" />
+                <div class="flex items-center gap-1.5">
+                    <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-3.5 h-3.5 object-contain" />
+                    <lucide-icon v-else :name="idx.icon || 'database'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary"></lucide-icon>
+                    <span class="text-xs text-notion-text-primary">{{ idx.name }}</span>
+                </div>
+            </label>
+        </div>
+    </div>
+    <div class="px-4 py-3 border-t border-notion-divider flex items-center justify-end gap-2">
+        <button @click="showMarkModal = false" class="px-4 py-1.5 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors">Cancel</button>
+        <button @click="confirmMarkUploaded" class="px-4 py-1.5 bg-notion-success text-white rounded-md text-xs hover:opacity-90 transition-colors flex items-center gap-1.5">
+            <lucide-icon name="check" icon-class="w-3.5 h-3.5"></lucide-icon>
+            Confirm
+        </button>
+    </div>
+</modal>

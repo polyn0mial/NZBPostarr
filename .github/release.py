@@ -5,12 +5,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import re
 import subprocess
 import sys
+import zipfile
 from pathlib import Path, PurePosixPath
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+RELEASE_MANIFEST_NAME = "release-manifest.json"
 
 _FORBIDDEN_BASENAMES = {
     ".env",
@@ -144,6 +147,22 @@ def _safe_version(raw_version: str) -> str:
     return version
 
 
+def _append_release_manifest(archive_path: Path, prefix: str) -> None:
+    """Record the archive's file list so the updater can delete files a release dropped."""
+    with zipfile.ZipFile(archive_path, "a", compression=zipfile.ZIP_DEFLATED) as zf:
+        files = sorted(
+            name[len(prefix):]
+            for name in zf.namelist()
+            if name.startswith(prefix) and not name.endswith("/")
+        )
+        payload = json.dumps({"files": files}, indent=2) + "
+"
+        info = zipfile.ZipInfo(f"{prefix}{RELEASE_MANIFEST_NAME}", date_time=(1980, 1, 1, 0, 0, 0))
+        info.compress_type = zipfile.ZIP_DEFLATED
+        info.external_attr = 0o644 << 16
+        zf.writestr(info, payload)
+
+
 def build_release(version: str, output_dir: Path) -> tuple[Path, Path]:
     """Build a reproducible archive from the exact clean commit."""
     check_public_tree()
@@ -164,6 +183,7 @@ def build_release(version: str, output_dir: Path) -> tuple[Path, Path]:
         cwd=REPO_ROOT,
         check=True,
     )
+    _append_release_manifest(archive_path, f"nzbpostarr-{version}/")
     digest = hashlib.sha256(archive_path.read_bytes()).hexdigest()
     checksum_path = archive_path.with_suffix(f"{archive_path.suffix}.sha256")
     checksum_path.write_text(f"{digest}  {archive_path.name}\n", encoding="utf-8")

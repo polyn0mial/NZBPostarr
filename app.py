@@ -21,7 +21,7 @@ from api.deps import _stats_collector_required, _sync_stats_collector_state
 from api.pages import not_found_exception_handler, server_error_exception_handler
 from api.pending import _pending_index, _pending_watch_folders, _scan_pending_all
 from core.config import get_config
-from logic import usenet_stream
+from logic.stream import monitors as stream_monitors
 
 
 _boot_reaper_task: Optional[asyncio.Task[Any]] = None
@@ -32,7 +32,7 @@ def _arm_process_reaper() -> None:
     """Start periodic cleanup immediately and offload the boot scan to the background."""
     global _boot_reaper_task
 
-    from logic.process_reaper import schedule_reaper, schedule_wal_checkpoint
+    from logic.system.reaper import schedule_reaper, schedule_wal_checkpoint
 
     schedule_reaper()
     schedule_wal_checkpoint()
@@ -87,7 +87,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     await start_folder_monitor()
     logger.debug(f"  [3/3] Folder Monitor checked ({time.time() - start:.3f}s)")
 
-    await usenet_stream.start_stream_monitors()
+    await stream_monitors.start_stream_monitors()
     logger.debug(f"  [3.25/4] Stream Monitor checked ({time.time() - start:.3f}s)")
 
     # Pending index manager (request-path offload): watcher invalidation + periodic reconcile.
@@ -104,6 +104,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     _arm_process_reaper()
     logger.debug(f"  [4/4] Process Reaper armed ({time.time() - start:.3f}s)")
 
+    # Delete files dropped by earlier releases (an older updater never deletes).
+    from logic.system.updater import cleanup_removed_paths
+
+    await asyncio.to_thread(cleanup_removed_paths)
+
     logger.info(f"✨ Startup complete in {time.time() - start:.3f}s")
 
     # A mounted sub-app does not get its lifespan run by the parent, and the MCP
@@ -117,11 +122,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     from core.database import checkpoint_wal
     from logic.autoupload import stop_folder_monitor
     from core.scheduler import shutdown_scheduler
-    from logic.stats_engine import stop_collector
+    from logic.stats.collector import stop_collector
 
     await _stop_startup_reaper()
     _pending_index.stop()
-    await usenet_stream.stop_stream_monitors()
+    await stream_monitors.stop_stream_monitors()
     await stop_folder_monitor()
     await stop_collector()
     checkpoint_wal()  # flush WAL before process exits
@@ -129,7 +134,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
 
 async def _run_startup_reaper() -> None:
     """Run the initial orphan-process scan without blocking app startup."""
-    from logic.process_reaper import reap_orphans
+    from logic.system.reaper import reap_orphans
 
     try:
         result = await asyncio.to_thread(reap_orphans, force=True)

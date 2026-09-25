@@ -1,0 +1,54 @@
+<!-- Folder Browser Modal -->
+<modal
+    :open="folderBrowser.open"
+    title="Browse Folders"
+    icon="folder-open"
+    max-width="max-w-lg"
+    panel-class="bg-notion-bg-secondary max-h-[70vh]"
+    z-class="z-100"
+    @close="closeFolderBrowser()">
+    <!-- Current Path -->
+    <div class="px-4 py-2 border-b border-notion-border bg-notion-bg flex items-center gap-2 shrink-0">
+        <lucide-icon name="map-pin" icon-class="size-3 text-notion-text-tertiary shrink-0"></lucide-icon>
+        <span class="text-xs font-mono text-notion-text-secondary truncate">{{ folderBrowser.currentPath }}</span>
+    </div>
+
+    <!-- Directory Listing -->
+    <div class="overflow-y-auto flex-1 min-h-0">
+        <!-- Up / Parent -->
+        <button v-if="folderBrowser.parentPath !== null" @click="browseTo(folderBrowser.parentPath)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left border-b border-notion-divider">
+            <lucide-icon name="corner-left-up" icon-class="size-3.5 text-notion-accent"></lucide-icon>
+            <span class="text-xs text-notion-accent font-medium">..</span>
+        </button>
+
+        <!-- Loading -->
+        <div v-if="folderBrowser.loading" class="px-4 py-8 text-center text-notion-text-tertiary">
+            <lucide-icon name="loader-2" icon-class="size-5 mx-auto mb-2 animate-spin opacity-50"></lucide-icon>
+            <p class="text-xs">Loading...</p>
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="folderBrowser.dirs.length === 0" class="empty-state py-8">
+            <lucide-icon name="folder-x" icon-class="empty-state-icon size-6 opacity-40"></lucide-icon>
+            <p class="empty-state-title">No subdirectories found</p>
+        </div>
+
+        <!-- Directories -->
+        <button v-else v-for="dir in folderBrowser.dirs" :key="dir.path" @click="browseTo(dir.path)" class="w-full flex items-center gap-3 px-4 py-2 hover:bg-notion-bg-hover transition-colors text-left group">
+            <lucide-icon name="folder" icon-class="size-3.5 text-notion-text-tertiary group-hover:text-notion-accent transition-colors"></lucide-icon>
+            <span class="text-xs text-notion-text-primary truncate">{{ dir.name }}</span>
+        </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="px-4 py-3 border-t border-notion-border flex items-center justify-between shrink-0 bg-notion-bg">
+        <span class="text-[10px] text-notion-text-tertiary">Navigate to the desired folder, then click Select</span>
+        <div class="flex items-center gap-2">
+            <button @click="closeFolderBrowser()" class="px-3 h-8 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
+            <button @click="selectBrowsedFolder()" class="btn-primary px-4 h-8 rounded-md text-xs font-bold flex items-center gap-2">
+                <lucide-icon name="check" icon-class="size-3.5"></lucide-icon>
+                Select
+            </button>
+        </div>
+    </div>
+</modal>

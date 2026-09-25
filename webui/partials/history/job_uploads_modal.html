@@ -1,0 +1,40 @@
+<!-- Job Uploads Modal (for jobs view) -->
+<modal
+    :open="jobModalOpen"
+    :title="jobModalTitle"
+    icon="list"
+    max-width="max-w-2xl"
+    panel-class="bg-notion-bg max-h-[90vh] sm:max-h-[80vh]"
+    @close="jobModalOpen = false">
+    <div class="p-5 overflow-y-auto flex-1">
+        <div v-if="jobModalLoading" class="flex items-center justify-center py-8">
+            <lucide-icon name="loader-2" icon-class="size-6 animate-spin text-notion-text-tertiary"></lucide-icon>
+            <span class="ml-2 text-notion-text-tertiary">Loading uploads...</span>
+        </div>
+        <div v-else-if="jobModalUploads.length === 0" class="text-center py-8 text-notion-text-tertiary">
+            <lucide-icon name="inbox" icon-class="size-8 mx-auto mb-2 opacity-50"></lucide-icon>
+            <p>No uploads recorded for this job</p>
+        </div>
+        <template v-else>
+            <div class="divide-y divide-notion-divider">
+                <div v-for="upload in jobModalUploads" :key="upload.item_name" class="flex items-center gap-3 px-3 py-1.5 hover:bg-notion-bg-hover/30 transition-colors">
+                    <div :title="getCategoryLabel(upload.media_type)" :class="getCategoryIconBg(upload.media_type)" class="size-4 rounded flex items-center justify-center shrink-0">
+                        <lucide-icon :name="getCategoryIconName(upload.media_type)" :icon-class="'size-2.5 ' + getCategoryIconColor(upload.media_type)"></lucide-icon>
+                    </div>
+                    <span :title="upload.item_name" class="text-notion-text-primary truncate flex-1 text-[13px]">{{ upload.item_name }}</span>
+                    <span class="text-notion-text-tertiary font-mono whitespace-nowrap tabular-nums text-[11px]">{{ formatSize(upload.filesize) }}</span>
+                    <div class="flex items-center shrink-0 justify-end gap-0.5 min-w-15" style="overflow: visible; z-index: 10">
+                        <div v-for="dest in getDestinationDots(upload)" :key="dest.name" class="infotip-trigger relative flex items-center justify-center">
+                            <span :class="destDotClass(dest)"></span>
+                            <div class="infotip-content text-[10px] text-notion-text-primary">
+                                <div class="infotip-header">{{ dest.name }}</div>
+                                <div class="infotip-footer">Successful Upload</div>
+                                <div class="infotip-arrow"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-4 pt-4 border-t border-notion-divider text-notion-text-tertiary text-center uppercase tracking-widest font-semibold text-[10px]">{{ jobModalUploads.length }} item{{ jobModalUploads.length !== 1 ? 's' : '' }} uploaded</div>
+        </template>
+    </div>

@@ -1,0 +1,167 @@
+<div class="bg-notion-bg-secondary rounded-lg border border-notion-border mb-6" data-section="skip-files" v-show="settings.skip_files.enabled && sectionVisible('skip-files')">
+    <div class="px-4 py-3 border-b border-notion-border flex items-center justify-between cursor-pointer hover:bg-notion-bg-hover transition-colors" @click="toggleSection('skip-files')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections['skip-files'] ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-notion-text-tertiary transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="file-x-2" icon-class="size-4 text-notion-accent"></lucide-icon>
+            <h2 class="text-sm font-semibold text-notion-text-primary">Skip Files</h2>
+        </div>
+        <div v-show="expandedSections['skip-files']" class="flex items-center gap-3" @click.stop>
+            <span class="text-[10px] text-notion-text-tertiary">{{ settings.skip_files.patterns.length }} pattern{{ settings.skip_files.patterns.length !== 1 ? 's' : '' }}</span>
+            <button @click="toggleSetting('enabled', 'skip_files')" :class="toggleBtnClass('enabled', 'skip_files')" title="Enable or disable skip-file pattern matching">
+                <span :class="toggleKnobClass('enabled', 'skip_files')"></span>
+            </button>
+        </div>
+    </div>
+    <div :class="sectionContentClass('skip-files')">
+        <div class="p-4 space-y-4">
+            <!-- Description -->
+            <p class="text-xs text-notion-text-tertiary">
+                Define filename patterns to skip during processing. Supports glob wildcards:
+                <code class="bg-notion-bg px-1 rounded text-[10px]">*</code>
+                (any characters),
+                <code class="bg-notion-bg px-1 rounded text-[10px]">?</code>
+                (single character). Matching is case-insensitive.
+            </p>
+
+            <!-- Display Mode Toggle -->
+            <div class="setting-item flex items-center justify-between p-2 -mx-2 hover:bg-notion-bg-hover/10 transition-colors rounded-md" v-show="matchesSearch('skip files display mode hidden disabled queue')" data-search="skip files display mode hidden disabled queue">
+                <div class="flex items-center gap-3">
+                    <lucide-icon name="eye" icon-class="size-3.5 text-notion-text-tertiary"></lucide-icon>
+                    <div class="flex flex-col">
+                        <span class="text-notion-text-secondary text-[13px]">Queue Display Mode</span>
+                        <span class="text-notion-text-tertiary text-[10px]">How skipped files appear in the Pending Queue</span>
+                    </div>
+                </div>
+                <div class="flex items-center border border-notion-border rounded overflow-hidden h-8 bg-notion-bg/30 shadow-inner">
+                    <button
+                        @click="settings.skip_files.display_mode = 'disabled'"
+                        :class="settings.skip_files.display_mode === 'disabled' ? 'bg-notion-accent text-white' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'"
+                        class="flex items-center gap-1.5 px-3 h-full border-r border-notion-border transition-colors">
+                        <lucide-icon name="eye-off" icon-class="size-3.5"></lucide-icon>
+                        <span class="text-[10px] font-bold uppercase tracking-tight">Greyed Out</span>
+                    </button>
+                    <button @click="settings.skip_files.display_mode = 'hidden'" :class="settings.skip_files.display_mode === 'hidden' ? 'bg-notion-accent text-white' : 'text-notion-text-tertiary hover:bg-notion-bg-hover/10'" class="flex items-center gap-1.5 px-3 h-full transition-colors">
+                        <lucide-icon name="eye" icon-class="size-3.5"></lucide-icon>
+                        <span class="text-[10px] font-bold uppercase tracking-tight">Hidden</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="h-px bg-notion-border mx-2"></div>
+
+            <!-- Patterns List -->
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-[11px] font-bold text-notion-text-tertiary uppercase tracking-wider">Skip Patterns</h3>
+                    <button @click="addSkipPattern()" class="flex items-center gap-1.5 text-[10px] text-notion-accent hover:text-notion-accent/80 transition-colors">
+                        <lucide-icon name="plus" icon-class="size-3"></lucide-icon>
+                        Add Pattern
+                    </button>
+                </div>
+
+                <!-- Empty state -->
+                <div v-if="settings.skip_files.patterns.length === 0" class="empty-state py-6 border border-dashed border-notion-border rounded-lg">
+                    <lucide-icon name="file-x-2" icon-class="empty-state-icon size-6 text-notion-text-placeholder"></lucide-icon>
+                    <p class="empty-state-title">No skip patterns yet</p>
+                    <button @click="addSkipPattern()" class="mt-2 text-[10px] text-notion-accent hover:underline">Add your first pattern</button>
+                </div>
+
+                <!-- Pattern rows -->
+                <div
+                    v-for="(rule, idx) in settings.skip_files.patterns"
+                    :key="idx"
+                    class="setting-item group bg-notion-bg/50 border border-notion-border rounded-lg p-3 space-y-2.5 hover:border-notion-text-tertiary/30 transition-colors"
+                    v-show="matchesSearch(`skip files pattern filename glob wildcard ${rule.pattern || ''} ${(rule.categories || []).join(' ')}`)"
+                    data-search="skip files pattern filename glob wildcard">
+                    <div class="flex items-center gap-2">
+                        <!-- Pattern input -->
+                        <div class="flex-1 relative">
+                            <lucide-icon :name="rule.is_regex ? 'regex' : 'asterisk'" :icon-class="'size-3 absolute left-2.5 top-1/2 -translate-y-1/2 ' + (rule.is_regex ? 'text-notion-accent' : 'text-notion-text-tertiary')"></lucide-icon>
+                            <input
+                                type="text"
+                                v-model="rule.pattern"
+                                :placeholder="rule.is_regex ? 'e.g. .*\\.nfo$, ^Sample, (?i)sample' : 'e.g. *.nfo, Sample*, *-sample.*'"
+                                class="w-full bg-notion-bg text-notion-text-primary text-xs pl-8 pr-3 h-8 rounded border border-notion-border focus:outline-none focus:ring-1 focus:ring-notion-accent font-mono" />
+                        </div>
+
+                        <!-- Regex toggle -->
+                        <label class="flex items-center gap-1.5 px-2 py-1 rounded-md cursor-pointer select-none shrink-0 transition-colors" :class="rule.is_regex ? 'bg-notion-accent/10 text-notion-accent' : 'text-notion-text-tertiary hover:bg-notion-bg-hover'" title="Use regular expression">
+                            <input type="checkbox" v-model="rule.is_regex" class="size-3 rounded border-notion-border bg-notion-bg-secondary text-notion-accent cursor-pointer" />
+                            <span class="text-[10px] font-semibold uppercase tracking-wider">Regex</span>
+                        </label>
+
+                        <!-- Delete button -->
+                        <button @click="settings.skip_files.patterns.splice(idx, 1)" class="p-1.5 rounded hover:bg-red-500/15 text-notion-text-tertiary hover:text-red-400 transition-colors opacity-40 group-hover:opacity-100 shrink-0" title="Remove pattern">
+                            <lucide-icon name="trash-2" icon-class="size-3.5"></lucide-icon>
+                        </button>
+                    </div>
+
+                    <!-- Category chips -->
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <span class="text-[10px] text-notion-text-tertiary font-semibold uppercase tracking-wider mr-1">Applies to:</span>
+                        <button
+                            v-for="cat in skipFileCategories"
+                            :key="cat.value"
+                            @click="toggleSkipCategory(rule, cat.value)"
+                            :class="[
+                                'px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors',
+                                rule.categories.length === 0 || rule.categories.includes(cat.value)
+                                    ? 'bg-notion-accent/10 border-notion-accent/30 text-notion-accent'
+                                    : 'bg-notion-bg border-notion-border text-notion-text-tertiary hover:border-notion-text-tertiary'
+                            ]">
+                            {{ cat.label }}
+                        </button>
+                        <span class="text-[10px] text-notion-text-placeholder italic ml-1" v-if="rule.categories.length === 0">(all categories)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Examples hint -->
+            <div class="bg-notion-bg/50 border border-notion-border rounded-lg p-3">
+                <div v-if="hasGlobPatterns">
+                    <h4 class="text-[10px] font-bold text-notion-text-tertiary uppercase tracking-wider mb-2">Glob Examples</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">*.nfo</code>
+                            <span class="text-notion-text-tertiary">Skip all NFO files</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">Sample*</code>
+                            <span class="text-notion-text-tertiary">Skip files starting with "Sample"</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">*-sample.*</code>
+                            <span class="text-notion-text-tertiary">Skip sample files like movie-sample.mkv</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">*.txt</code>
+                            <span class="text-notion-text-tertiary">Skip all text files</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="hasRegexPatterns" :class="{ 'mt-3': hasGlobPatterns }">
+                    <h4 class="text-[10px] font-bold text-notion-text-tertiary uppercase tracking-wider mb-2">Regex Examples</h4>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-[11px]">
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">.*\.nfo$</code>
+                            <span class="text-notion-text-tertiary">Skip all NFO files</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">(?i)sample</code>
+                            <span class="text-notion-text-tertiary">Skip anything containing "sample"</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">^\.</code>
+                            <span class="text-notion-text-tertiary">Skip hidden/dot files</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <code class="bg-notion-bg px-1.5 py-0.5 rounded font-mono text-notion-text-secondary text-[10px]">\.(srt|sub|idx)$</code>
+                            <span class="text-notion-text-tertiary">Skip subtitle files</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

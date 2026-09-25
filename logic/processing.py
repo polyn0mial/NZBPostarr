@@ -306,7 +306,7 @@ def prepare_item(
     if job:
         job["current_stage"] = "PREPARING"
 
-    from logic.stats_engine import ProgressTracker
+    from logic.pipeline.posting import ProgressTracker
 
     tracker = ProgressTracker(total_bytes)
 

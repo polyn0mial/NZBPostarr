@@ -1,0 +1,32 @@
+            <!-- Shared Confirm Dialog (Vue-driven, see confirmDialog() in page-base.js) -->
+            <Transition name="modal">
+                <div v-if="confirmState.open" class="fixed inset-0 z-60 flex items-end sm:items-center justify-center sm:p-4" role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title">
+                    <div class="absolute inset-0 bg-black/60" @click="cancelConfirmDialog()"></div>
+                    <div class="relative bg-notion-bg border border-notion-border rounded-t-xl sm:rounded-xl shadow-2xl w-full max-w-md flex flex-col">
+                        <div class="shrink-0 flex items-center justify-between px-5 py-4 border-b border-notion-border bg-notion-bg-secondary">
+                            <div class="flex items-center gap-3 min-w-0">
+                                <lucide-icon :name="confirmState.icon" :icon-class="['size-5', confirmState.danger ? 'text-notion-error' : 'text-notion-accent']"></lucide-icon>
+                                <h3 id="confirm-dialog-title" class="text-lg font-semibold text-notion-text-primary truncate">{{ confirmState.title }}</h3>
+                            </div>
+                            <button @click="cancelConfirmDialog()" class="icon-btn shrink-0" aria-label="Cancel">
+                                <lucide-icon name="x" icon-class="size-5"></lucide-icon>
+                            </button>
+                        </div>
+                        <div class="px-5 py-4 space-y-2">
+                            <p class="text-sm text-notion-text-primary whitespace-pre-line wrap-break-word">{{ confirmState.message }}</p>
+                            <p v-if="confirmState.detail" class="text-xs text-notion-text-tertiary whitespace-pre-line wrap-break-word">{{ confirmState.detail }}</p>
+                            <input
+                                v-if="confirmState.prompt"
+                                ref="confirmDialogInput"
+                                v-model="confirmState.value"
+                                :type="confirmState.inputType"
+                                :placeholder="confirmState.placeholder"
+                                class="mt-1 px-3 h-9 w-full bg-notion-bg border border-notion-border rounded-md text-sm text-notion-text-primary placeholder:text-notion-text-placeholder focus:border-notion-accent focus:outline-none" />
+                        </div>
+                        <div class="shrink-0 flex items-center justify-end gap-2 px-5 py-3 border-t border-notion-border bg-notion-bg-secondary rounded-b-xl">
+                            <button @click="cancelConfirmDialog()" class="btn-secondary px-4 h-9 rounded-lg text-xs font-medium">{{ confirmState.cancelLabel }}</button>
+                            <button ref="confirmDialogAccept" @click="acceptConfirmDialog()" :class="confirmState.danger ? 'btn-danger' : 'btn-primary'" class="px-4 h-9 rounded-lg text-xs font-medium">{{ confirmState.confirmLabel }}</button>
+                        </div>
+                    </div>
+                </div>
+            </Transition>

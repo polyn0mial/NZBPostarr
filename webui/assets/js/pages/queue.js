@@ -14,6 +14,7 @@ import methods5 from "./queue-methods-5.js";
 import methods6 from "./queue-methods-6.js";
 import methods7 from "./queue-methods-7.js";
 import computed1 from "./queue-computed-1.js";
+import { startPageComponents } from "../core/page.js";
 
 var CACHE_KEY = "nzbpostarr_pending_cache";
 var EXTERNAL_GROUP_ORDER_KEY = "nzbpostarr_pending_external_group_order";
@@ -640,6 +641,7 @@ persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterM
   } catch (_overlayError) {
   }
 }
+startPageComponents();
 // The split method modules call these module-level helpers; export them so each
 // module can import what it uses instead of relying on a shared bundle scope.
 export {

@@ -1,0 +1,50 @@
+<!-- Service Controls (Danger Zone) -->
+<div class="bg-notion-bg-secondary rounded-lg border border-red-500/30 mb-6" data-section="service-controls" v-show="sectionVisible('service-controls')">
+    <div class="px-4 py-3 border-b border-red-500/20 flex items-center justify-between cursor-pointer hover:bg-red-500/5 transition-colors" @click="toggleSection('service-controls')">
+        <div class="flex items-center gap-2">
+            <lucide-icon :name="expandedSections['service-controls'] ? 'chevron-down' : 'chevron-right'" icon-class="size-4 text-red-400 transition-transform section-chevron"></lucide-icon>
+            <lucide-icon name="shield-alert" icon-class="size-4 text-red-400"></lucide-icon>
+            <h2 class="text-sm font-semibold text-red-400">Service Controls</h2>
+        </div>
+        <span class="text-[10px] font-medium text-red-400/70 uppercase tracking-wider">Danger Zone</span>
+    </div>
+    <div :class="sectionContentClass('service-controls')" id="content-service-controls">
+        <div class="p-4 space-y-4">
+            <!-- Stop All Uploads -->
+            <div class="flex items-start justify-between gap-4 p-3 rounded-lg border border-red-500/20 bg-red-500/5">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                        <lucide-icon name="square" icon-class="size-3.5 text-red-400"></lucide-icon>
+                        <span class="text-[13px] font-semibold text-notion-text-primary">Stop All Uploads</span>
+                    </div>
+                    <p class="text-[11px] text-notion-text-tertiary leading-relaxed pl-5">Immediately stops the active upload job and clears all queued jobs. Use this if uploads are running out of control or you need to halt everything right now.</p>
+                </div>
+                <button
+                    @click="stopAllJobs"
+                    :disabled="serviceControls.stopping"
+                    class="shrink-0 flex items-center gap-2 px-3 h-8 rounded border border-red-500/50 bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-semibold">
+                    <lucide-icon :name="serviceControls.stopping ? 'loader-2' : 'square'" :icon-class="'size-3.5' + (serviceControls.stopping ? ' animate-spin' : '')"></lucide-icon>
+                    {{ serviceControls.stopping ? 'Stopping...' : 'Stop All' }}
+                </button>
+            </div>
+
+            <!-- Restart Service -->
+            <div class="flex items-start justify-between gap-4 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+                <div class="space-y-1">
+                    <div class="flex items-center gap-2">
+                        <lucide-icon name="refresh-cw" icon-class="size-3.5 text-amber-500"></lucide-icon>
+                        <span class="text-[13px] font-semibold text-notion-text-primary">Restart Service</span>
+                    </div>
+                    <p class="text-[11px] text-notion-text-tertiary leading-relaxed pl-5">Gracefully restarts the NZBPostarr process. Any running uploads will be interrupted. The page will reload automatically after ~4 seconds.</p>
+                </div>
+                <button
+                    @click="restartService"
+                    :disabled="serviceControls.restarting"
+                    class="shrink-0 flex items-center gap-2 px-3 h-8 rounded border border-amber-500/50 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 hover:text-amber-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs font-semibold">
+                    <lucide-icon :name="serviceControls.restarting ? 'loader-2' : 'refresh-cw'" :icon-class="'size-3.5' + (serviceControls.restarting ? ' animate-spin' : '')"></lucide-icon>
+                    {{ serviceControls.restarting ? 'Restarting...' : 'Restart' }}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

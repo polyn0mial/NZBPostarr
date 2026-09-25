@@ -1,0 +1,50 @@
+<!-- Indexer Key Modal -->
+<teleport to="body">
+    <div v-if="showKeyModal" class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" @click.self="showKeyModal = false">
+        <div class="bg-notion-bg-secondary border border-notion-border rounded-xl shadow-2xl w-full max-w-md overflow-hidden animate-in fade-in zoom-in duration-200">
+            <div class="px-6 py-4 border-b border-notion-border flex items-center justify-between bg-notion-bg/50">
+                <div class="flex items-center gap-3">
+                    <div class="size-8 rounded-lg bg-notion-bg-hover flex items-center justify-center">
+                        <img v-if="activeIndexer?.favicon_url" :src="activeIndexer.favicon_url" class="size-4 object-contain" />
+                        <lucide-icon v-else name="key" icon-class="size-4 text-notion-accent"></lucide-icon>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-semibold text-notion-text-primary">{{ activeIndexer?.name }} Credentials</h3>
+                        <p class="text-[10px] text-notion-text-tertiary">Saved to config.yaml</p>
+                    </div>
+                </div>
+                <button @click="showKeyModal = false" class="icon-btn">
+                    <lucide-icon name="x" icon-class="size-4"></lucide-icon>
+                </button>
+            </div>
+            <div class="p-6 space-y-5">
+                <div class="space-y-1.5 focus-within:text-notion-accent transition-colors">
+                    <div class="flex items-center justify-between px-0.5">
+                        <label class="text-[11px] font-bold text-notion-text-tertiary uppercase tracking-wider">API Key</label>
+                        <button @click="toggleKeyVisibility" class="text-[10px] text-notion-text-tertiary hover:text-notion-accent transition-colors flex items-center gap-1">
+                            <lucide-icon :name="showKey ? 'eye-off' : 'eye'" icon-class="size-3"></lucide-icon>
+                            {{ showKey ? 'Hide' : 'Show' }}
+                        </button>
+                    </div>
+                    <input
+                        :type="showKey ? 'text' : 'password'"
+                        v-model="modalKey"
+                        placeholder="Enter API Key"
+                        class="w-full bg-notion-bg text-notion-text-primary text-xs px-3 h-10 rounded-md border border-notion-border focus:ring-1 focus:ring-notion-accent focus:outline-none font-mono transition-all" />
+                </div>
+
+                <div v-if="activeIndexer?.requires_username" class="space-y-1.5 focus-within:text-notion-accent transition-colors">
+                    <label class="text-[11px] font-bold text-notion-text-tertiary uppercase tracking-wider px-0.5">Username</label>
+                    <input type="text" v-model="modalUsername" placeholder="Enter Username" class="w-full bg-notion-bg text-notion-text-primary text-xs px-3 h-10 rounded-md border border-notion-border focus:ring-1 focus:ring-notion-accent focus:outline-none font-mono transition-all" />
+                </div>
+            </div>
+            <div class="px-6 py-4 border-t border-notion-border flex items-center justify-end gap-3 bg-notion-bg/30">
+                <button @click="showKeyModal = false" class="px-4 h-9 text-xs text-notion-text-secondary hover:text-notion-text-primary transition-colors font-medium">Cancel</button>
+                <button @click="saveIndexerKey" class="btn-primary px-6 h-9 rounded-md text-xs font-bold flex items-center gap-2">
+                    <lucide-icon name="save" icon-class="size-3.5"></lucide-icon>
+                    Save Key
+                </button>
+            </div>
+        </div>
+    </div>
+</teleport>

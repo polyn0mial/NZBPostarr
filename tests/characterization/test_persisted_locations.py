@@ -10,10 +10,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from api import pending as pending_api
-from api import system as system_api
 from core import config as config_mod
 from core import database as db
-from logic import queueing, updater, usenet_stream
+from logic import queueing
+from logic.system import backup as system_backup
+from logic.system import lifecycle, updater
+from logic.stream import monitors as stream_monitors
 from logic.pending import overrides as pending_overrides
 from logic.classify import anime as anime_cache
 from tests.support import _run_async
@@ -40,9 +42,9 @@ def test_job_queue_state_files(tmp_path, monkeypatch) -> None:
 
 
 def test_stream_monitor_state_file(tmp_path, monkeypatch) -> None:
-    monkeypatch.setattr(usenet_stream, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+    monkeypatch.setattr(stream_monitors, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
 
-    assert _rel(usenet_stream._stream_monitor_state_path(), tmp_path) == "data/state/stream_monitors.json"
+    assert _rel(stream_monitors._stream_monitor_state_path(), tmp_path) == "data/state/stream_monitors.json"
 
 
 def test_app_root_state_files(monkeypatch) -> None:
@@ -51,7 +53,7 @@ def test_app_root_state_files(monkeypatch) -> None:
 
     assert _rel(anime_cache._get_cache_path(), APP_ROOT) == "data/cache/anime.json"
     assert _rel(updater.STATE_FILE, APP_ROOT) == "data/updater/state.json"
-    assert _rel(updater.BACKUP_DIR, APP_ROOT) == "data/updater/backups"
+    assert _rel(system_backup.BACKUP_DIR, APP_ROOT) == "data/updater/backups"
     assert _rel(pending_overrides._get_path(), APP_ROOT) == "data/category_overrides.json"
     assert _rel(pending_overrides._legacy_path(), APP_ROOT) == "category_overrides.json"
 
@@ -65,7 +67,7 @@ def test_deployed_revision_file(monkeypatch) -> None:
         return real_exists(self, *args, **kwargs)
 
     monkeypatch.setattr(pathlib.Path, "exists", recording_exists)
-    system_api._runtime_revision()
+    lifecycle.runtime_revision()
     monkeypatch.undo()
 
     assert [_rel(path, APP_ROOT) for path in probed if path.name == "deployed_revision.json"] == [

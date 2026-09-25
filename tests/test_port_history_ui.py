@@ -10,7 +10,11 @@ def _history_html() -> str:
 
 
 def _history_js() -> str:
-    return _read_repo_text("webui", "assets", "js", "pages", "history.js")
+    # The page script is split into modules under pages/history/ (index.js + helpers).
+    return "\n".join(
+        _read_repo_text("webui", "assets", "js", "pages", "history", name)
+        for name in ("index.js", "groups.js", "known-issues.js", "selection.js")
+    )
 
 
 def test_history_destination_tooltips_use_dest_infotip_card() -> None:

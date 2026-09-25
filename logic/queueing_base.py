@@ -17,12 +17,12 @@ from core.logging import log_info, log_success
 from core.media import normalize_category
 from logic.jobs.context import reset_thread_job, set_thread_job
 from logic.classify.names import looks_like_generic_tv_season_folder
-from logic import usenet_stream
+from logic.stream import monitors as stream_monitors
 from logic.jobs.models import JobState, ProcessingJobRequest, QueueStartSummary, StreamJobRequest
 
 __all__ = [
     'Any', 'JobState', 'Optional', 'Path', 'ProcessingJobRequest', 'QueueStartSummary', 'StreamJobRequest',
     'database', 'datetime', 'get_config', 'log_info', 'log_success', 'logger', 'looks_like_generic_tv_season_folder',
     'normalize_category', 'os', 're', 'reset_thread_job', 'set_thread_job', 'shutil',
-    'threading', 'time', 'timedelta', 'timezone', 'usenet_stream', 'uuid',
+    'threading', 'time', 'timedelta', 'timezone', 'stream_monitors', 'uuid',
 ]

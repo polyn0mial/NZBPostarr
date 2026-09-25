@@ -1,4 +1,5 @@
 // Auto-split from queue.js - verbatim methods bodies.
+import { statusBadgeClass } from "../shared/status.js";
 import { resolvePreferredJobId, maybeRevalidateQueuedJobs, syncActiveJobModal, syncQueuedJobModal } from "./queue.js";
 export default {
 closeForceUploadMenu() {
@@ -524,12 +525,12 @@ jobQueueStatusLabel(job) {
     },
 
 jobQueueStatusBadgeClass(job) {
-      if (!job) return "bg-notion-bg-hover text-notion-text-secondary";
-      if (this.isJobStopping(job)) return "bg-notion-error/15 text-notion-error";
-      if (this.isJobPaused(job)) return "bg-notion-warning/15 text-notion-warning";
-      if (job.status === "stopped") return "bg-notion-warning/15 text-notion-warning";
-      if (this.isJobQueueActiveEntry(job)) return "bg-notion-accent/10 text-notion-accent";
-      return "bg-notion-bg-hover text-notion-text-secondary";
+      if (!job) return statusBadgeClass("", "queue");
+      if (this.isJobStopping(job)) return statusBadgeClass("stopping", "queue");
+      if (this.isJobPaused(job)) return statusBadgeClass("paused", "queue");
+      if (job.status === "stopped") return statusBadgeClass("stopped", "queue");
+      if (this.isJobQueueActiveEntry(job)) return statusBadgeClass("active", "queue");
+      return statusBadgeClass("queued", "queue");
     },
 
 jobQueuePromoteTitle() {

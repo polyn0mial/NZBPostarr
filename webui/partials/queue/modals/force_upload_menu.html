@@ -1,0 +1,25 @@
+<!-- Force Upload Flyout Menu -->
+<teleport to="body">
+    <Transition name="fade">
+        <div v-if="flyoutOpen" class="fixed inset-0 z-40" @click="closeForceUploadMenu()"></div>
+    </Transition>
+    <Transition name="flyout">
+        <div v-if="flyoutOpen" ref="forceUploadFlyout" class="fixed z-50 w-52 bg-notion-bg-secondary border border-notion-border rounded-lg shadow-xl py-1 overflow-hidden" :style="{ top: flyoutPos.y + 'px', left: flyoutPos.x + 'px' }">
+            <button @click="executeForceUpload(null)" class="w-full px-3 py-2 text-xs text-notion-text-primary hover:bg-notion-bg-hover text-left flex items-center gap-2.5 transition-colors">
+                <lucide-icon name="zap" icon-class="w-3.5 h-3.5 text-notion-accent"></lucide-icon>
+                <span class="font-medium">All Indexers</span>
+            </button>
+            <div class="border-t border-notion-divider my-1"></div>
+            <button v-for="idx in activeIndexers" :key="idx.id" @click="executeForceUpload(idx.id)" class="w-full px-3 py-1.5 text-xs text-notion-text-primary hover:bg-notion-bg-hover text-left flex items-center gap-2.5 transition-colors">
+                <img v-if="idx.favicon_url" :src="idx.favicon_url" referrerpolicy="no-referrer" loading="lazy" decoding="async" class="w-3.5 h-3.5 object-contain shrink-0" @error="idx.favicon_url = null" />
+                <lucide-icon v-else :name="idx.icon || 'database'" icon-class="w-3.5 h-3.5 text-notion-text-tertiary shrink-0"></lucide-icon>
+                {{ idx.name }}
+            </button>
+            <div class="border-t border-notion-divider my-1"></div>
+            <label class="w-full px-3 py-1.5 text-xs text-notion-text-secondary flex items-center gap-2 cursor-pointer hover:bg-notion-bg-hover transition-colors">
+                <input type="checkbox" v-model="forceSkipDupeCheck" class="rounded border-notion-border bg-notion-bg-primary text-notion-accent focus:ring-notion-accent/30 w-3.5 h-3.5" />
+                <span>Skip dupe check</span>
+            </label>
+        </div>
+    </Transition>
+</teleport>

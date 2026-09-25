@@ -9,7 +9,7 @@ Safe to call at any time - will NOT kill processes that
 belong to an active upload job.
 
 Usage:
-    from logic.process_reaper import reap_orphans, schedule_reaper
+    from logic.system.reaper import reap_orphans, schedule_reaper
 
     reap_orphans()               # one-shot cleanup
     schedule_reaper()            # register periodic cleanup
@@ -208,37 +208,44 @@ def _find_stale_processes(
 # =====================================================================
 #  Kill logic
 # =====================================================================
-def _kill_process(pid: int, name: str, escalate: bool = True) -> bool:
-    """Send SIGTERM, then SIGKILL if needed."""
+def kill_process_tree(pid: int, name: str = "", escalate: bool = True) -> bool:
+    """The one tree kill: SIGTERM the process and its descendants, then SIGKILL survivors."""
     try:
-        p = psutil.Process(pid)
+        root = psutil.Process(pid)
     except psutil.NoSuchProcess:
         return True  # already gone
 
     try:
-        p.terminate()  # SIGTERM
+        procs = [*root.children(recursive=True), root]
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        procs = [root]
+
+    try:
+        root.terminate()  # SIGTERM
     except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
         logger.warning(f"[reaper] Cannot terminate pid {pid} ({name}): {exc}")
         return False
+    for child in procs[:-1]:
+        try:
+            child.terminate()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
 
     if not escalate:
         return True
 
-    # Give it a moment to die gracefully
-    try:
-        p.wait(timeout=3)
-        return True
-    except psutil.TimeoutExpired:
-        pass
-
-    # SIGKILL
-    try:
-        p.kill()
-        p.wait(timeout=2)
-        return True
-    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired) as exc:
-        logger.warning(f"[reaper] Failed to kill pid {pid} ({name}): {exc}")
+    # Give them a moment to die gracefully, then SIGKILL what is left
+    _gone, alive = psutil.wait_procs(procs, timeout=3)
+    for proc in alive:
+        try:
+            proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+    _gone, alive = psutil.wait_procs(alive, timeout=2)
+    if any(proc.pid == pid for proc in alive):
+        logger.warning(f"[reaper] Failed to kill pid {pid} ({name})")
         return False
+    return True
 
 
 # =====================================================================
@@ -298,7 +305,7 @@ def reap_orphans(force: bool = False, dry_run: bool = False) -> Dict[str, Any]:
             logger.info(f"[reaper] DRY RUN - would kill: {sp}")
         else:
             logger.info(f"[reaper] Killing stale process: {sp}")
-            if _kill_process(sp.pid, sp.name):
+            if kill_process_tree(sp.pid, sp.name):
                 entry["killed"] = True
                 result["killed"] += 1
             else:
@@ -345,7 +352,7 @@ def reap_all_tools(include_active: bool = False) -> Dict[str, Any]:
 
             if is_tool or is_upload_script:
                 logger.info(f"[reaper] Killing tool process: pid={pid} name={name}")
-                if _kill_process(pid, name):
+                if kill_process_tree(pid, name):
                     result["killed"] += 1
                 else:
                     result["failed"] += 1

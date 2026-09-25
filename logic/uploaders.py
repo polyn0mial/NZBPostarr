@@ -181,7 +181,7 @@ def build_nyuu_progress_parser(
     verbose: bool = False,
 ) -> Callable[[str], Optional[str]]:
     """Create the shared Nyuu log parser used by staged and streaming uploads."""
-    from logic.stats_engine import ProgressTracker
+    from logic.pipeline.posting import ProgressTracker
 
     tracker = ProgressTracker(total_size)
     article_bytes = _parse_nyuu_article_bytes(article_size or "700K")
@@ -311,7 +311,7 @@ def _parse_nyuu_completion_stats(
 
     speed_match = re.search(r"\((\d+\.?\d*)\s*([KMG]?[iI]?[bB]/s)\)", output_text, re.I)
     if speed_match:
-        from logic.stats_engine import parse_speed_to_bps
+        from logic.stats.collector import parse_speed_to_bps
 
         parsed_speed_bps = parse_speed_to_bps(f"{speed_match.group(1)} {speed_match.group(2)}")
 

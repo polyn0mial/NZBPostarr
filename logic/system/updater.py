@@ -5,110 +5,55 @@ This module provides a conservative updater for source-based installs:
 - installs updates from GitHub ZIP archives or uploaded ZIPs
 - creates pre-update snapshots for rollback
 - restores snapshots and schedules a self-restart
+- deletes files a release dropped (release manifest) and the startup removal list
 """
 
 from __future__ import annotations
 
 import filecmp
 import json
-import os
 import re
 import shutil
-import subprocess
-import sys
 import tempfile
 import threading
 import time
 import zipfile
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 import requests
 from loguru import logger
 from packaging.version import InvalidVersion, Version
 
 from version import __version__
-from core.config import APP_ROOT, get_config
+from core.config import APP_ROOT
+from logic.system import backup
+from logic.system.backup import (
+    STATE_DIR,
+    _create_backup_snapshot,
+    _is_protected,
+    _now_iso,
+    _read_json_file,
+    _restore_from_backup_zip,
+    _safe_member_path,
+)
+from logic.system.lifecycle import schedule_restart
 
 GITHUB_OWNER = "polyn0mial"
 GITHUB_REPO = "nzbpostarr"
 _GITHUB_API_BASE = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
 
-STATE_DIR = APP_ROOT / "data" / "updater"
 STATE_FILE = STATE_DIR / "state.json"
-BACKUP_DIR = STATE_DIR / "backups"
 
 _CHECK_TTL_SECONDS = 1800
 _OP_LOCK = threading.Lock()
 
-# Paths that must survive updates and rollbacks.
-_PROTECTED_REL_PREFIXES = (
-    Path(".git"),
-    Path(".venv"),
-    Path(".config"),
-    Path("backups"),
-    Path("logs"),
-    Path("config.yaml"),
-    Path("data"),
-    Path("indexers") / "readme" / "readme.txt",
-    Path("webui") / "node_modules",
-)
-_PROTECTED_FILENAMES = {"anime_cache.json", "queue_cache.json", "log.txt"}
-_SKIP_PARTS = {"__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache"}
-
+RELEASE_MANIFEST_NAME = "release-manifest.json"
+REMOVED_PATHS_FILE = Path(__file__).with_name("removed_paths.txt")
 
 class UpdateError(RuntimeError):
     """Updater-specific operational error."""
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-def _sanitize_name(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip())
-
-
-def _safe_member_path(member_name: str) -> Optional[Path]:
-    p = Path(member_name)
-    if p.is_absolute() or ".." in p.parts:
-        return None
-    return p
-
-
-def _is_protected(rel_path: Path) -> bool:
-    if not rel_path.parts:
-        return True
-
-    # Extra safety belt: never overwrite any SQLite/DB files during update/rollback.
-    if rel_path.suffix.lower() == ".db":
-        return True
-
-    if rel_path.name in _PROTECTED_FILENAMES:
-        return True
-
-    for part in rel_path.parts:
-        if part in _SKIP_PARTS:
-            return True
-
-    for prefix in _PROTECTED_REL_PREFIXES:
-        if rel_path == prefix or prefix in rel_path.parents:
-            return True
-
-    return False
-
-
-def _read_json_file(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
-    if not path.exists():
-        return dict(default)
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(raw, dict):
-            return raw
-    except Exception as exc:
-        logger.debug(f"Updater: unable to read {path}: {exc}")
-    return dict(default)
 
 
 def _write_json_file(path: Path, data: Dict[str, Any]) -> None:
@@ -335,46 +280,47 @@ def _read_version_from_tree(project_root: Path) -> Optional[str]:
     return m.group(1).strip() or None
 
 
-def _create_backup_snapshot(target_version: str, source: str) -> Dict[str, Any]:
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+def _read_release_manifest(path: Path) -> Optional[Set[str]]:
+    data = _read_json_file(path, {})
+    files = data.get("files")
+    if not isinstance(files, list):
+        return None
+    return {str(name) for name in files if isinstance(name, str)}
 
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    backup_id = f"{stamp}-{_sanitize_name(__version__)}"
-    zip_path = BACKUP_DIR / f"{backup_id}.zip"
 
-    copied = 0
-    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for path in APP_ROOT.rglob("*"):
-            if not path.is_file():
-                continue
-            rel = path.relative_to(APP_ROOT)
-            if _is_protected(rel):
-                continue
-            zf.write(path, arcname=rel.as_posix())
-            copied += 1
-
-        meta = {
-            "backup_id": backup_id,
-            "created_at": _now_iso(),
-            "current_version": __version__,
-            "target_version": target_version,
-            "source": source,
-            "file_count": copied,
-        }
-        zf.writestr(".nzbpostarr-backup-meta.json", json.dumps(meta, indent=2))
-
-    meta_path = BACKUP_DIR / f"{backup_id}.json"
-    meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-    return meta
+def _remove_app_file(rel_path: Path, reason: str) -> bool:
+    """Delete one regular file inside APP_ROOT; never a protected path, directory or link."""
+    safe = _safe_member_path(rel_path.as_posix())
+    if safe is None or _is_protected(safe):
+        return False
+    target = APP_ROOT / safe
+    try:
+        target.resolve().relative_to(APP_ROOT.resolve())
+    except (OSError, ValueError):
+        return False
+    if target.is_symlink() or not target.is_file():
+        return False
+    try:
+        target.unlink()
+    except OSError as exc:
+        logger.warning(f"Updater: could not delete {safe.as_posix()} ({reason}): {exc}")
+        return False
+    logger.info(f"Updater: deleted {safe.as_posix()} ({reason})")
+    return True
 
 
 def _apply_project_tree(project_root: Path) -> Dict[str, int]:
     """Copy changed files from extracted update tree into APP_ROOT.
 
-    Intentionally does not delete files that are not present in the update tree.
+    When both the installed and the new release carry a release manifest, files
+    listed in the old one and absent from the new one are deleted (never a
+    protected path). Callers take the pre-apply backup first.
     """
     updated = 0
     skipped = 0
+    removed = 0
+    previous = _read_release_manifest(APP_ROOT / RELEASE_MANIFEST_NAME)
+    incoming = _read_release_manifest(project_root / RELEASE_MANIFEST_NAME)
 
     for src in project_root.rglob("*"):
         if not src.is_file():
@@ -394,30 +340,32 @@ def _apply_project_tree(project_root: Path) -> Dict[str, int]:
         shutil.copy2(src, dst)
         updated += 1
 
-    return {"updated": updated, "skipped": skipped}
+    if previous is not None and incoming is not None:
+        for name in sorted(previous - incoming):
+            if _remove_app_file(Path(name), "dropped by the new release"):
+                removed += 1
+
+    return {"updated": updated, "skipped": skipped, "removed": removed}
 
 
-def _restore_from_backup_zip(zip_path: Path) -> Dict[str, int]:
-    if not zip_path.exists():
-        raise UpdateError(f"Backup archive not found: {zip_path.name}")
+def cleanup_removed_paths() -> List[str]:
+    """Delete the files listed in removed_paths.txt; run once at startup, idempotent.
 
-    restored = 0
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        for member in zf.infolist():
-            if member.is_dir() or member.filename == ".nzbpostarr-backup-meta.json":
-                continue
-
-            rel = _safe_member_path(member.filename)
-            if rel is None:
-                continue
-
-            dst = APP_ROOT / rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            with zf.open(member, "r") as src, open(dst, "wb") as out:
-                shutil.copyfileobj(src, out)
-            restored += 1
-
-    return {"restored": restored}
+    Needed because a release applied by an older updater never deletes files.
+    Only regular files inside the app root are touched, never a protected path.
+    """
+    try:
+        lines = REMOVED_PATHS_FILE.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    deleted: List[str] = []
+    for line in lines:
+        name = line.strip()
+        if not name or name.startswith("#"):
+            continue
+        if _remove_app_file(Path(name), "listed in removed_paths.txt"):
+            deleted.append(name)
+    return deleted
 
 
 def _set_install_state(target_version: Optional[str], source: str, check_error: Optional[str] = None) -> None:
@@ -433,32 +381,6 @@ def _set_install_state(target_version: Optional[str], source: str, check_error: 
     state["last_checked_at"] = _now_iso()
     state["last_installed_from"] = source
     _save_state(state)
-
-
-def list_backups(limit: int = 20) -> List[Dict[str, Any]]:
-    if not BACKUP_DIR.exists():
-        return []
-
-    backups: List[Dict[str, Any]] = []
-    for zf in sorted(BACKUP_DIR.glob("*.zip"), key=lambda p: p.stat().st_mtime, reverse=True):
-        backup_id = zf.stem
-        sidecar = BACKUP_DIR / f"{backup_id}.json"
-        meta = _read_json_file(sidecar, {}) if sidecar.exists() else {}
-
-        backups.append(
-            {
-                "backup_id": backup_id,
-                "file": zf.name,
-                "size_bytes": zf.stat().st_size,
-                "created_at": meta.get("created_at")
-                or datetime.fromtimestamp(zf.stat().st_mtime, tz=timezone.utc).isoformat(),
-                "current_version": meta.get("current_version"),
-                "target_version": meta.get("target_version"),
-                "source": meta.get("source"),
-            }
-        )
-
-    return backups[: max(1, min(limit, 100))]
 
 
 def get_releases(limit: int = 20) -> List[Dict[str, Any]]:
@@ -567,6 +489,7 @@ def install_from_github(version: Optional[str] = None, restart: bool = True) -> 
             "installed_version_label": _format_version_label(final_target),
             "backup": backup,
             "files_updated": result["updated"],
+            "files_removed": result["removed"],
             "files_skipped": result["skipped"],
             "restart_scheduled": bool(restart),
         }
@@ -606,6 +529,7 @@ def install_from_uploaded_zip(zip_path: Path, restart: bool = True) -> Dict[str,
             "installed_version_label": _format_version_label(target_version),
             "backup": backup,
             "files_updated": result["updated"],
+            "files_removed": result["removed"],
             "files_skipped": result["skipped"],
             "restart_scheduled": bool(restart),
         }
@@ -628,8 +552,8 @@ def rollback_to_backup(backup_id: str, restart: bool = True) -> Dict[str, Any]:
         raise UpdateError("An update or rollback operation is already in progress.")
 
     try:
-        backup_zip = BACKUP_DIR / f"{backup_id}.zip"
-        backup_meta_path = BACKUP_DIR / f"{backup_id}.json"
+        backup_zip = backup.BACKUP_DIR / f"{backup_id}.zip"
+        backup_meta_path = backup.BACKUP_DIR / f"{backup_id}.json"
         if not backup_zip.exists():
             raise UpdateError(f"Backup '{backup_id}' does not exist.")
 
@@ -661,82 +585,3 @@ def rollback_to_backup(backup_id: str, restart: bool = True) -> Dict[str, Any]:
         _OP_LOCK.release()
 
 
-def schedule_restart(delay_seconds: float = 2.0) -> None:
-    """Spawn a fresh process and terminate the current one after a short delay."""
-
-    cmd = [sys.executable, *sys.argv]
-    try:
-        restart_port = int(getattr(get_config(), "port", 8000))
-    except Exception:
-        restart_port = 8000
-
-    def _restart_worker() -> None:
-        time.sleep(max(0.1, float(delay_seconds)))
-        spawned = False
-        try:
-            kwargs: Dict[str, Any] = {
-                "cwd": str(APP_ROOT),
-                "stdin": subprocess.DEVNULL,
-                "stdout": subprocess.DEVNULL,
-                "stderr": subprocess.DEVNULL,
-            }
-
-            if os.name == "nt":
-                kwargs["creationflags"] = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-                subprocess.Popen(cmd, **kwargs)
-            else:
-                kwargs["start_new_session"] = True
-                supervisor = r"""
-import os
-import signal
-import subprocess
-import sys
-import time
-
-cmd = sys.argv[1:]
-time.sleep(float(os.environ.get("NZBPOSTARR_RESTART_DELAY", "1.0") or "1.0"))
-try:
-    import psutil
-    port = int(os.environ.get("NZBPOSTARR_RESTART_PORT", "8000") or "8000")
-    listeners = []
-    for conn in psutil.net_connections(kind="tcp"):
-        if conn.status == psutil.CONN_LISTEN and getattr(conn.laddr, "port", None) == port and conn.pid:
-            if conn.pid == os.getpid():
-                continue
-            try:
-                proc = psutil.Process(conn.pid)
-                cmdline = " ".join(proc.cmdline()).lower()
-            except Exception:
-                cmdline = ""
-            if "main.py" in cmdline or "nzbpostarr" in cmdline:
-                listeners.append(conn.pid)
-    for pid in sorted(set(listeners)):
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-    if listeners:
-        time.sleep(1.5)
-    for pid in sorted(set(listeners)):
-        try:
-            proc = psutil.Process(pid)
-            if proc.is_running():
-                os.kill(pid, signal.SIGKILL)
-        except Exception:
-            pass
-except Exception:
-    pass
-subprocess.Popen(cmd, cwd=os.getcwd(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-"""
-                env = os.environ.copy()
-                env["NZBPOSTARR_RESTART_DELAY"] = "1.0"
-                env["NZBPOSTARR_RESTART_PORT"] = str(restart_port)
-                subprocess.Popen([sys.executable, "-c", supervisor, *cmd], env=env, **kwargs)
-            spawned = True
-            logger.info("Updater: restart process spawned successfully")
-        except Exception as exc:
-            logger.error(f"Updater: failed to spawn restart process: {exc}")
-        if spawned:
-            os._exit(0)
-
-    threading.Thread(target=_restart_worker, daemon=True, name="nzbpostarr-restart").start()
