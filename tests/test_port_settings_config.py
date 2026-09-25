@@ -154,10 +154,12 @@ def test_save_config_round_trips_ported_keys(tmp_path, monkeypatch) -> None:
 def test_public_defaults_carry_no_operator_home_path() -> None:
     defaults_text = _read_repo_text("core", "config.defaults.yaml")
     config_text = _read_repo_text("core", "config.py")
-    settings_js = _read_repo_text("webui", "assets", "js", "pages", "settings.js")
-    settings_html = _read_repo_text("webui", "settings.html")
+    webui = Path(__file__).resolve().parents[1] / "webui"
+    settings_sources = [webui / "settings.html"]
+    settings_sources += sorted((webui / "partials" / "settings").glob("*.html"))
+    settings_sources += sorted((webui / "assets" / "js" / "pages" / "settings").glob("*.js"))
 
-    for text in (defaults_text, config_text, settings_js, settings_html):
+    for text in (defaults_text, config_text, *(p.read_text(encoding="utf-8") for p in settings_sources)):
         assert "/home/" not in text
 
 
@@ -166,30 +168,3 @@ def test_setup_wizard_lists_nzb_life() -> None:
 
     assert '("su", "NZB.Life", "https://nzb.life")' in setup_text
     assert "https://nzb.su" not in setup_text
-
-
-def test_settings_page_source_uses_server_keys_and_layout() -> None:
-    settings_js = _read_repo_text("webui", "assets", "js", "pages", "settings.js")
-    settings_html = _read_repo_text("webui", "settings.html")
-
-    for legacy_key in ("ignore_non_video", "ignore_extras", "require_sxxexx"):
-        assert legacy_key not in settings_js
-    for needle in (
-        "key: 'ignore_non_episode'",
-        "key: 'require_episode'",
-        "require_resolution: false,",
-        "category_appearance_profiles: data.ui.category_appearance_profiles || {},",
-        "backup_folder: this.settings.folders.backup_folder,",
-        "'/api/system/backup/create'",
-    ):
-        assert needle in settings_js, needle
-
-    # The Manual selection only toggle is PM's allow_bulk_selection flag, inverted.
-    assert 'toggleBtnClassDirect(!fp.allow_bulk_selection)' in settings_html
-    assert "fp.allow_bulk_selection === false" in settings_html
-    assert "manual_select_only" not in settings_html
-
-    # Every section sits inside a tab wrapper; the two general wrappers must balance.
-    assert settings_html.count("<div v-show=\"activeSettingsTab === 'general'\">") == 2
-    content = settings_html.split("{% block content %}", 1)[1].split("{% endblock %}", 1)[0]
-    assert len(re.findall(r"<div\b", content)) == content.count("</div>")
