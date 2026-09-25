@@ -84,6 +84,8 @@ from core.registry import (
 
 from logic import folder_monitor, pending_scan, updater
 
+from logic import pending_snapshot as pending_snapshot_mod
+
 from logic import headless as headless_mod
 
 from logic.services import ConsoleBuffer, console
@@ -180,7 +182,6 @@ def _make_queue_service_stub(tmp_path: Path, *, queue_items=None):
     service._lock = threading.Lock()
     service._jobs = {}
     service._processes = {}
-    service._suspended_pids = {}
     service._queue_items = list(queue_items or [])
     service._queue_processing_paused = False
     service._jobs_state_path = tmp_path / "job_queue_state.json"
@@ -194,7 +195,6 @@ def _make_upload_service_stub(*, jobs=None, queue_paused=False):
     service._lock = threading.Lock()
     service._jobs = dict(jobs or {})
     service._processes = {}
-    service._suspended_pids = {}
     service._queue_processing_paused = queue_paused
     service._persist_jobs_locked = lambda: None
     return service
@@ -257,14 +257,8 @@ def _make_processing_conf(root: Path, category: str = "movies", **overrides):
         tv_folder = root if category == "tv" else None
         misc_folder = root if category == "misc" else None
 
-        def get_active_categories(self) -> list[str]:
-            return [category]
-
         def get_folders_for_category(self, cat: str) -> list[Path]:
             return [root] if cat == category else []
-
-        def get_first_folder(self, cat: str) -> Path | None:
-            return root if cat == category else None
 
     conf = DummyConf()
     for key, value in overrides.items():

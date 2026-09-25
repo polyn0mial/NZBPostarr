@@ -665,18 +665,3 @@ def _guard_no_raw_items(category: str, paths: Optional[List[str]]) -> bool:
         raise ValueError(reason)
     log_info(f"No items found to process for category: {category}")
     return True
-
-def kill_child_processes(include_running: bool = False) -> None:
-    """Kill orphaned / hung tool processes (nyuu, rar, parpar).
-
-    Args:
-        include_running: If True, also kills processes that belong to
-                         active upload jobs (nuclear option for restarts).
-    """
-    from logic.process_reaper import reap_all_tools, reap_orphans
-
-    if include_running:
-        reap_all_tools(include_active=True)
-    else:
-        reap_orphans(force=True)
-

@@ -397,7 +397,6 @@ class _QueueServiceMixinPart4:
                 del self._jobs[job_id]
                 if job_id in self._processes:
                     del self._processes[job_id]
-                self._suspended_pids.pop(job_id, None)
                 self._persist_jobs_locked()
 
                 from logic.process_reaper import get_scheduler

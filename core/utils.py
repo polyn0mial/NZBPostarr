@@ -7,7 +7,6 @@ Common utilities and formatting functions.
 
 import codecs
 import fnmatch
-import hashlib
 import os
 import queue
 import re
@@ -579,10 +578,6 @@ def has_multi_file_episode_pattern(names: List[str], *, min_matches: int = 2) ->
     return False
 
 
-def is_video_file(path: Path) -> bool:
-    return path.is_file() and path.suffix.lower() in VIDEO_EXTENSIONS
-
-
 def purge_item_data(name: str) -> None:
     """Complete cleanup of temporary data for a given item name."""
     from core.config import get_config
@@ -734,28 +729,9 @@ def log_verbose(m: str) -> None:
     logger.log("VERBOSE", m)
 
 
-def log_section(m: str) -> None:
-    logger.log("SECTION", m)
-
-
-def format_duration(s: float) -> str:
-    """Format seconds into a human-readable duration string."""
-    return cast(str, humanfriendly.format_timespan(s))
-
-
 def format_size(b: Union[int, float]) -> str:
     """Format bytes into a human-readable size string."""
     return cast(str, humanfriendly.format_size(b, binary=True))
-
-
-def parse_size_to_bytes(size_str: str) -> int:
-    """Parse a size string like '100M' or '1G' into bytes."""
-    if not size_str:
-        return 0
-    try:
-        return cast(int, humanfriendly.parse_size(size_str, binary=True))
-    except (humanfriendly.InvalidSize, ValueError):
-        return 0
 
 
 def compute_size_uncached(p: Path) -> int:
@@ -773,10 +749,6 @@ def compute_size_uncached(p: Path) -> int:
         return total
     except OSError:
         return 0
-
-
-def get_path_hash(p: Path) -> str:
-    return hashlib.md5(str(p.absolute()).encode()).hexdigest()[:8]
 
 
 def should_skip_file(filename: str, category: str, skip_config: Optional[Dict[str, Any]] = None) -> bool:

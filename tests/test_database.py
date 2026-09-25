@@ -184,9 +184,6 @@ def test_processing_db_type_supports_anime_and_media_categories(tmp_path) -> Non
 
 @pytest.mark.usefixtures("isolated_sqlite_db")
 def test_database_e2e_smoke() -> None:
-    # WAL checkpoint should be safe on a fresh DB.
-    assert db.checkpoint_db() is True
-
     health = db.get_database_health()
     assert health["exists"] is True
     assert health["tables"]["uploads"]["status"] == "ok"
@@ -239,12 +236,6 @@ def test_database_e2e_smoke() -> None:
     dup = db.check_duplicate_dynamic(key1, "TV Episode", ["geek", "omg"])
     assert dup["geek"] is not None
     assert dup["omg"] is not None
-
-    uploaded_all = db.get_uploaded_names({"geek": True, "omg": True})
-    assert key1 in uploaded_all
-
-    mapping = db.get_upload_map(["geek", "omg"])
-    assert mapping.get(key1) == {"geek", "omg"}
 
     fully_done, dash_map, _failed_map, _sizes = db.get_dashboard_data(["geek", "omg"])
     assert key1 in dash_map

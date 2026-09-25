@@ -32,8 +32,6 @@ from logic.pending_scan import (
     end_scan_cache,
     get_configured_category_folders,
     has_video_disc_structure,
-    has_clear_movie_year as shared_has_clear_movie_year,
-    looks_like_tv_name,
     relative_key,
     resolve_explicit_path,
 )
@@ -143,55 +141,6 @@ def _coerce_int(value: Any) -> Optional[int]:
         return int(value)
     except (TypeError, ValueError):
         return None
-
-
-def _build_filesize_lookup(filesize_by_indexer: Dict[str, Dict[str, int]]) -> Dict[str, Dict[str, int]]:
-    """Re-key a {item_name: {indexer_id: filesize}} map onto the same
-    casefolded/slash-normalized keys used by completed_lookup, so a
-    normalized name match can be cross-checked against a known filesize."""
-    lookup: Dict[str, Dict[str, int]] = {}
-    for name, sizes in filesize_by_indexer.items():
-        for normalized in _normalize_dashboard_lookup_values([name]):
-            lookup.setdefault(normalized, {}).update(sizes)
-    return lookup
-
-
-def _lookup_completed_dashboard_item(
-    completed_lookup: Set[str],
-    *candidate_values: Any,
-    filesize_lookup: Optional[Dict[str, Dict[str, int]]] = None,
-    current_size: Optional[int] = None,
-) -> bool:
-    if not completed_lookup:
-        return False
-    normalized_candidates = _normalize_dashboard_lookup_values(candidate_values)
-    strong_candidates = {
-        candidate
-        for candidate in normalized_candidates
-        if isinstance(candidate, str)
-        and (
-            candidate.startswith("ext:")
-            or "/" in candidate
-            or "\\" in candidate
-            or (len(candidate) > 2 and candidate[1] == ":" and candidate[2] in ("/", "\\"))
-        )
-    }
-    matched = strong_candidates.intersection(completed_lookup)
-    if not matched:
-        return False
-    if current_size is None or not filesize_lookup:
-        return True
-    # A name match only counts as "completed" if the stored upload's filesize
-    # (when known) still matches what is on disk now; otherwise a locally
-    # replaced file/folder with the same name but a different size would keep
-    # showing as done.
-    for candidate in matched:
-        sizes = filesize_lookup.get(candidate)
-        if not sizes:
-            return True
-        if any(_coerce_int(stored) == current_size for stored in sizes.values()):
-            return True
-    return False
 
 
 def _lookup_upload_map_indexers(
@@ -363,16 +312,6 @@ _SOURCE_TAG_PATTERN = re.compile(
     + "|".join(re.escape(token).replace(r"\-", "[-_.\\s]?").replace(r"\.", r"[._\\s]?") for token in _SOURCE_TAG_TOKENS)
     + r")(?![a-z0-9])"
 )
-
-
-def _has_disc_structure_signature(entry: Path) -> bool:
-    """Return True when a file/folder contains a real video-disc structure."""
-    return has_video_disc_structure(entry)
-
-
-def _directory_disc_bubble_up(entry: Path) -> bool:
-    """Fast parent-row DISC promotion based on folder contents before name inference."""
-    return entry.is_dir() and has_video_disc_structure(entry)
 
 
 def _directory_extension_first_category(entry: Path) -> str:
@@ -736,10 +675,6 @@ def _sort_external_groups(groups: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return sorted(groups, key=sort_key)
 
 
-def stamp_exclusion_flags(_result: Dict[str, Any]) -> None:
-    """No-op - legacy TV exclusion logic removed (all folders are external now)."""
-
-
 def collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
     """Extract unique candidate titles for anime lookups from a pending snapshot."""
     seen: set[str] = set()
@@ -786,10 +721,6 @@ def collect_uncached_anime_check_names(data: Dict[str, Any]) -> list[str]:
     return [name for name in collect_anime_check_names(data) if get_cached(name) is None]
 
 
-def _has_clear_movie_year(name: str) -> bool:
-    return shared_has_clear_movie_year(name)
-
-
 def _anime_cache_lookup(name: str) -> Optional[bool]:
     from logic.anime_cache import get_cached as anime_cached
 
@@ -826,23 +757,6 @@ def detect_external_category(name: str, entry_path: Path) -> str:
     return shared_detect_external_category(name, entry_path)
 
 
-def _detect_external_category_fast(
-    name: str, children_have_tv: bool, children_have_legacy_episodes: bool = False
-) -> str:
-    anime_cached = _anime_cache_lookup(name)
-    if anime_cached is True:
-        return "anime"
-    if looks_like_tv_name(name):
-        return "tv"
-    if children_have_tv or children_have_legacy_episodes:
-        return "tv"
-    if _has_clear_movie_year(name):
-        if re.search(r"(?:^|[.\s_-])S\d{2}(?:[.\s_-]|$)", name, re.IGNORECASE):
-            return "tv"
-        return "movies"
-    return "misc"
-
-
 def detect_content_itype(name: str, entry_path: Path, folder_category: str) -> str:
     """Detect the display content type for a pending item."""
     return shared_detect_content_itype(
@@ -857,9 +771,7 @@ def _classify_standalone_file_category(entry: Path) -> str:
     """Classify a loose file by filename + extension only, without parent-path hints."""
     # DISC has absolute priority over ebook/music/audiobook extension detection.
     # A Blu-ray or DVD folder may contain companion PDFs - it is still disc, not ebooks.
-    if _directory_disc_bubble_up(entry):
-        return "disc"
-    if _has_disc_structure_signature(entry):
+    if has_video_disc_structure(entry):
         return "disc"
     ext_first_category = _directory_extension_first_category(entry)
     if ext_first_category:
@@ -868,29 +780,6 @@ def _classify_standalone_file_category(entry: Path) -> str:
     if ext in _EBOOK_EXTENSIONS:
         return "books"
     return ""
-
-
-def _itype_to_category_id(itype: str) -> str:
-    """Map a detected item type to its upload category id."""
-    return category_from_itype(itype, default="")
-
-
-def _build_virtual_pack_name(sample_episode: str, show_name: str, season_num: int) -> str:
-    stem = sample_episode
-    if "." in stem:
-        parts = stem.rsplit(".", 1)
-        if len(parts[1]) <= 4 and parts[1].lower() in ("mkv", "mp4", "avi", "ts", "m4v", "wmv"):
-            stem = parts[0]
-
-    match = re.search(r"(\.S\d{1,2})E\d+[^.]*", stem, re.IGNORECASE)
-    if match:
-        before = stem[: match.start()]
-        season_tag = match.group(1)
-        after_episode = re.sub(r"^[.\s-]+", ".", stem[match.end() :])
-        pack_name = f"{before}{season_tag}{after_episode}"
-    else:
-        pack_name = f"{show_name.replace(' ', '.')}.S{season_num:02d}"
-    return pack_name.strip(". ")
 
 
 def _selection_path_identity(value: str | Path) -> str:
@@ -2036,7 +1925,6 @@ def _scan_pending_snapshot_inner() -> Dict[str, Any]:
     if isinstance(skip_config, dict) and skip_config.get("enabled"):
         stamp_skip_flags(result, skip_config)
     stamp_filepart_flags(result)
-    stamp_exclusion_flags(result)
     if indexer_status_available and failed_map:
         _stamp_failed_indexer_flags(result, failed_map, active_ids)
     external_search_index, external_metadata_zlib = _compact_external_groups(result["external"])

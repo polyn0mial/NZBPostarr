@@ -10,15 +10,12 @@ from app_base import (
     FileResponse as FileResponse, FileSystemEventHandler as FileSystemEventHandler, Form as Form, GZipMiddleware as GZipMiddleware,
     HTMLResponse as HTMLResponse, HTTPException as HTTPException, JSONResponse as JSONResponse, Jinja2Templates as Jinja2Templates, List as List,
     Observer as Observer, Optional as Optional, Path as Path, ProcessingJobRequest as ProcessingJobRequest, RedirectResponse as RedirectResponse,
-    Request as Request, Response as Response, SECRET_MASK as SECRET_MASK, Set as Set, Settings as Settings, StaticFiles as StaticFiles,
+    Request as Request, Response as Response, SECRET_MASK as SECRET_MASK, Set as Set, StaticFiles as StaticFiles,
     UploadFile as UploadFile, UploadService as UploadService, VIDEO_EXTENSIONS as VIDEO_EXTENSIONS, WEBUI_ROOT as WEBUI_ROOT,
     _AUTH_COOKIE as _AUTH_COOKIE, _AUTH_COOKIE_MAX_AGE as _AUTH_COOKIE_MAX_AGE,
-    _AUTH_PUBLIC_PATHS as _AUTH_PUBLIC_PATHS, _AUTH_PUBLIC_PREFIXES as _AUTH_PUBLIC_PREFIXES, _MCP_ASGI_APP as _MCP_ASGI_APP, _MCP_PATH as _MCP_PATH,
-    _PENDING_BUILD_SUMMARY as _PENDING_BUILD_SUMMARY, _PENDING_FILTER as _PENDING_FILTER, _anime_check_inflight as _anime_check_inflight,
-    _anime_check_lock as _anime_check_lock, _anime_check_thread as _anime_check_thread,
-    _boot_reaper_task as _boot_reaper_task, _pending_index as _pending_index, _pending_refresh_lock as _pending_refresh_lock,
-    _shared_dashboard_stats_enabled as _shared_dashboard_stats_enabled, _shared_history_tracking_enabled as _shared_history_tracking_enabled,
-    _shared_stats_page_enabled as _shared_stats_page_enabled, asynccontextmanager as asynccontextmanager, asyncio as asyncio, console as console,
+    _AUTH_PUBLIC_PATHS as _AUTH_PUBLIC_PATHS, _AUTH_PUBLIC_PREFIXES as _AUTH_PUBLIC_PREFIXES, _MCP_PATH as _MCP_PATH,
+    _anime_check_lock as _anime_check_lock, _pending_index as _pending_index, _pending_refresh_lock as _pending_refresh_lock,
+    asynccontextmanager as asynccontextmanager, asyncio as asyncio, console as console,
     console_router as console_router, copy as copy, dashboard_router as dashboard_router, database as database, get_config as get_config,
     get_configured_category_folders as get_configured_category_folders, get_configured_folders as get_configured_folders,
     get_pending_index_manager as get_pending_index_manager, get_upload_service as get_upload_service, hashlib as hashlib, hmac as hmac,
@@ -58,10 +55,7 @@ from app_g1 import (
 from app_g2 import (
     AnimeCacheCorrectionRequest as AnimeCacheCorrectionRequest, CategoryOverrideRequest as CategoryOverrideRequest,
     ForceUploadRequest as ForceUploadRequest, MarkUploadedRequest as MarkUploadedRequest,
-    _build_pending_summary as _build_pending_summary, _bulk_selection_excluded_roots as _bulk_selection_excluded_roots,
-    _classify_video_name as _classify_video_name, _create_full_backup_archive as _create_full_backup_archive, _collect_anime_check_names as _collect_anime_check_names,
-    _collect_uncached_anime_check_names as _collect_uncached_anime_check_names, _detect_content_itype as _detect_content_itype,
-    _detect_external_category as _detect_external_category, _filter_pending as _filter_pending,
+    _bulk_selection_excluded_roots as _bulk_selection_excluded_roots, _create_full_backup_archive as _create_full_backup_archive,
     _force_upload_dir_direct_video_count as _force_upload_dir_direct_video_count,
     _force_upload_dir_recursive_video_count as _force_upload_dir_recursive_video_count, _log_selected_payload as _log_selected_payload,
     _normalize_force_upload_path as _normalize_force_upload_path, _normalize_selection_path as _normalize_selection_path,
@@ -71,7 +65,7 @@ from app_g2 import (
     check_for_updates_now as check_for_updates_now, create_full_backup as create_full_backup, get_raw_config as get_raw_config, get_readme_file as get_readme_file,
     get_runtime_revision as get_runtime_revision, get_update_backups as get_update_backups, get_update_releases as get_update_releases,
     get_update_status as get_update_status, health as health, install_update_from_github as install_update_from_github,
-    install_update_from_upload as install_update_from_upload, ping as ping,
+    install_update_from_upload as install_update_from_upload,
     remove_active_job_item_route as remove_active_job_item_route, remove_queued_job_item_route as remove_queued_job_item_route,
     rename_upload_job as rename_upload_job, reorder_active_job_items_route as reorder_active_job_items_route, reorder_queue_items as reorder_queue_items,
     reorder_queued_job_items_route as reorder_queued_job_items_route, revalidate_queue_jobs as revalidate_queue_jobs,
@@ -86,18 +80,24 @@ from app_g3 import (
     stop_all_service_activity as stop_all_service_activity, update_pending_group_order as update_pending_group_order,
     update_pending_group_order_locked as update_pending_group_order_locked,
 )
+from logic.stats_engine import dashboard_stats_enabled, history_tracking_enabled, stats_page_enabled
+
+_anime_check_inflight: bool = False  # True while Jikan background check is running
+_anime_check_thread: Optional[threading.Thread] = None
+_boot_reaper_task: Optional[asyncio.Task[Any]] = None
+_MCP_ASGI_APP: Any = None
 
 def _stats_page_enabled(conf: Optional[Any] = None) -> bool:
     current = conf or get_config()
-    return _shared_stats_page_enabled(current)
+    return stats_page_enabled(current)
 
 def _dashboard_server_stats_enabled(conf: Optional[Any] = None) -> bool:
     current = conf or get_config()
-    return _shared_dashboard_stats_enabled(current)
+    return dashboard_stats_enabled(current)
 
 def _stats_history_enabled(conf: Optional[Any] = None) -> bool:
     current = conf or get_config()
-    return _shared_history_tracking_enabled(current)
+    return history_tracking_enabled(current)
 
 def _stats_collector_required(conf: Optional[Any] = None) -> bool:
     return _stats_history_enabled(conf)
@@ -243,22 +243,6 @@ async def start_upload(req: UploadRequest, service: UploadService = Depends(get_
         "job_ids": job_ids,
         "status": "started",
     }
-
-@uploads_router.post("/preview")
-async def preview_upload(req: UploadRequest) -> Dict[str, Any]:
-    """Preview bulk filters and upload eligibility without creating a job."""
-    selected_items, selection_meta = _select_upload_request_items(req, get_config())
-    preview = await _preview_selected_items(
-        list(selected_items),
-        enable_duplicate_check=req.enable_duplicate_check,
-        test_mode=req.test_mode,
-        indexer_id=req.indexer_id,
-        indexer_ids=req.indexer_ids,
-        skip_packs=req.skip_packs,
-        skip_episodes=req.skip_episodes,
-    )
-    preview["selection"] = selection_meta
-    return preview
 
 @uploads_router.post("/queue/items")
 async def add_queue_items(
@@ -838,7 +822,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
     global _anime_check_inflight, _anime_check_thread
     from logic.anime_cache import check_titles_batch
 
-    names = _collect_uncached_anime_check_names(data)
+    names = pending_snapshot_mod.collect_uncached_anime_check_names(data)
     if not names:
         return
 
@@ -940,7 +924,7 @@ def get_pending_items(
         data = state.get("snapshot")
 
     if not data:
-        res = _filter_pending({}, search, category, literal)
+        res = pending_snapshot_mod.filter_pending_snapshot({}, search, category, literal)
         res["ready"] = False
         res["refreshing"] = True
         res["anime_detecting"] = _anime_check_inflight
@@ -962,7 +946,7 @@ def get_pending_items(
         }
 
     anime_enabled = bool(getattr(get_config(), "enable_anime_checking", False))
-    if anime_enabled and _collect_uncached_anime_check_names(data):
+    if anime_enabled and pending_snapshot_mod.collect_uncached_anime_check_names(data):
         with _anime_check_lock:
             can_start = not _anime_check_inflight and (_anime_check_thread is None or not _anime_check_thread.is_alive())
             if can_start:
@@ -972,7 +956,7 @@ def get_pending_items(
     if not search and category == "all" and not literal:
         res = dict(data)
     else:
-        res = _filter_pending(data, search, category, literal)
+        res = pending_snapshot_mod.filter_pending_snapshot(data, search, category, literal)
 
     # Return only top-level pending rows.
     # Build fresh containers so the shared cached snapshot remains untouched.
@@ -1085,34 +1069,6 @@ async def force_upload_items(
         "items_count": len(collapsed_items),
         "bulk_excluded": excluded_count,
     }
-
-@pending_router.post("/preview-upload")
-async def preview_force_upload_items(req: ForceUploadRequest) -> Dict[str, Any]:
-    """Preview pending-item eligibility without creating an upload job."""
-    selected_items: List[Dict[str, Any]] = list(req.items)
-    excluded_count = 0
-    excluded_roots: list[str] = []
-    if req.bulk_selection:
-        conf = get_config()
-        excluded_roots = [str(root) for root in _bulk_selection_excluded_roots(conf)]
-        selected_items, excluded_count = _filter_bulk_selectable_items(selected_items, conf)
-
-    collapsed_items = _collapse_force_upload_items(selected_items)
-    overlap_count = len(selected_items) - len(collapsed_items)
-    preview = await _preview_selected_items(
-        collapsed_items,
-        enable_duplicate_check=req.enable_duplicate_check,
-        test_mode=req.test_mode,
-        indexer_id=req.indexer_id,
-        force=req.force,
-    )
-    preview["selection"] = {
-        "matched": len(req.items),
-        "bulk_excluded": excluded_count,
-        "overlapping_paths": overlap_count,
-        "excluded_roots": excluded_roots,
-    }
-    return preview
 
 class _AssetCacheBustEventHandler(FileSystemEventHandler):
     def __init__(self, owner: "_DynamicCacheBust") -> None:
@@ -1599,4 +1555,3 @@ async def get_page(request: Request, page_name: str) -> Response:
         return templates.TemplateResponse(request, html_name, {"request": request})
 
     raise HTTPException(status_code=404, detail=f"Page '{page_name}' not found")
-

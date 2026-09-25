@@ -56,7 +56,7 @@ from logic.processing_g2 import (
     _plan_upload_runs as _plan_upload_runs, _prefetched_validation_state as _prefetched_validation_state,
     _resolve_job_categories as _resolve_job_categories, _resolve_submission_category as _resolve_submission_category,
     _resolve_target_indexers_for_single as _resolve_target_indexers_for_single, _season_pack_dir_for_file as _season_pack_dir_for_file,
-    is_season_pack as is_season_pack, kill_child_processes as kill_child_processes,
+    is_season_pack as is_season_pack,
 )
 from logic.processing_g3 import (
     _handle_nonready_validation as _handle_nonready_validation, _processing_db_type as _processing_db_type,

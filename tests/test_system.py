@@ -897,8 +897,8 @@ def test_ambiguous_dvd_folder_is_movie_across_detectors(tmp_path) -> None:
     _touch(release_dir / "DISC_1" / "VIDEO_TS" / "VIDEO_TS.IFO", b"a")
     _touch(release_dir / "DISC_1" / "VIDEO_TS" / "VTS_01_1.VOB", b"b")
 
-    assert app_mod._detect_content_itype(release_dir.name, release_dir, "") == "Movie"
-    assert app_mod._detect_external_category(release_dir.name, release_dir) == "movies"
+    assert pending_snapshot_mod.detect_content_itype(release_dir.name, release_dir, "") == "Movie"
+    assert pending_snapshot_mod.detect_external_category(release_dir.name, release_dir) == "movies"
     assert pending_scan.detect_auto_itype(release_dir) == "Movie"
     assert pending_scan.detect_auto_category(release_dir) == "movies"
 
@@ -907,7 +907,7 @@ def test_detect_content_itype_prefers_video_over_audiobook_sidecars(tmp_path) ->
     _touch(release_dir / "Movie.Name.2026.1080p.WEB-DL.mkv", b"a")
     _touch(release_dir / "Movie.Name.2026.1080p.WEB-DL-commentary.m4b", b"b")
 
-    assert app_mod._detect_content_itype(release_dir.name, release_dir, "") == "Movie"
+    assert pending_snapshot_mod.detect_content_itype(release_dir.name, release_dir, "") == "Movie"
     assert pending_scan.detect_auto_category(release_dir) == "movies"
 
 def test_scan_configured_items_preserves_tv_episode_metadata(tmp_path) -> None:

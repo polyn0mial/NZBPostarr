@@ -138,13 +138,6 @@ class ConsoleBuffer:
             # Level 1 captures everything including custom VERBOSE (5)
             self._handler_id = logger.add(self.sink, level=1)
 
-    def uninstall(self) -> None:
-        """Remove the loguru sink."""
-        if self._handler_id is not None:
-            logger.remove(self._handler_id)
-            self._handler_id = None
-
-
 console = ConsoleBuffer()
 console.install()
 

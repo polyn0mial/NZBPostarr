@@ -89,7 +89,6 @@ enable_duplicate_bypass: true
 
 # Mediainfo
 nfolder: null
-medianfo: null
 
 # Indexer credentials (recommended)
 # You can store API keys here (or via env vars like NZBP_API_KEYS__GEEK=...)
@@ -152,7 +151,6 @@ host: '0.0.0.0'
 port: 8000
 debug: false
 log_level: 'INFO'
-static_cache_max_age: 3600
 ui_refresh_seconds: 2
 # Full backups from Settings > Folders are written here. A relative path
 # resolves against the app root.

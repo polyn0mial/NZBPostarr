@@ -316,12 +316,6 @@
     [
       "POST"
     ],
-    "/api/uploads/preview"
-  ],
-  [
-    [
-      "POST"
-    ],
     "/api/uploads/queue/items"
   ],
   [
@@ -467,12 +461,6 @@
       "POST"
     ],
     "/api/stats/history/record"
-  ],
-  [
-    [
-      "GET"
-    ],
-    "/api/tests/ping"
   ],
   [
     [
@@ -635,12 +623,6 @@
       "POST"
     ],
     "/api/pending/force-upload"
-  ],
-  [
-    [
-      "POST"
-    ],
-    "/api/pending/preview-upload"
   ],
   [
     [

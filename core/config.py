@@ -257,14 +257,12 @@ class Config(BaseSettings):
 
     # Mediainfo (can be nil)
     nfolder: Optional[Path]
-    medianfo: Optional[Path]
 
     # Web Settings
     debug: bool
     log_level: str
     host: str
     port: int
-    static_cache_max_age: int
     ui_refresh_seconds: int
 
     # Optional password gate for the raw config editor.
@@ -379,12 +377,6 @@ class Config(BaseSettings):
         path.mkdir(parents=True, exist_ok=True)
         return path
 
-    def get_primary_server(self) -> Optional[NNTPServer]:
-        """Get the primary NNTP server from the server list."""
-        if self.nntp_servers:
-            return self.nntp_servers[0]
-        return None
-
     def get_nzb_path(self, name: str) -> Path:
         """Get the output path for a generated NZB file."""
         return self.nzb_sub / f"{name}.nzb"
@@ -425,21 +417,6 @@ class Config(BaseSettings):
                 continue
             folders.append(Path(fp["path"]))
         return folders
-
-    def get_first_folder(self, category: str) -> Optional[Path]:
-        """Return the first configured folder for the requested category."""
-        folders = self.get_folders_for_category(category)
-        return folders[0] if folders else None
-
-    def get_active_categories(self) -> List[str]:
-        """Return the distinct configured folder categories in saved order."""
-        categories: List[str] = []
-        for fp in self.get_folder_path_entries():
-            category = str(fp.get("category") or "").strip().lower() or _AUTO_ROOT_CATEGORY
-            if category not in categories:
-                categories.append(category)
-        return categories
-
 
 def get_config_path() -> Path:
     """Return the active Nzbpostarr config file path.
@@ -530,13 +507,6 @@ def get_config() -> Config:
             _GLOBAL_CONFIG = load_config()
             _CONFIG_MTIME_NS = _config_mtime_ns()
     return _GLOBAL_CONFIG
-
-
-def set_config(c: Config) -> None:
-    """Set the global configuration instance."""
-    global _GLOBAL_CONFIG, _CONFIG_MTIME_NS
-    _GLOBAL_CONFIG = c
-    _CONFIG_MTIME_NS = _config_mtime_ns()
 
 
 def _validate_config_yaml(content: str) -> Dict[str, Any]:

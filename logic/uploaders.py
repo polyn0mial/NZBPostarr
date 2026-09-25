@@ -466,14 +466,6 @@ def upload_item(
 # Error statuses that should NOT be retried (permanent failures)
 _PERMANENT_FAILURE_STATUSES = frozenset({"duplicate", "misconfigured"})
 
-# Error statuses that SHOULD be retried (transient failures)
-_RETRYABLE_FAILURE_STATUSES = frozenset({"network_error", "rejected"})
-
-
-def is_retryable_error(status: str) -> bool:
-    """Return True if the error status indicates a transient/retryable failure."""
-    return status in _RETRYABLE_FAILURE_STATUSES
-
 
 def submit_api(
     name: str,

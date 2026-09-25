@@ -460,14 +460,6 @@ def test_completion_requires_matching_stored_size() -> None:
     assert pending_snapshot_mod._lookup_upload_map_indexers(
         upload_map, "a.mkv", filesize_by_indexer=sizes, current_size=200
     ) == {"omg"}
-    lookup = pending_snapshot_mod._build_filesize_lookup({"Show/a.mkv": {"geek": "100"}})
-    completed = {"show/a.mkv"}
-    assert pending_snapshot_mod._lookup_completed_dashboard_item(
-        completed, "Show/a.mkv", filesize_lookup=lookup, current_size=100
-    ) is True
-    assert pending_snapshot_mod._lookup_completed_dashboard_item(
-        completed, "Show/a.mkv", filesize_lookup=lookup, current_size=5
-    ) is False
 
 
 def test_indexer_context_serves_stale_cache_while_refreshing(monkeypatch) -> None:
