@@ -9,7 +9,7 @@ from core.db.uploads import pin_folder_ts_to_children, record_nntp_success, upda
 from core.fs import compute_size_uncached
 from core.paths import path_key
 from logic.jobs.context import get_thread_job
-from logic.queue_metrics import request_live_queue_refresh
+from logic.jobs.metrics import request_live_queue_refresh
 
 
 def _folder_log_itype(category: str) -> str:

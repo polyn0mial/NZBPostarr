@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set
 
 from core.config import get_config
 from core.paths import path_key
-from logic.queue_metrics import (
+from logic.jobs.metrics import (
     count_pending_indexer_slots,
     incomplete_pending_indexer_ids,
     log_queue_update,

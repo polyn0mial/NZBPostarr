@@ -37,7 +37,7 @@ def resolve_force_flag(
         force_v = not bool(True if enable_duplicate_check is None else enable_duplicate_check)
 
     # Global setting and test mode always bypass duplicate checks.
-    if not getattr(conf, "enable_duplicate_checking", True):
+    if not conf.enable_duplicate_checking:
         force_v = True
     if test_mode:
         force_v = True
@@ -220,11 +220,8 @@ def expand_explicit_pack_request_paths(request: ProcessingJobRequest) -> Process
     if not paths:
         return request
 
-    try:
-        from logic.classify.explicit import resolve_explicit_path
-    except Exception as exc:  # pylint: disable=broad-exception-caught
-        logger.debug(f"Queue pack expansion unavailable: {exc}")
-        return request
+    # Deferred: the classifier (anime cache included) loads only when a job expands a pack.
+    from logic.classify.explicit import resolve_explicit_path
 
     hints_by_path = _hints_by_path(request)
 
@@ -384,7 +381,9 @@ def expand_explicit_pack_request_paths(request: ProcessingJobRequest) -> Process
                         category_hint=resolved_category,
                         itype_hint="Anime" if resolved_category == "anime" else "TV Show",
                     )
-                except Exception:  # pylint: disable=broad-exception-caught
+                except Exception as exc:  # pylint: disable=broad-exception-caught
+                    # One unreadable child must not stop the pack expansion; it is simply not added.
+                    logger.debug(f"Queue pack expansion skipped {child}: {exc}")
                     continue
                 child_category = normalize_category(getattr(child_resolution, "category", "")) or resolved_category
                 child_files = [

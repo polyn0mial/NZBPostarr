@@ -1,6 +1,5 @@
 import {
     createVuePage,
-    categoryIcon as _categoryIcon,
     categoryMeta,
 } from 'page-base';
 import debounce from 'lodash.debounce';
@@ -726,13 +725,6 @@ createVuePage({
         toggleKnobClassDirect(isOn) {
             const base = 'inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform';
             return isOn ? `${base} translate-x-3` : `${base} translate-x-0.5`;
-        },
-
-        getCategoryIcon(category) {
-            // Check dynamic categories from the API first
-            const found = this.availableCategories.find(c => c.id === category);
-            if (found && found.icon) return found.icon;
-            return _categoryIcon(category);
         },
 
         // ============================================================

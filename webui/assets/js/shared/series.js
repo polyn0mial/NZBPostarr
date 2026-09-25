@@ -50,3 +50,8 @@ export function computePositiveRateDelta(current, previous, intervalSecs = 1) {
 export function sumNumericFields(source, fieldNames = []) {
     return fieldNames.reduce((total, fieldName) => total + (Number(source?.[fieldName]) || 0), 0);
 }
+
+// The newest `n` points of a series: the window a sparkline draws.
+export function sparkWindow(series, n) {
+    return Array.isArray(series) ? series.slice(-n) : [];
+}

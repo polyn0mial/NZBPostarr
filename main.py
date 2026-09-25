@@ -6,6 +6,8 @@ Run with: python main.py
 - Auto-creates venv and installs deps if needed
 - Offers tmux or direct mode
 - Reattaches to existing tmux session if running
+
+The app, uvicorn, core.config and setup are imported inside functions: they need the venv that bootstrap() creates.
 """
 
 import argparse

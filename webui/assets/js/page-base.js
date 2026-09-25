@@ -1,7 +1,6 @@
 import { createApp } from 'vue';
 import copy from 'copy-to-clipboard';
 import { computePosition, flip, shift, offset } from '@floating-ui/dom';
-import { createElement as createLucideElement, icons as lucideIcons } from 'lucide';
 import { formatUtils } from './shared/format.js';
 import { statusConfig, getStatusConfig as statusConfigFor } from './shared/status.js';
 import {
@@ -11,11 +10,19 @@ import {
     appendHistoryPoint,
     computePositiveRateDelta,
     sumNumericFields,
+    sparkWindow,
 } from './shared/series.js';
 import { itypeToCategory, categoryToItype } from './shared/category.js';
+import * as jobs from './shared/jobs.js';
+import { LucideIcon } from './components/lucide-icon.js';
+import { Modal } from './components/modal.js';
+import { Sparkline } from './components/sparkline.js';
+import { StatsCard } from './components/stats-card.js';
+import { apiMethods } from './core/api.js';
+import { pollMethods, stopPolling } from './core/poll.js';
 
 export { formatUtils, statusConfig };
-export { mapHistorySeries, mapDeltaHistorySeries, seedHistorySeries, appendHistoryPoint, computePositiveRateDelta, sumNumericFields };
+export { mapHistorySeries, mapDeltaHistorySeries, seedHistorySeries, appendHistoryPoint, computePositiveRateDelta, sumNumericFields, sparkWindow };
 export { itypeToCategory, categoryToItype };
 
 // ============================================================
@@ -266,296 +273,6 @@ export function isTvType(type) {
     return t === 'tv' || t === 'episode';
 }
 
-// ============================================================
-//  SHARED COMPONENTS
-// ============================================================
-
-const StatsCard = {
-    props: {
-        title: String,
-        icon: String,
-        color: String, // e.g., 'purple-400'
-        value: [String, Number],
-        unit: { type: String, default: '' },
-        progress: { type: Number, default: null },
-        sparkData: { type: Array, default: null },
-        peakKey: { type: String, default: null },
-        valueSuffix: { type: String, default: '' },
-        footerLabel: { type: String, default: 'Last 5 min' },
-        valueId: { type: String, default: null }
-    },
-    template: `
-        <div class="bg-notion-bg border border-notion-border rounded-lg p-3 flex flex-col h-full transition-all hover:shadow-md">
-            <div class="flex items-center gap-2 mb-2">
-                <div :class="['w-6 h-6 rounded flex items-center justify-center flex-shrink-0', getBgClass()]">
-                    <lucide-icon :name="icon" :icon-class="['w-3.5 h-3.5', 'text-' + color]"></lucide-icon>
-                </div>
-                <p class="text-notion-text-tertiary uppercase tracking-wide text-[10.5px]">{{ title }}</p>
-            </div>
-            <p :id="valueId" class="text-lg font-semibold text-notion-text-primary">{{ value }}{{ unit }}</p>
-            
-            <div v-if="progress !== null" class="mt-1 h-1 bg-notion-bg-hover rounded-full overflow-hidden">
-                <div :class="['h-full rounded-full transition-all duration-300', 'bg-' + color]"
-                     :style="{ width: Math.min(100, progress) + '%' }"></div>
-            </div>
-
-            <slot name="extra"></slot>
-
-            <div v-if="(sparkData && sparkData.length) || footerLabel" class="mt-auto pt-2">
-                <div v-if="sparkData && sparkData.length" class="h-10 flex items-end gap-px">
-                    <div v-for="(v, i) in sparkData" :key="v.id" 
-                        class="flex-1 rounded-sm cursor-pointer transition-[height] duration-300 infotip-trigger relative" 
-                        :style="$parent.getSparklineStyle(v, sparkData, getRgb(color), peakKey)">
-                        <div class="infotip-content">
-                            {{ $parent.getSparklineTitle(v, i, sparkData, valueSuffix) }}
-                            <div class="infotip-arrow"></div>
-                        </div>
-                    </div>
-                </div>
-                <p v-if="footerLabel" class="text-notion-text-tertiary mt-1 text-center text-[10px]">{{ footerLabel }}</p>
-            </div>
-        </div>
-    `,
-    methods: {
-        getRgb(color) {
-            const isLight = document.documentElement.getAttribute('data-theme') === 'light';
-            const map = isLight ? {
-                'orange-400': 'rgb(234, 88, 12)',
-                'green-400': 'rgb(22, 163, 74)',
-                'blue-400': 'rgb(37, 99, 235)',
-                'cyan-400': 'rgb(8, 145, 178)',
-                'purple-400': 'rgb(147, 51, 234)',
-                'pink-400': 'rgb(219, 39, 119)',
-                'teal-400': 'rgb(13, 148, 136)',
-                'rose-400': 'rgb(225, 29, 72)',
-                'red-400': 'rgb(220, 38, 38)',
-                'yellow-400': 'rgb(202, 138, 4)',
-                'amber-400': 'rgb(217, 119, 6)'
-            } : {
-                'orange-400': 'rgb(251, 146, 60)',
-                'green-400': 'rgb(74, 222, 128)',
-                'blue-400': 'rgb(96, 165, 250)',
-                'cyan-400': 'rgb(34, 211, 238)',
-                'purple-400': 'rgb(168, 85, 247)',
-                'pink-400': 'rgb(236, 72, 153)',
-                'teal-400': 'rgb(45, 212, 191)',
-                'rose-400': 'rgb(251, 113, 133)',
-                'red-400': 'rgb(248, 113, 113)',
-                'yellow-400': 'rgb(250, 204, 21)',
-                'amber-400': 'rgb(251, 191, 36)'
-            };
-            return map[color] || 'rgb(156, 163, 175)';
-        },
-        getBgClass() {
-            const base = this.color.split('-')[0];
-            return `bg-${base}-500/15`;
-        }
-    }
-};
-
-/**
- * Shared modal shell: teleport + backdrop + panel + header + close button.
- *
- * Replaces the hand-coded block that had drifted apart across the pages (some
- * used a self-click backdrop, some a separate overlay div, headers differed).
- * Body content goes in the default slot; extra header buttons in #header-actions.
- *
- *   <modal :open="showThing" title="Thing" icon="list" @close="closeThing()">
- *       <div class="overflow-y-auto">...</div>
- *   </modal>
- */
-const openModalStack = []; // Escape only closes the topmost open modal
-
-const Modal = {
-    props: {
-        open: { type: Boolean, default: false },
-        title: { type: String, default: '' },
-        subtitle: { type: String, default: '' },
-        subtitleClass: { type: String, default: '' },
-        icon: { type: String, default: '' },
-        iconClass: { type: String, default: 'text-notion-accent' },
-        badge: { type: [String, Number], default: null },
-        maxWidth: { type: String, default: 'max-w-2xl' },
-        panelClass: { type: String, default: 'bg-notion-bg-secondary max-h-[85vh]' },
-        zClass: { type: String, default: 'z-50' },
-        teleport: { type: Boolean, default: true },
-        closeDisabled: { type: Boolean, default: false },
-        closeOnBackdrop: { type: Boolean, default: true }
-    },
-    emits: ['close'],
-    template: `
-        <Teleport to="body" :disabled="!teleport">
-            <Transition name="modal">
-                <div v-if="open" :class="['fixed inset-0 flex items-end sm:items-center justify-center sm:p-4', zClass]" role="dialog" aria-modal="true">
-                    <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="onBackdrop()"></div>
-                    <div :class="['relative border border-notion-border rounded-t-xl sm:rounded-lg shadow-2xl w-full flex flex-col overflow-hidden', maxWidth, panelClass]">
-                        <div class="shrink-0 flex items-center justify-between gap-3 px-4 py-3 border-b border-notion-divider bg-notion-bg-secondary">
-                            <div class="flex items-center gap-2 min-w-0">
-                                <lucide-icon v-if="icon" :name="icon" :icon-class="['size-4 shrink-0', iconClass]"></lucide-icon>
-                                <div class="min-w-0">
-                                    <h3 class="text-sm font-semibold text-notion-text-primary truncate">{{ title }}</h3>
-                                    <p v-if="subtitle" :class="['text-[10px] text-notion-text-tertiary truncate', subtitleClass]">{{ subtitle }}</p>
-                                </div>
-                                <span v-if="badge !== null && badge !== ''" class="px-1.5 py-0.5 bg-notion-bg-hover text-notion-text-secondary rounded text-xs font-medium shrink-0">{{ badge }}</span>
-                            </div>
-                            <div class="flex items-center gap-3 shrink-0">
-                                <slot name="header-actions"></slot>
-                                <button @click="$emit('close')" :disabled="closeDisabled" class="icon-btn disabled:opacity-40" aria-label="Close">
-                                    <lucide-icon name="x" icon-class="size-4"></lucide-icon>
-                                </button>
-                            </div>
-                        </div>
-                        <slot></slot>
-                    </div>
-                </div>
-            </Transition>
-        </Teleport>
-    `,
-    watch: {
-        open: {
-            immediate: true,
-            handler(isOpen) {
-                const at = openModalStack.indexOf(this);
-                if (isOpen) {
-                    if (at === -1) openModalStack.push(this);
-                } else if (at !== -1) {
-                    openModalStack.splice(at, 1);
-                }
-            }
-        }
-    },
-    mounted() {
-        this._modalKeyHandler = (event) => {
-            if (event.key !== 'Escape' || this.closeDisabled) return;
-            if (openModalStack[openModalStack.length - 1] !== this) return;
-            event.preventDefault();
-            this.$emit('close');
-        };
-        document.addEventListener('keydown', this._modalKeyHandler);
-    },
-    beforeUnmount() {
-        document.removeEventListener('keydown', this._modalKeyHandler);
-        const at = openModalStack.indexOf(this);
-        if (at !== -1) openModalStack.splice(at, 1);
-    },
-    methods: {
-        onBackdrop() {
-            if (this.closeOnBackdrop && !this.closeDisabled) this.$emit('close');
-        }
-    }
-};
-
-const Sparkline = {
-    props: {
-        data: Array,
-        colorRgb: String,
-        peakKey: String,
-        valueSuffix: { type: String, default: '' },
-        height: { type: String, default: 'h-10' }
-    },
-    template: `
-        <div v-if="data && data.length" :class="[height, 'flex items-end gap-px']">
-            <div v-for="(v, i) in data" :key="v.id" 
-                class="flex-1 rounded-sm cursor-pointer transition-[height] duration-300 infotip-trigger relative" 
-                :style="$parent.getSparklineStyle(v, data, colorRgb, peakKey)">
-                <div class="infotip-content">
-                    {{ $parent.getSparklineTitle(v, i, data, valueSuffix) }}
-                    <div class="infotip-arrow"></div>
-                </div>
-            </div>
-        </div>
-    `
-};
-
-// ============================================================
-//  VUE APP FACTORY
-// ============================================================
-
-/**
- * Lucide Icon component.
- *
- * IMPORTANT: Do not call lucide's `createIcons()` per icon instance.
- * It scans the whole document for `[data-lucide]` each call (it does not
- * support a `root` option). Doing that inside large v-for lists becomes
- * O(n^2) and makes expands/collapses laggy.
- *
- * Instead, render SVGs directly via lucide's `createElement(iconDef)`.
- */
-const LucideIcon = {
-    props: {
-        name: { type: String, required: true },
-        iconClass: { type: [String, Array, Object], default: '' },
-        iconStyle: { type: [String, Object], default: null }
-    },
-    template: `<span ref="container" :style="iconStyle" class="lucide-icon-wrapper inline-flex items-center justify-center leading-none"></span>`,
-    computed: {
-        combinedClass() {
-            let classes = '';
-            if (Array.isArray(this.iconClass)) {
-                classes = this.iconClass.filter(Boolean).join(' ');
-            } else if (typeof this.iconClass === 'object') {
-                classes = Object.entries(this.iconClass)
-                    .filter(([_, value]) => value)
-                    .map(([key, _]) => key)
-                    .join(' ');
-            } else {
-                classes = this.iconClass || '';
-            }
-
-            // Ensure we have both width and height if one or none is provided
-            const hasWidth = /\bw-[\d.]+/.test(classes);
-            const hasHeight = /\bh-[\d.]+/.test(classes);
-
-            if (!hasWidth && !hasHeight) {
-                classes += ' w-4 h-4';
-            } else if (hasWidth && !hasHeight) {
-                const wMatch = classes.match(/\bw-([\d.]+)/);
-                if (wMatch) classes += ' h-' + wMatch[1];
-            } else if (!hasWidth && hasHeight) {
-                const hMatch = classes.match(/\bh-([\d.]+)/);
-                if (hMatch) classes += ' w-' + hMatch[1];
-            }
-
-            return classes.trim();
-        }
-    },
-    mounted() {
-        this.renderIcon();
-    },
-    updated() {
-        this.renderIcon();
-    },
-    methods: {
-        renderIcon() {
-            const container = this.$refs.container;
-            if (!container) return;
-
-            const key = `${this.name}|${this.combinedClass}`;
-            if (container.dataset.lucideKey === key) return;
-            container.dataset.lucideKey = key;
-
-            // Clear previous icon
-            while (container.firstChild) container.removeChild(container.firstChild);
-
-            // Lucide stores icon defs as PascalCase keys (e.g. "play-circle" -> "PlayCircle")
-            const pascal = String(this.name)
-                .split(/[-_\s]+/)
-                .filter(Boolean)
-                .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-                .join('');
-
-            // `icons` carries every icon and alias export, so it covers the old top-level lookup too.
-            const def = lucideIcons[pascal] || lucideIcons[this.name];
-            if (!def) return;
-
-            // Render SVG directly (no global DOM scan)
-            const svg = createLucideElement(def);
-            svg.setAttribute('class', `lucide lucide-${this.name} ${this.combinedClass}`.trim());
-            container.appendChild(svg);
-        }
-    }
-};
-
 /**
  * Main factory function to initialize a Vue 3 page with base NZBPostarr logic and components.
  * @param {Object} pageOptions - Vue component options (data, methods, computed, etc.)
@@ -612,9 +329,11 @@ export function createVuePage(pageOptions = {}) {
             apiLatency: null,
             connectionStatus: 'Checking...',
             connectionTooltip: 'Server connected',
-            appVersion: '9.5.0',
+            // The running version comes from the server (/api/system/update/status, which reads
+            // version.py) once loadUpdateStatus returns; there is no second copy here.
+            appVersion: '',
             updateStatus: {
-                current_version: '9.5.0',
+                current_version: null,
                 latest_version: null,
                 update_available: false,
                 check_error: null,
@@ -652,7 +371,6 @@ export function createVuePage(pageOptions = {}) {
             },
             _confirmResolver: null,
             _confirmKeyHandler: null,
-            sessionPeaks: {}, // Shared peak tracking for sparklines
             historyIdCounter: 1000, // Shared ID counter
             toastIdCounter: 0,
             _intervals: [], // Managed polling handles for automatic cleanup
@@ -697,7 +415,7 @@ export function createVuePage(pageOptions = {}) {
         },
         appVersionLabel() {
             const raw = String(this.appVersion || '').trim();
-            if (!raw) return 'v9.5.0';
+            if (!raw) return '';
             return raw.startsWith('v') ? raw : `v${raw}`;
         },
         latestVersionLabel() {
@@ -1020,43 +738,15 @@ export function createVuePage(pageOptions = {}) {
         // Pages can override any of these if needed.
         // ============================================================
         jobCategoryName(job) {
-            const map = {
-                tv: 'TV',
-                movies: 'Movies',
-                anime: 'Anime',
-                disc: 'DISC',
-                misc: 'Misc',
-                both: 'Both',
-                mixed: 'Mixed',
-                selected: 'Selected'
-            };
-            const key = (job && job.category) ? String(job.category) : '';
-            return map[key] || key || 'Job';
+            return jobs.jobCategoryName(job);
         },
 
         jobTargetPathCount(job) {
-            // Full job payloads carry the target_paths array; compact polling
-            // payloads carry only target_path_count.
-            if (Array.isArray(job.target_paths)) return job.target_paths.length;
-            return Number(job.target_path_count || 0);
+            return jobs.jobTargetPathCount(job);
         },
 
         jobDisplayName(job) {
-            if (!job) return 'Job';
-            const custom = (job.display_name || '').trim();
-            if (custom) return custom;
-
-            const base = this.jobCategoryName(job);
-            const targetCount = this.jobTargetPathCount(job);
-            if (targetCount > 0) {
-                return `${base} - ${targetCount} item${targetCount === 1 ? '' : 's'}`;
-            }
-
-            const total = Number(job.items_total || 0);
-            if (total > 0) {
-                return `${base} - ${total} item${total === 1 ? '' : 's'}`;
-            }
-            return base;
+            return jobs.jobDisplayName(job);
         },
 
         jobTitle(job) {
@@ -1158,130 +848,7 @@ export function createVuePage(pageOptions = {}) {
             }
         },
 
-        // ============================================================
-        // SPARKLINE HELPERS (Shared across all pages)
-        // ============================================================
-        getSparklineStyle(item, data, color, peakKey = null) {
-            const val = typeof item === 'object' ? item.v : item;
-            if (!data || data.length === 0) return { height: '4%', backgroundColor: color, opacity: 0.85 };
-
-            const values = data.map(d => typeof d === 'object' ? d.v : d).filter(v => typeof v === 'number');
-            if (values.length === 0) return { height: '4%', backgroundColor: color, opacity: 0.85 };
-
-            const sorted = [...values].sort((a, b) => a - b);
-            const p98 = sorted[Math.floor(sorted.length * 0.98)] || 0.1;
-
-            let scaleMax = p98;
-            if (peakKey) {
-                if (!this.sessionPeaks[peakKey] || p98 > this.sessionPeaks[peakKey]) {
-                    this.sessionPeaks[peakKey] = p98;
-                }
-                scaleMax = this.sessionPeaks[peakKey];
-            }
-
-            const height = Math.min(100, Math.max(4, (val / scaleMax) * 100));
-            return { height: `${height}%`, backgroundColor: color, opacity: 0.85 };
-        },
-
-        getSparklineTitle(item, index, data, suffix = '') {
-            const val = typeof item === 'object' ? item.v : item;
-            const secsAgo = (data.length - 1 - index) * 1;
-            const timeLabel = secsAgo === 0 ? 'now' : secsAgo < 60 ? `${secsAgo}s ago` : `${Math.round(secsAgo / 60)}m ago`;
-            const displayVal = typeof val === 'number' ? val.toFixed(1) : val;
-            return `${displayVal}${suffix} (${timeLabel})`;
-        },
-
-        // API helpers
-        async apiFetch(url, options = {}) {
-            const start = performance.now();
-            try {
-                const res = await fetch(url, {
-                    headers: { 'Content-Type': 'application/json' },
-                    cache: 'no-store',
-                    ...options,
-                });
-
-                if (!res.ok) {
-                    const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }));
-                    const error = new Error(errorData.detail || res.statusText);
-                    error.status = res.status;
-                    throw error;
-                }
-
-                // Calculate latency
-                const end = performance.now();
-                this.apiLatency = Math.round(end - start) + 'ms';
-                this.markUpdated();
-
-                // Restore connection state if it was down
-                if (!this.isConnected) {
-                    this.isConnected = true;
-                    this.connectionStatus = 'Server Online';
-                    console.info('Server connection restored');
-                }
-
-                // Read the response
-                const result = await res.json();
-
-                // Extract global settings if present (auto-sync)
-                const uiMeta = (result && typeof result === 'object') ? (result.ui || result) : null;
-                if (uiMeta && uiMeta.ui_refresh_seconds) {
-                    const newRate = uiMeta.ui_refresh_seconds * 1000;
-                    if (this.uiRefreshRate !== newRate) {
-                        this.uiRefreshRate = newRate;
-                        console.debug(`UI Refresh rate updated: ${uiMeta.ui_refresh_seconds}s`);
-                    }
-                }
-
-                if (uiMeta && typeof uiMeta.stats_page_enabled === 'boolean') {
-                    this.sharedUiSettings = {
-                        ...this.sharedUiSettings,
-                        stats_page_enabled: uiMeta.stats_page_enabled,
-                    };
-                }
-
-                return result;
-            } catch (e) {
-                // Handle network errors (offline)
-                const isNetworkError = e.name === 'TypeError' ||
-                    e.message === 'Failed to fetch' ||
-                    e.message === 'Load failed' ||
-                    e.message.includes('ERR_CONNECTION_REFUSED');
-
-                if (isNetworkError) {
-                    const wasConnected = this.isConnected;
-                    this.isConnected = false;
-                    this.connectionStatus = 'Server Offline';
-
-                    if (wasConnected) {
-                        console.warn(`Server went offline: ${url}`);
-                    }
-                    e.isOffline = true;
-                } else if (!e.isOffline) {
-                    // Only log non-offline errors to console
-                    console.error(`API Error: ${url}`, e);
-                }
-                throw e;
-            }
-        },
-
-        async apiPost(url, data) {
-            return this.apiFetch(url, {
-                method: 'POST',
-                body: JSON.stringify(data),
-            });
-        },
-
-        async apiPut(url, data) {
-            return this.apiFetch(url, {
-                method: 'PUT',
-                body: JSON.stringify(data),
-            });
-        },
-
-        async apiDelete(url) {
-            return this.apiFetch(url, { method: 'DELETE' });
-        },
+        ...apiMethods,
 
         // API health check
         async checkHealth() {
@@ -1344,92 +911,7 @@ export function createVuePage(pageOptions = {}) {
             }
         },
 
-        async syncSharedUiSettings() {
-            try {
-                await this.apiFetch('/api/settings');
-            } catch (e) {
-                if (!e.isOffline) {
-                    console.debug('Shared UI settings sync failed:', e.message || e);
-                }
-            }
-        },
-
-        // Managed Interval Helper
-        startInterval(fn, ms) {
-            const existing = this._intervalMap.get(fn);
-            if (existing) {
-                existing.cancelled = true;
-                clearTimeout(existing.timerId);
-                this._intervals = this._intervals.filter(handle => handle !== existing);
-            }
-
-            const handle = {
-                cancelled: false,
-                running: false,
-                timerId: null,
-            };
-
-            const scheduleNext = () => {
-                if (handle.cancelled) {
-                    return;
-                }
-                const delay = document.hidden ? Math.max(ms, 60000) : ms;
-                handle.timerId = setTimeout(() => {
-                    void tick();
-                }, delay);
-            };
-
-            const tick = async () => {
-                if (handle.cancelled || handle.running) {
-                    return;
-                }
-                if (document.hidden) {
-                    scheduleNext();
-                    return;
-                }
-
-                handle.running = true;
-                try {
-                    await fn.call(this);
-                } finally {
-                    handle.running = false;
-                    scheduleNext();
-                }
-            };
-
-            scheduleNext();
-            this._intervalMap.set(fn, handle);
-            this._intervals.push(handle);
-            return handle;
-        },
-
-        // Managed one-shot timer for delayed refreshes that must not outlive a page.
-        startTimeout(fn, ms) {
-            const handle = {
-                cancelled: false,
-                running: false,
-                timerId: null,
-            };
-            const removeHandle = () => {
-                this._intervals = this._intervals.filter(candidate => candidate !== handle);
-            };
-            handle.timerId = setTimeout(async () => {
-                if (handle.cancelled || this._isUnmounting) {
-                    removeHandle();
-                    return;
-                }
-                handle.running = true;
-                try {
-                    await fn.call(this);
-                } finally {
-                    handle.running = false;
-                    handle.cancelled = true;
-                    removeHandle();
-                }
-            }, ms);
-            this._intervals.push(handle);
-            return handle;
-        },
+        ...pollMethods,
 
         // Global formatting aliases for templates
         formatSize(val) { return this.$format.formatBytes(val); },
@@ -1537,17 +1019,7 @@ export function createVuePage(pageOptions = {}) {
             }
             // Release any awaiter blocked on an open confirm dialog.
             if (this._confirmResolver) this._settleConfirmDialog(false);
-            // Clear all managed intervals
-            this._intervals.forEach(handle => {
-                if (handle && typeof handle === 'object') {
-                    handle.cancelled = true;
-                    clearTimeout(handle.timerId);
-                    return;
-                }
-                clearTimeout(handle);
-            });
-            this._intervals = [];
-            this._intervalMap.clear();
+            stopPolling(this);
 
             // Call page-specific beforeUnmount if exists
             if (pageOptions.beforeUnmount) {

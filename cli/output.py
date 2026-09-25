@@ -1,4 +1,7 @@
-"""Shared CLI output helpers: result emitters, argparse value types, console setup and renderers."""
+"""Shared CLI output helpers: result emitters, argparse value types, console setup and renderers.
+
+App modules are imported inside the functions that use them, so the CLI starts without loading the app.
+"""
 
 from __future__ import annotations
 

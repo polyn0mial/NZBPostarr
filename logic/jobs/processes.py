@@ -8,6 +8,9 @@ from typing import Any, Optional
 
 import psutil
 
+from core.scheduler import get_scheduler
+from logic.system.reaper import kill_survivors, terminate_process_tree
+
 
 class ProcessRegistry:
     """View over the engine's job_id -> [process] map; the engine's lock guards it."""
@@ -35,67 +38,36 @@ class ProcessRegistry:
                 else:
                     del self._processes[job_id]
 
-    @staticmethod
-    def collect_process_tree_pids(process: Any) -> list[int]:
-        pid = getattr(process, "pid", None)
-        if not pid:
-            return []
-        try:
-            root = psutil.Process(pid)
-        except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
-            return []
-
-        pids = [root.pid]
-        try:
-            pids.extend(child.pid for child in root.children(recursive=True))
-        except (psutil.Error, OSError):
-            pass
-        return pids
-
     def terminate_locked(self, job_id: str, *, kill_delay_s: float = 0.5) -> int:
-        """Terminate registered tool processes for a job, then schedule a quick kill fallback."""
-        processes = list(self._processes.get(job_id) or [])
-        if not processes:
-            return 0
+        """SIGTERM every registered tool process tree of a job now, SIGKILL survivors after kill_delay_s.
 
-        pids: list[int] = []
+        The caller holds the engine lock, so the kill is scheduled rather than waited for; the
+        tree walk and both signals are logic.system.reaper's (the one tree kill).
+        """
+        signalled: list[psutil.Process] = []
         seen: set[int] = set()
-        for process in processes:
-            for pid in self.collect_process_tree_pids(process):
-                if pid not in seen:
-                    seen.add(pid)
-                    pids.append(pid)
-
-        terminated = 0
-        for pid in reversed(pids):
-            try:
-                proc = psutil.Process(pid)
-                if proc.is_running():
-                    proc.terminate()
-                    terminated += 1
-            except (psutil.Error, OSError):
+        for process in list(self._processes.get(job_id) or []):
+            # Registered entries are Popen-like; anything without a pid has nothing to signal.
+            pid = getattr(process, "pid", None)
+            if not pid or pid in seen:
                 continue
+            try:
+                tree = terminate_process_tree(pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+            for proc in tree:
+                if proc.pid not in seen:
+                    seen.add(proc.pid)
+                    signalled.append(proc)
 
-        if pids:
-            from core.scheduler import get_scheduler
-
-            sched = get_scheduler()
-
-            def kill_remaining(target_pids: list[int] = list(pids)) -> None:
-                for target_pid in reversed(target_pids):
-                    try:
-                        proc = psutil.Process(target_pid)
-                        if proc.is_running():
-                            proc.kill()
-                    except (psutil.Error, OSError):
-                        continue
-
-            sched.add_job(
-                kill_remaining,
+        if signalled:
+            get_scheduler().add_job(
+                kill_survivors,
                 "date",
+                args=[signalled],
                 run_date=datetime.now(timezone.utc) + timedelta(seconds=max(0.1, kill_delay_s)),
                 id=f"kill_{job_id}_tree",
                 replace_existing=True,
             )
 
-        return terminated
+        return len(signalled)

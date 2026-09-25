@@ -11,7 +11,9 @@ from api.deps import check_feature
 from core.db import stats as db_stats
 from logic.jobs.engine import JobEngine
 from logic.runtime import ensure_engine_started
-from logic.stats.collector import get_dashboard_summary, get_statistics
+from logic.stats.collector import get_dashboard_summary, get_iface_history, get_statistics, mark_ui_active
+from logic.stats.collector import get_stats_history as _mem_hist
+from logic.stats.system_info import get_full_system_info
 
 
 dashboard_router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -22,9 +24,6 @@ router = APIRouter(prefix="/api/stats", tags=["stats"])
 def get_system_stats() -> Dict[str, Any]:
     """Retrieve live system resource usage."""
     check_feature("dashboard")
-    from logic.stats.collector import mark_ui_active
-    from logic.stats.system_info import get_full_system_info
-
     mark_ui_active(mode="mini")
     info = get_full_system_info()
     cpu = info["cpu"]
@@ -65,8 +64,6 @@ async def get_stats_summary(
 async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
     """Retrieve comprehensive system statistics from the engine."""
     check_feature("stats_page")
-    from logic.stats.collector import mark_ui_active
-    from logic.stats.system_info import get_full_system_info
 
     # Convert comma-separated string to list
     collapsed_list = [c.strip() for c in collapsed.split(",") if c.strip()]
@@ -78,9 +75,6 @@ async def get_full_stats(collapsed: str = "") -> Dict[str, Any]:
 async def get_mini_stats() -> Dict[str, Any]:
     """Lightweight stats endpoint for dashboard polling."""
     check_feature("history")
-    from logic.stats.collector import mark_ui_active
-    from logic.stats.system_info import get_full_system_info
-
     mark_ui_active(mode="mini")
     info = await asyncio.to_thread(get_full_system_info)
 
@@ -117,13 +111,6 @@ def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
     Reads from the in-memory ring buffer - zero DB hits.
     """
     check_feature("history")
-    from logic.stats.collector import (
-        get_iface_history,
-    )
-    from logic.stats.collector import (
-        get_stats_history as _mem_hist,
-    )
-
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     history = _mem_hist(limit)
     iface_history = get_iface_history(limit)

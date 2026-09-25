@@ -122,7 +122,7 @@ def update_db_destination(
     """Update the database with upload results for a specific destination.
 
     Returns whether the write landed. The DB layer does not refresh live views: a caller that wrote a
-    success calls ``logic.queue_metrics.request_live_queue_refresh``.
+    success calls ``logic.jobs.metrics.request_live_queue_refresh``.
     """
     try:
         with db_engine.session_scope() as session:

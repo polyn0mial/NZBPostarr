@@ -63,7 +63,7 @@ def test_tool_table_covers_read_and_mutating_surface() -> None:
         assert (fn.__doc__ or "").strip(), f"{name} needs a docstring: it becomes the MCP tool description"
 
 def test_mcp_stays_disabled_without_explicit_config() -> None:
-    assert mcp_api.mcp_configured(SimpleNamespace()) is False
+    assert mcp_api.mcp_configured(SimpleNamespace(mcp_enabled=False, mcp_token=None)) is False
     assert mcp_api.mcp_configured(SimpleNamespace(mcp_enabled=False, mcp_token="tok")) is False
     # Enabled but untokenized must NOT mount: the endpoint can control the queue.
     assert mcp_api.mcp_configured(SimpleNamespace(mcp_enabled=True, mcp_token="")) is False
@@ -131,12 +131,12 @@ def test_build_mcp_asgi_app_gates_mutating_tools(monkeypatch) -> None:
     monkeypatch.setattr(fastmcp_mod, "FastMCP", _FakeServer)
 
     mcp_api.build_mcp_asgi_app(
-        SimpleNamespace(mcp_enabled=True, mcp_token="tok", mcp_allow_mutations=False)
+        SimpleNamespace(mcp_enabled=True, mcp_token="tok", mcp_allow_mutations=False, mcp_allowed_hosts=["*"])
     )
     assert set(registered) == _READ_TOOLS
 
     registered.clear()
     mcp_api.build_mcp_asgi_app(
-        SimpleNamespace(mcp_enabled=True, mcp_token="tok", mcp_allow_mutations=True)
+        SimpleNamespace(mcp_enabled=True, mcp_token="tok", mcp_allow_mutations=True, mcp_allowed_hosts=["*"])
     )
     assert set(registered) == _READ_TOOLS | _MUTATING_TOOLS

@@ -21,6 +21,7 @@ from typing import Any, BinaryIO, Dict, Iterator, List, Optional, Set
 
 from loguru import logger
 
+from core import config as config_mod
 from core.config import APP_ROOT
 from version import __version__
 
@@ -60,7 +61,7 @@ def _read_json_file(path: Path, default: Dict[str, Any]) -> Dict[str, Any]:
         raw = json.loads(path.read_text(encoding="utf-8"))
         if isinstance(raw, dict):
             return raw
-    except Exception as exc:
+    except (OSError, ValueError) as exc:
         logger.debug(f"Updater: unable to read {path}: {exc}")
     return dict(default)
 
@@ -191,25 +192,23 @@ def create_full_backup_archive(skip_tmp_contents: bool = True) -> Dict[str, Any]
     """Create a thorough tar.gz backup of the important NZBPostarr state.
 
     The archive holds .env and the config file, so it is written owner-only (0600).
+    APP_ROOT and get_config are read through config_mod so a relocated root applies.
     """
-    from core import config as config_mod
-
     conf = config_mod.get_config()
     source_root = config_mod.APP_ROOT
-    backup_root = Path(getattr(conf, "backup_folder", source_root / "backups")).expanduser()
+    backup_root = Path(conf.backup_folder).expanduser()
     backup_root.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_name = f"nzbpostarr_full_backup_{timestamp}.tar.gz"
     archive_path = backup_root / archive_name
 
-    log_db = getattr(conf, "log_db", None)
     important_targets = [
         source_root,
         source_root / ".config" / "nzbpostarr",
         source_root / "data",
         source_root / "anime_cache.json",
-        *([Path(log_db)] if log_db else []),
+        Path(conf.log_db),
         source_root / ".env",
         Path("/etc/systemd/system/nzbpostarr.service"),
     ]

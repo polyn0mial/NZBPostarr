@@ -33,8 +33,6 @@ export default [
         // reported as warnings until those batches clean them up; no-undef stays an error.
         files: [
             'assets/js/pages/dashboard/**/*.js',
-            'assets/js/pages/history.js',
-            'assets/js/pages/settings.js',
             'assets/js/pages/stats/**/*.js',
         ],
         rules: {

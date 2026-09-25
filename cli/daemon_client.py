@@ -5,6 +5,8 @@ JobEngine would run a second engine over the same queue and database.
 Mutating queue, job and stream commands therefore call the daemon's existing
 HTTP routes on localhost, signed with a session cookie from core.auth, and
 print exactly what the in-process commands print.
+
+App modules are imported inside the functions that use them, so the CLI starts without loading the app.
 """
 
 from __future__ import annotations

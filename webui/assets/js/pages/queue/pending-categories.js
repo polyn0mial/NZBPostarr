@@ -1,6 +1,6 @@
 // Queue page: Categories: the category filter, per-row category resolution, pills and colours.
 // A feature module: a Vue options fragment that pages/queue/index.js merges into the page.
-import { categoryBadgeClass } from "../../shared/categories.js";
+import { categoryBadgeClass } from "../../shared/category.js";
 import { queueCategoryMeta as categoryMeta, categoryLabel, itypeToCategory as sharedItypeToCategory, categoryToItype } from "page-base";
 
 export default {
@@ -369,19 +369,14 @@ export default {
       return null;
     },
 
+    // The server's category list carries no icon or colour (core/indexers/categories.py):
+    // presentation comes from the queue palette alone.
     getCategoryIcon(catId) {
-      const cat = this.categories.find((c2) => c2.id === catId);
-      if (cat && cat.icon) return cat.icon;
-      const meta = categoryMeta[catId];
-      if (meta && meta.icon) return meta.icon;
-      const map = { movies: "film", tv: "tv", misc: "package", external: "folder-input" };
-      return map[catId] || "folder";
+      return categoryMeta[catId]?.icon || "folder";
     },
 
     getCategoryColor(catId) {
-      const cat = this.categories.find((c2) => c2.id === catId);
-      const raw = (cat && cat.color) || (categoryMeta[catId] && categoryMeta[catId].color) || { movies: "purple", tv: "cyan", misc: "orange", external: "emerald" }[catId] || "gray";
-      return raw.replace(/-\d+$/, "");
+      return categoryMeta[catId]?.color || "gray";
     },
 
     getCategoryStyleMeta(catId) {

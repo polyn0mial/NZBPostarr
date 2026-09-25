@@ -1,9 +1,10 @@
-"""The job engine: job state and its lock, the scheduler lane, launch, and lifecycle controls.
+"""The job engine: job state and its lock, the scheduler lane, job creation, launch and finalize.
 
 Constructing a JobEngine restores persisted jobs and staged items but starts no thread;
 logic.runtime.ensure_engine_started() calls start() once. Staged items live in
-logic/jobs/staging.py, job execution in logic/jobs/executors.py, and read-only listings in
-logic/jobs/views.py.
+logic/jobs/staging.py, job execution in logic/jobs/executors.py, the pause/resume/stop and
+job-edit controls in logic/jobs/controls.py, revalidation in logic/jobs/revalidate.py, and
+read-only listings in logic/jobs/views.py.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ import shutil
 import threading
 import time
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -23,15 +24,13 @@ from core.config import get_config
 from core.db import job_history as db_job_history
 from core.db import queue_items as db_queue_items
 from core.logging import log_info, log_success
-from logic.jobs import executors
+from logic.jobs import controls, executors, revalidate
 from logic.jobs import requests as job_requests
 from logic.jobs import store as job_store
 from logic.jobs.models import (
     JobState,
     ProcessingJobRequest,
-    job_target_paths,
     normalize_job_name,
-    normalize_job_path_identity,
     normalize_job_source,
     normalize_paths,
     normalize_run_after,
@@ -41,7 +40,6 @@ from logic.jobs.models import (
 from logic.jobs.context import reset_thread_job, set_thread_job
 from logic.jobs.processes import ProcessRegistry
 from logic.jobs.requests import build_retry_request
-from logic.jobs.revalidate import revalidated_plan, revalidation_candidates, revalidation_targets
 from logic.jobs.staging import StagingQueue, prepare_start_items, queue_item_label, raise_no_runnable
 from logic.jobs.views import job_snapshots, queue_control_state
 from logic.stream import monitors as stream_monitors
@@ -212,36 +210,6 @@ class JobEngine:
             )
         return started
 
-    @classmethod
-    def _normalize_job_path_mapping(cls, paths: Any) -> tuple[list[str], dict[str, str]]:
-        normalized_paths = normalize_paths(paths)
-        mapping: dict[str, str] = {}
-        for path in normalized_paths:
-            identity = normalize_job_path_identity(path)
-            if identity:
-                mapping.setdefault(identity, path)
-        return normalized_paths, mapping
-
-    @classmethod
-    def _match_job_paths_by_identity(cls, current_paths: Any, requested_paths: Any) -> Optional[list[str]]:
-        current, current_map = cls._normalize_job_path_mapping(current_paths)
-        requested = normalize_paths(requested_paths)
-        if len(requested) != len(current):
-            return None
-
-        matched: list[str] = []
-        seen_identities: set[str] = set()
-        for raw_path in requested:
-            identity = normalize_job_path_identity(raw_path)
-            if not identity or identity in seen_identities or identity not in current_map:
-                return None
-            matched.append(current_map[identity])
-            seen_identities.add(identity)
-
-        if len(seen_identities) != len(current_map):
-            return None
-        return matched
-
     def start_processing_job_request(self, request: ProcessingJobRequest, **job_kwargs: Any) -> str:
         """Start a processing job from an explicit normalized request."""
         # Force upload passes skip_pack_expansion: it starts at once with exactly
@@ -268,24 +236,6 @@ class JobEngine:
     def start_processing_job_requests(self, requests: list[ProcessingJobRequest], **job_kwargs: Any) -> list[str]:
         """Start multiple normalized processing job requests."""
         return [self.start_processing_job_request(request, **job_kwargs) for request in requests]
-
-    def _restore_stopped_job_to_queue_locked(self, job: dict[str, Any], *, progress: Optional[str] = None) -> bool:
-        if not job_store.preserve_stopped_processing_job(job):
-            return False
-
-        job["status"] = "queued"
-        job["stop_requested"] = False
-        job["pause_requested"] = False
-        job["current_stage"] = "QUEUED"
-        job["speed"] = None
-        job["eta"] = None
-        job["item_percent"] = 0
-        if progress:
-            job["progress"] = progress
-        elif not str(job.get("progress") or "").strip():
-            job["progress"] = "Queued - waiting for queue resume."
-        self._record_job_event(job, "requeued", str(job["progress"]))
-        return True
 
     @staticmethod
     def _job_category_label(category: str) -> str:
@@ -431,35 +381,6 @@ class JobEngine:
 
         job["_artifacts_cleaned"] = True
 
-    def pause_job(self, job_id: str) -> bool:
-        """Mark a running job Paused at once without freezing its tools.
-
-        The item being uploaded finishes normally; the worker then holds in
-        wait_for_job_resume before the next item. A paused job keeps the queue
-        lane, so no other job starts until it is resumed or stopped.
-        """
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False
-
-            status = str(job.get("status"))
-            if status == "paused":
-                return True
-            if status != "running":
-                return False
-
-            job["pause_requested"] = True
-            job.pop("_pause_ack_callback", None)
-            job["status"] = "paused"
-            job["progress"] = "Paused by user"
-            job["speed"] = "Paused"
-            job["current_stage"] = "PAUSED"
-            self._record_job_event(job, "paused", "Paused by user")
-            logger.debug(f"Pause requested for job {job_id}; current item finishes first")
-            self._persist_jobs_locked()
-        return True
-
     def get_queue_control_state(self) -> dict[str, Any]:
         with self._lock:
             return queue_control_state(self._jobs.values(), paused=self._queue_processing_paused)
@@ -499,283 +420,6 @@ class JobEngine:
                 "queued_count": len(queued_jobs),
                 "staged_count": len(self.staging.items),
             }
-
-    def pause_queue(self, pause_active: bool = True) -> bool:
-        to_pause: list[str] = []
-        with self._lock:
-            self._queue_processing_paused = True
-            if pause_active:
-                to_pause = [jid for jid, job in self._jobs.items() if job.get("status") == "running"]
-            self._persist_jobs_locked()
-
-        for job_id in to_pause:
-            self.pause_job(job_id)
-        return True
-
-    def resume_queue(self) -> bool:
-        with self._lock:
-            self._queue_processing_paused = False
-            for job in self._jobs.values():
-                if job.get("status") == "running" and job.get("pause_requested"):
-                    job["pause_requested"] = False
-                    job.pop("_pause_ack_callback", None)
-                    job["progress"] = "Pause cancelled"
-                elif job.get("status") == "paused":
-                    job["resume_requested"] = True
-                    job["progress"] = "Resume queued - waiting for scheduler lane..."
-            for job in self._jobs.values():
-                if job_store.preserve_stopped_processing_job(job):
-                    self._restore_stopped_job_to_queue_locked(
-                        job,
-                        progress="Queued - waiting for current job to finish...",
-                    )
-            self._persist_jobs_locked()
-
-        self._try_start_queued()
-        return True
-
-    def stop_queue(self, *, clear_after_stop: bool = False) -> bool:
-        to_stop: list[str] = []
-        with self._lock:
-            self._queue_processing_paused = not clear_after_stop
-            to_stop = [jid for jid, job in self._jobs.items() if job.get("status") in ("running", "paused", "stopping")]
-            self._persist_jobs_locked()
-
-        for job_id in to_stop:
-            self.stop_job(job_id, clear_after_stop=clear_after_stop)
-        return True
-
-    def stop_queue_and_clear(self) -> dict[str, Any]:
-        self.stop_queue(clear_after_stop=True)
-        cleared_jobs = self.clear_queued_jobs()
-        with self._lock:
-            self._queue_processing_paused = False
-            self._persist_jobs_locked()
-        return {
-            "cleared_jobs": int(cleared_jobs),
-            "control": self.get_queue_control_state(),
-        }
-
-    def stop_all_jobs_and_wait(
-        self,
-        *,
-        clear_staged_items: bool = True,
-        wait_timeout_s: float = 15.0,
-        poll_interval_s: float = 0.25,
-    ) -> dict[str, Any]:
-        self.stop_queue()
-        cleared_jobs = self.clear_queued_jobs()
-        cleared_items = self.staging.clear() if clear_staged_items else 0
-
-        timed_out = False
-        deadline = time.monotonic() + max(0.0, float(wait_timeout_s))
-        final_state = self.get_work_activity_state()
-
-        while final_state["active_count"] > 0:
-            if time.monotonic() >= deadline:
-                timed_out = True
-                break
-            time.sleep(max(0.05, float(poll_interval_s)))
-            final_state = self.get_work_activity_state()
-
-        return {
-            "queue_paused": bool(final_state["queue_paused"]),
-            "cleared_jobs": int(cleared_jobs),
-            "cleared_staged_items": int(cleared_items),
-            "timed_out": bool(timed_out),
-            "active_jobs_remaining": final_state["active_jobs"],
-            "queued_jobs_remaining": final_state["queued_jobs"],
-            "active_count": int(final_state["active_count"]),
-            "queued_count": int(final_state["queued_count"]),
-            "staged_count": int(final_state["staged_count"]),
-        }
-
-    def rename_job(self, job_id: str, name: Optional[str]) -> tuple[bool, Optional[str]]:
-        normalized = normalize_job_name(name)
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False, None
-            if normalized:
-                job["display_name"] = normalized
-            else:
-                job.pop("display_name", None)
-            self._record_job_event(job, "renamed", f"Renamed to {normalized or 'default name'}")
-            self._persist_jobs_locked()
-            return True, job.get("display_name")
-
-    def set_queued_job_schedule(self, job_id: str, run_after: Optional[str]) -> tuple[bool, Optional[str], str]:
-        normalized = normalize_run_after(run_after)
-        if run_after not in (None, "") and normalized is None:
-            return False, None, "invalid-datetime"
-
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False, None, "not-found"
-            status = str(job.get("status"))
-            if status == "stopped":
-                if not job_store.preserve_stopped_processing_job(job):
-                    return False, None, "not-queued"
-            elif status != "queued":
-                return False, None, "not-queued"
-
-            if normalized:
-                job["run_after"] = normalized
-                due_at = parse_iso_datetime_utc(normalized)
-                if due_at and due_at > datetime.now(timezone.utc):
-                    job["progress"] = f"Scheduled for {due_at.astimezone().strftime('%Y-%m-%d %H:%M')}"
-                else:
-                    job["progress"] = "Queued - waiting for current job to finish..."
-            else:
-                job.pop("run_after", None)
-                job["progress"] = "Queued - waiting for current job to finish..."
-
-            current = job.get("run_after")
-            self._record_job_event(
-                job,
-                "scheduled" if current else "schedule-cleared",
-                str(job.get("progress") or "Schedule updated"),
-            )
-            self._persist_jobs_locked()
-
-        self._try_start_queued()
-        return True, current, "ok"
-
-    def resume_job(self, job_id: str) -> bool:
-        should_try_start = False
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False
-
-            status = str(job.get("status"))
-            if status == "running":
-                if job.get("pause_requested"):
-                    job["pause_requested"] = False
-                    job.pop("_pause_ack_callback", None)
-                    job["progress"] = "Pause cancelled"
-                    self._record_job_event(job, "pause-cancelled", str(job["progress"]))
-                    self._persist_jobs_locked()
-                return True
-            if status == "stopped":
-                if not self._restore_stopped_job_to_queue_locked(
-                    job,
-                    progress="Queued - waiting for current job to finish...",
-                ):
-                    return False
-
-                self._queue_processing_paused = False
-                queued = [queued_job for queued_job in self._jobs.values() if queued_job.get("status") == "queued"]
-                if queued:
-                    earliest = min(str(queued_job.get("started_at") or "") for queued_job in queued)
-                    try:
-                        dt = datetime.fromisoformat(earliest)
-                        job["started_at"] = (dt - timedelta(seconds=1)).isoformat()
-                    except (TypeError, ValueError):
-                        job["started_at"] = datetime.now(timezone.utc).isoformat()
-                else:
-                    job["started_at"] = datetime.now(timezone.utc).isoformat()
-
-                self._persist_jobs_locked()
-                should_try_start = True
-            elif status == "paused":
-                lane_busy = any(
-                    other.get("status") in {"running", "stopping"}
-                    for other_id, other in self._jobs.items()
-                    if other_id != job_id
-                )
-                if lane_busy or self._queue_processing_paused:
-                    job["resume_requested"] = True
-                    job["progress"] = "Resume queued - waiting for scheduler lane..."
-                    self._record_job_event(job, "resume-requested", str(job["progress"]))
-                elif self._resume_paused_job_locked(job_id, job):
-                    should_try_start = True
-                self._persist_jobs_locked()
-            else:
-                return False
-
-        if should_try_start:
-            self._try_start_queued()
-        return True
-
-    def _resume_paused_job_locked(self, job_id: str, job: dict[str, Any]) -> bool:
-        """Resume a paused job; True means it was re-queued and needs a launch.
-
-        A job restored as paused after a restart has no worker thread, so it is
-        re-queued for a fresh start. A live paused worker is blocked in
-        wait_for_job_resume and simply continues.
-        """
-        job["resume_requested"] = False
-        job["pause_requested"] = False
-        job.pop("_pause_ack_callback", None)
-        if job.pop("_restored_paused", False):
-            job["status"] = "queued"
-            job["progress"] = "Re-queued after resume"
-            job["current_stage"] = "QUEUED"
-            job["speed"] = None
-            self._record_job_event(job, "resumed", "Re-queued after resume")
-            return True
-        job["status"] = "running"
-        job["progress"] = "Resumed"
-        self._record_job_event(job, "resumed", "Job resumed")
-        if str(job.get("speed") or "").strip().lower() == "paused":
-            job["speed"] = "Starting..."
-        if str(job.get("current_stage") or "") == "PAUSED":
-            job["current_stage"] = "UPLOADING"
-
-        logger.debug(f"Resumed job {job_id}")
-        return False
-
-    def stop_job(self, job_id: str, *, clear_after_stop: bool = False) -> bool:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False
-
-            if job.get("status") == "queued":
-                log_info(f"Cancelled queued job {job_id} ({job['category']})")
-                job["status"] = "cancelled"
-                job["progress"] = "Cancelled (was queued)"
-                self._record_job_event(job, "cancelled", str(job["progress"]))
-                self._cleanup_job_artifacts_locked(job)
-                if job.get("source_monitor_id"):
-                    stream_monitors.record_stream_monitor_job(str(job.get("source_monitor_id")), job)
-                job.pop("_kwargs", None)
-                job.pop("_paths", None)
-                if clear_after_stop:
-                    self._jobs.pop(job_id, None)
-                self._persist_jobs_locked()
-                return True
-
-            if job.get("status") in {"running", "paused", "stopping"}:
-                prev_status = str(job.get("status"))
-                if prev_status == "stopping":
-                    if clear_after_stop:
-                        job["_clear_after_stop"] = True
-                        job["_hide_while_stopping"] = True
-                        job["progress"] = "Stopping... clearing when safe"
-                        self._queue_processing_paused = False
-                        self._persist_jobs_locked()
-                    return True
-                log_info(f"STOP REQUESTED for job {job_id} ({job['category']})", "WARN")
-                job["stop_requested"] = True
-                job["pause_requested"] = False
-                job["status"] = "stopping"
-                job["progress"] = "Stopping... clearing when safe" if clear_after_stop else "Stopping..."
-                if clear_after_stop:
-                    job["_clear_after_stop"] = True
-                    job["_hide_while_stopping"] = True
-                self._record_job_event(job, "stop-requested", str(job["progress"]))
-                self._persist_jobs_locked()
-
-                terminated = self.process_registry().terminate_locked(job_id, kill_delay_s=0.5 if clear_after_stop else 1.0)
-                logger.debug(f"Termination signal sent to {terminated} process(es) for job {job_id}")
-                return True
-        return False
-
-    def stop_and_clear_job(self, job_id: str) -> bool:
-        return self.stop_job(job_id, clear_after_stop=True)
 
     def _find_reusable_running_job(self, category: str) -> Optional[str]:
         """Return the job_id of an existing running/paused job in this category, if any.
@@ -997,7 +641,7 @@ class JobEngine:
                 if not resuming:
                     return
                 next_job = min(resuming, key=lane_order)
-                requeued = self._resume_paused_job_locked(str(next_job.get("job_id") or ""), next_job)
+                requeued = controls.resume_paused_job_locked(self, str(next_job.get("job_id") or ""), next_job)
                 self._persist_jobs_locked()
                 if not requeued:
                     return
@@ -1035,348 +679,85 @@ class JobEngine:
         with self._lock:
             return self._jobs.get(job_id)
 
-    def retry_job(self, job_id: str) -> tuple[bool, Optional[str], str]:
-        """Create one new processing job from a failed job's immutable request."""
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False, None, "not-found"
-            if job.get("status") != "failed" or not job.get("retry_eligible"):
-                return False, None, "not-retryable"
+    # The job controls live in logic/jobs/controls.py and revalidation in logic/jobs/revalidate.py;
+    # these methods keep them on the engine's public API.
 
-            retry_request = job.get("_retry_request")
-            if not isinstance(retry_request, dict):
-                return False, None, "missing-request"
-            retry_kwargs = retry_request.get("kwargs")
-            if not isinstance(retry_kwargs, dict):
-                return False, None, "missing-request"
+    def pause_job(self, job_id: str) -> bool:
+        return controls.pause_job(self, job_id)
 
-            category = str(job.get("category") or "misc")
-            paths = normalize_paths(retry_request.get("paths"))
-            kwargs = dict(retry_kwargs)
-            display_name = normalize_job_name(job.get("display_name")) or self._job_category_label(category)
-            attempt_count = int(job.get("attempt_count") or 0)
-            job["retry_eligible"] = False
-            self._record_job_event(job, "retry-requested", "Retry requested")
-            self._persist_jobs_locked()
+    def pause_queue(self, pause_active: bool = True) -> bool:
+        return controls.pause_queue(self, pause_active)
 
-        kwargs.update(
-            reuse_running=False,
-            source="retry",
-            retry_of=job_id,
-            attempt_count_base=attempt_count,
-            job_name=f"{display_name} retry",
+    def resume_queue(self) -> bool:
+        return controls.resume_queue(self)
+
+    def resume_job(self, job_id: str) -> bool:
+        return controls.resume_job(self, job_id)
+
+    def stop_queue(self, *, clear_after_stop: bool = False) -> bool:
+        return controls.stop_queue(self, clear_after_stop=clear_after_stop)
+
+    def stop_queue_and_clear(self) -> dict[str, Any]:
+        return controls.stop_queue_and_clear(self)
+
+    def stop_all_jobs_and_wait(
+        self,
+        *,
+        clear_staged_items: bool = True,
+        wait_timeout_s: float = 15.0,
+        poll_interval_s: float = 0.25,
+    ) -> dict[str, Any]:
+        return controls.stop_all_jobs_and_wait(
+            self,
+            clear_staged_items=clear_staged_items,
+            wait_timeout_s=wait_timeout_s,
+            poll_interval_s=poll_interval_s,
         )
-        if paths:
-            kwargs["paths"] = paths
-        else:
-            kwargs.pop("paths", None)
 
-        try:
-            new_job_id = self.start_upload_job(category, **kwargs)
-        except Exception:
-            with self._lock:
-                original = self._jobs.get(job_id)
-                if original:
-                    original["retry_eligible"] = True
-                    self._record_job_event(original, "retry-failed", "Unable to create retry job")
-                    self._persist_jobs_locked()
-            raise
+    def stop_job(self, job_id: str, *, clear_after_stop: bool = False) -> bool:
+        return controls.stop_job(self, job_id, clear_after_stop=clear_after_stop)
 
-        with self._lock:
-            original = self._jobs.get(job_id)
-            if original:
-                original["retried_as"] = new_job_id
-                self._record_job_event(original, "retried", f"Retry queued as {new_job_id}")
-                self._persist_jobs_locked()
-        return True, new_job_id, "queued"
+    def stop_and_clear_job(self, job_id: str) -> bool:
+        return self.stop_job(job_id, clear_after_stop=True)
 
-    def _apply_revalidation_result(
-        self, snapshot: dict[str, Any], prepared: Any
-    ) -> Optional[tuple[str, dict[str, Any]]]:
-        """Apply one job's revalidation outcome. Returns ("updated"|"cancelled", job_update) or None."""
-        new_paths, new_hints, new_category = revalidated_plan(prepared)
+    def rename_job(self, job_id: str, name: Optional[str]) -> tuple[bool, Optional[str]]:
+        return controls.rename_job(self, job_id, name)
 
-        with self._lock:
-            job = self._jobs.get(snapshot["job_id"])
-            if not job:
-                return None
-            current_status = str(job.get("status") or "")
-            if current_status not in ("queued", "paused"):
-                return None
+    def set_queued_job_schedule(self, job_id: str, run_after: Optional[str]) -> tuple[bool, Optional[str], str]:
+        return controls.set_queued_job_schedule(self, job_id, run_after)
 
-            if new_paths:
-                set_job_target_paths(job, new_paths)
-                kwargs = dict(job.get("_kwargs") or {})
-                kwargs["item_hints"] = tuple(new_hints)
-                job["_kwargs"] = kwargs
-                if new_category:
-                    job["category"] = new_category
-                if not str(job.get("display_name") or "").strip():
-                    job["display_name"] = self._default_job_name(
-                        str(job.get("category") or "misc"),
-                        len(new_paths),
-                        new_paths,
-                    )
-                job["progress"] = "Revalidated against current rules"
-                outcome = (
-                    "updated",
-                    {
-                        "job_id": snapshot["job_id"],
-                        "status": current_status,
-                        "changed": True,
-                        "kept": len(new_paths),
-                        "skipped": len(prepared.skipped_items),
-                    },
-                )
-            else:
-                job["status"] = "cancelled"
-                job["progress"] = "Cancelled after revalidation"
-                job["stop_requested"] = False
-                job["pause_requested"] = False
-                job.pop("_kwargs", None)
-                job.pop("_paths", None)
-                self._cleanup_job_artifacts_locked(job)
-                outcome = (
-                    "cancelled",
-                    {
-                        "job_id": snapshot["job_id"],
-                        "status": current_status,
-                        "changed": True,
-                        "kept": 0,
-                        "skipped": len(prepared.skipped_items),
-                    },
-                )
-            self._persist_jobs_locked()
-            return outcome
-
-    def revalidate_queued_jobs(self, *, include_paused: bool = True) -> dict[str, Any]:
-        """Re-scan queued/paused processing jobs against the current rules."""
-        with self._lock:
-            snapshots = revalidation_targets(self._jobs.values(), include_paused)
-
-        if not snapshots:
-            return {"inspected": 0, "updated": 0, "cancelled": 0, "jobs": []}
-
-        from logic.classify.walk import begin_scan_cache, end_scan_cache
-
-        inspected = 0
-        updated = 0
-        cancelled = 0
-        job_updates: list[dict[str, Any]] = []
-        cache_token = begin_scan_cache()
-        try:
-            for snapshot in snapshots:
-                inspected += 1
-                candidates = revalidation_candidates(snapshot)
-                prepared = prepare_start_items(candidates)
-                outcome = self._apply_revalidation_result(snapshot, prepared)
-                if outcome is None:
-                    continue
-                kind, job_update = outcome
-                if kind == "updated":
-                    updated += 1
-                else:
-                    cancelled += 1
-                job_updates.append(job_update)
-        finally:
-            end_scan_cache(cache_token)
-
-        return {
-            "inspected": inspected,
-            "updated": updated,
-            "cancelled": cancelled,
-            "jobs": job_updates,
-        }
+    def retry_job(self, job_id: str) -> tuple[bool, Optional[str], str]:
+        return controls.retry_job(self, job_id)
 
     def delete_job(self, job_id: str) -> bool:
-        self.stop_job(job_id)
-
-        with self._lock:
-            if job_id in self._jobs:
-                self._cleanup_job_artifacts_locked(self._jobs[job_id])
-                del self._jobs[job_id]
-                if job_id in self._processes:
-                    del self._processes[job_id]
-                self._persist_jobs_locked()
-
-                from core.scheduler import get_scheduler
-
-                get_scheduler().add_job(
-                    self._try_start_queued,
-                    "date",
-                    run_date=datetime.now(timezone.utc) + timedelta(seconds=0.5),
-                )
-                return True
-        return False
+        return controls.delete_job(self, job_id)
 
     def clear_completed_jobs(self) -> int:
-        with self._lock:
-            to_delete = [
-                job_id
-                for job_id, job in self._jobs.items()
-                if job["status"] in ["completed", "failed", "cancelled"]
-                or (job.get("status") == "stopped" and not job_store.preserve_stopped_processing_job(job))
-            ]
-            for job_id in to_delete:
-                del self._jobs[job_id]
-            self._persist_jobs_locked()
-            return len(to_delete)
+        return controls.clear_completed_jobs(self)
 
     def clear_queued_jobs(self) -> int:
-        with self._lock:
-            cleared = 0
-            to_delete: list[str] = []
-
-            for job_id, job in self._jobs.items():
-                status = str(job.get("status") or "")
-                if status == "queued" or job_store.preserve_stopped_processing_job(job):
-                    job["status"] = "cancelled"
-                    job["progress"] = "Cancelled (queue cleared)"
-                    self._cleanup_job_artifacts_locked(job)
-                    job.pop("_kwargs", None)
-                    job.pop("_paths", None)
-                    to_delete.append(job_id)
-                    cleared += 1
-                    continue
-
-                if status == "stopping" and bool(job.get("stop_requested")):
-                    job["_clear_after_stop"] = True
-                    job["progress"] = "Stopping... queued for removal"
-                    cleared += 1
-
-            for job_id in to_delete:
-                del self._jobs[job_id]
-            self._persist_jobs_locked()
-            return cleared
+        return controls.clear_queued_jobs(self)
 
     def promote_job(self, job_id: str) -> bool:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False
-            status = str(job.get("status") or "")
-            if status == "stopped":
-                if not job_store.preserve_stopped_processing_job(job):
-                    return False
-            elif status != "queued":
-                return False
-            queued = [
-                queued_job
-                for queued_job in self._jobs.values()
-                if queued_job["status"] == "queued" or job_store.preserve_stopped_processing_job(queued_job)
-            ]
-            highest_priority = max((int(queued_job.get("priority") or 0) for queued_job in queued), default=0)
-            job["priority"] = highest_priority + 1
-            self._record_job_event(job, "promoted", f"Promoted to priority {job['priority']}")
-            self._persist_jobs_locked()
-            return True
+        return controls.promote_job(self, job_id)
 
     def set_job_priority(self, job_id: str, priority: int) -> tuple[bool, Optional[int]]:
-        normalized = max(-100, min(100, int(priority)))
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False, None
-            if str(job.get("status") or "") not in {"queued", "paused"}:
-                return False, None
-            job["priority"] = normalized
-            self._record_job_event(job, "priority-changed", f"Priority set to {normalized}")
-            self._persist_jobs_locked()
-        self._try_start_queued()
-        return True, normalized
+        return controls.set_job_priority(self, job_id, priority)
 
     def reorder_queued_job_items(self, job_id: str, ordered_paths: list[str]) -> bool:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False
-            status = str(job.get("status") or "")
-            if status == "stopped":
-                if not job_store.preserve_stopped_processing_job(job):
-                    return False
-            elif status != "queued":
-                return False
-
-            current = job_target_paths(job)
-            new_order = self._match_job_paths_by_identity(current, ordered_paths)
-            if new_order is None:
-                return False
-
-            set_job_target_paths(job, new_order)
-            self._persist_jobs_locked()
-            return True
+        return controls.reorder_queued_job_items(self, job_id, ordered_paths)
 
     def reorder_active_job_items(self, job_id: str, ordered_paths: list[str]) -> bool:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job or job.get("status") not in ("running", "paused"):
-                return False
-
-            current = job_target_paths(job)
-            new_order = self._match_job_paths_by_identity(current, ordered_paths)
-            if new_order is None:
-                return False
-
-            set_job_target_paths(job, new_order)
-            self._persist_jobs_locked()
-            return True
+        return controls.reorder_active_job_items(self, job_id, ordered_paths)
 
     def remove_active_job_item(self, job_id: str, path: str) -> bool:
-        """Drop a not-yet-started item from a running or paused job.
-
-        The processing loop re-reads target_paths before each item and skips
-        anything listed in _removed_item_paths, so the item is not uploaded.
-        """
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job or job.get("status") not in ("running", "paused"):
-                return False
-            target_identity = normalize_job_path_identity(path)
-            if not target_identity:
-                return False
-            current = job_target_paths(job)
-            removed = [p for p in current if normalize_job_path_identity(p) == target_identity]
-            if not removed:
-                return False
-            updated = [p for p in current if normalize_job_path_identity(p) != target_identity]
-            job["_removed_item_paths"] = [*normalize_paths(job.get("_removed_item_paths")), *removed]
-            set_job_target_paths(job, updated)
-            self._record_job_event(job, "item-removed", str(path))
-            self._persist_jobs_locked()
-            return True
+        return controls.remove_active_job_item(self, job_id, path)
 
     def remove_queued_job_item(self, job_id: str, path: str) -> bool:
-        with self._lock:
-            job = self._jobs.get(job_id)
-            if not job:
-                return False
-            status = str(job.get("status") or "")
-            if status == "stopped":
-                if not job_store.preserve_stopped_processing_job(job):
-                    return False
-            elif status != "queued":
-                return False
+        return controls.remove_queued_job_item(self, job_id, path)
 
-            current = job_target_paths(job)
-            target_identity = normalize_job_path_identity(path)
-            if not target_identity:
-                return False
-
-            updated = [
-                current_path
-                for current_path in current
-                if normalize_job_path_identity(current_path) != target_identity
-            ]
-            if len(updated) == len(current):
-                return False
-            if updated:
-                set_job_target_paths(job, updated)
-            else:
-                self._jobs.pop(job_id, None)
-
-            self._persist_jobs_locked()
-            return True
+    def revalidate_queued_jobs(self, *, include_paused: bool = True) -> dict[str, Any]:
+        return revalidate.revalidate_queued_jobs(self, include_paused=include_paused)
 
     def start_queue_with_details(self, **kwargs: Any) -> dict[str, Any]:
         with self._lock:

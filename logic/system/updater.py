@@ -103,7 +103,7 @@ def _version_sort_key(version: str) -> tuple[int, Version, str]:
     parsed = _coerce_version(version)
     if parsed is not None:
         return (1, parsed, "")
-    return (0, Version("0"), str(version or "").lower())
+    return (0, Version("0"), version.lower())
 
 
 def _is_newer_version(candidate: str, current: str) -> bool:
@@ -195,7 +195,7 @@ def _pick_release(version: Optional[str] = None) -> Dict[str, Any]:
     if version:
         target = version.strip().lower()
         for rel in releases:
-            v = str(rel.get("version") or "")
+            v = rel["version"]
             if v.lower() == target or v.lower().lstrip("v") == target.lstrip("v"):
                 return rel
         raise UpdateError(f"Version '{version}' was not found on GitHub.")
@@ -429,7 +429,7 @@ def _maybe_refresh_status(force: bool = False) -> Dict[str, Any]:
         state["last_checked_at"] = _now_iso()
         state["last_error"] = None
         _save_state(state)
-    except Exception as exc:
+    except Exception as exc:  # any failed check (network, GitHub, parsing) is shown to the user as last_error
         state["last_checked_at"] = _now_iso()
         state["last_error"] = str(exc)
         _save_state(state)

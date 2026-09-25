@@ -1347,7 +1347,7 @@ def test_api_start_upload_builds_processing_request(monkeypatch, tmp_path) -> No
         ),
     ]
 
-    patch_hit(monkeypatch, jobs_api, "get_config", lambda: SimpleNamespace())
+    patch_hit(monkeypatch, jobs_api, "get_config", lambda: SimpleNamespace(folder_paths=[]))
 
     for (
         case_name,

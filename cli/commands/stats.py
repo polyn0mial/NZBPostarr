@@ -1,4 +1,7 @@
-"""`stats`: an on-demand live system stats snapshot."""
+"""`stats`: an on-demand live system stats snapshot.
+
+App modules are imported inside the functions that use them, so the CLI starts without loading the app.
+"""
 
 from __future__ import annotations
 

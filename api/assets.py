@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from itertools import chain
 from pathlib import Path
 from typing import Any, Callable, Optional
@@ -24,7 +25,7 @@ templates.env.variable_start_string = "[["
 
 templates.env.variable_end_string = "]]"
 
-templates.env.globals["auth_enabled"] = lambda: getattr(get_config(), "enable_password", False)
+templates.env.globals["auth_enabled"] = lambda: get_config().enable_password
 
 templates.env.globals["app_version"] = __version__
 
@@ -56,9 +57,8 @@ templates.env.globals["cache_bust"] = asset_cache_bust
 async def add_cache_control_header(request: Request, call_next: Callable[[Request], Any]) -> Response:
     response: Response = await call_next(request)
     if request.url.path.startswith("/assets/"):
-        import re as _re
         # Only use immutable for fingerprinted (content-hashed) assets
-        if _re.search(r'\.[a-f0-9]{8,}\.(js|css)$', request.url.path):
+        if re.search(r'\.[a-f0-9]{8,}\.(js|css)$', request.url.path):
             response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         else:
             # Non-fingerprinted assets (queue.js etc): always revalidate

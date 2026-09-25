@@ -1,11 +1,13 @@
 // Formatting and search-highlight helpers shared by every page (pure; no Vue).
 import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime.js';
+import utc from 'dayjs/plugin/utc.js';
 import { filesize } from 'filesize';
 import humanizeDuration from 'humanize-duration';
 import escapeStringRegexp from 'escape-string-regexp';
 
 dayjs.extend(relativeTime);
+dayjs.extend(utc);
 
 // Configure humanizeDuration
 const humanizer = humanizeDuration.humanizer({
@@ -178,4 +180,70 @@ export function formatBytesCompact(bytes) {
     }
     const precision = val >= 100 ? 0 : val >= 10 ? 1 : 2;
     return `${val.toFixed(precision)} ${units[idx]}`;
+}
+
+// ============================================================
+//  HISTORY DATES (compact)
+// ============================================================
+
+/** A history timestamp as a dayjs; a naive ISO string is the server's UTC. Null when empty. */
+export function parseHistoryDate(dateValue) {
+    if (!dateValue) return null;
+    if (dayjs.isDayjs(dateValue)) return dateValue;
+    if (dateValue instanceof Date) return dayjs(dateValue);
+
+    if (typeof dateValue === 'string') {
+        const value = dateValue.trim();
+        if (!value) return null;
+
+        const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
+        const looksIsoLike = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/i.test(value);
+
+        if (!hasExplicitTimezone && looksIsoLike) {
+            return dayjs.utc(value).local();
+        }
+
+        return dayjs(value);
+    }
+
+    return dayjs(dateValue);
+}
+
+export function formatDateCompact(dateStr) {
+    if (!dateStr) return '-';
+    const d = parseHistoryDate(dateStr);
+    if (!d || !d.isValid()) return '-';
+    return d.format('M/D h:mm A');
+}
+
+export function formatDateFull(dateStr) {
+    if (!dateStr) return '';
+    const d = parseHistoryDate(dateStr);
+    if (!d || !d.isValid()) return '';
+    return d.format('M/D/YYYY h:mm:ss A');
+}
+
+export function formatWhenAge(dateStr) {
+    if (!dateStr) return '-';
+    const d = parseHistoryDate(dateStr);
+    if (!d || !d.isValid()) return '-';
+
+    const now = dayjs();
+    const minutes = Math.max(0, now.diff(d, 'minute'));
+    const hours = Math.max(0, now.diff(d, 'hour'));
+    const days = Math.max(0, now.diff(d, 'day'));
+
+    if (minutes < 1) return 'Just now';
+    if (hours < 1) return `${minutes}m ago`;
+    if (hours < 48) return `${hours}h ago`;
+    if (days < 7) return d.format('ddd');
+    if (now.year() === d.year()) return d.format('M/D');
+    return d.format('M/D/YY');
+}
+
+export function formatWhenTime(dateStr) {
+    if (!dateStr) return '-';
+    const d = parseHistoryDate(dateStr);
+    if (!d || !d.isValid()) return '-';
+    return d.format('h:mm A');
 }

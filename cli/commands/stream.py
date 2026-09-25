@@ -1,4 +1,7 @@
-"""`stream` and `stream-monitors`: direct NZB repost jobs and saved monitors."""
+"""`stream` and `stream-monitors`: direct NZB repost jobs and saved monitors.
+
+App modules are imported inside the functions that use them, so the CLI starts without loading the app.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,7 @@
-"""`status`: configuration, indexer and tool readiness."""
+"""`status`: configuration, indexer and tool readiness.
+
+App modules are imported inside the functions that use them, so the CLI starts without loading the app.
+"""
 
 from __future__ import annotations
 

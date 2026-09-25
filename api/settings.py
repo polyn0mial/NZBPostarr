@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import platform
 from pathlib import Path
 from typing import Any, Dict
 
@@ -13,7 +14,9 @@ from loguru import logger
 from api.deps import _sync_stats_collector_state
 from api.pending import _pending_index, _pending_watch_folders
 from core.config import get_config
+from logic import autoupload
 from logic import settings as settings_service
+from logic.pending.completion import invalidate_pending_indexer_context
 
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
@@ -26,8 +29,6 @@ async def get_current_settings() -> Dict[str, Any]:
 
 def _invalidate_pending_indexer_context() -> None:
     """Drop the pending tree's cached indexer ticks after an indexer change."""
-    from logic.pending.completion import invalidate_pending_indexer_context
-
     invalidate_pending_indexer_context()
 
 @router.post("/reset")
@@ -66,9 +67,7 @@ async def update_settings(_section: str, updates: Dict[str, Any]) -> Dict[str, A
     # Restart folder monitor if folder settings changed (monitor flags may have toggled)
     monitor_status: Dict[str, Any] = {"attempted": True, "ok": True}
     try:
-        from logic.autoupload import restart_folder_monitor
-
-        await restart_folder_monitor()
+        await autoupload.restart_folder_monitor()
     except Exception as exc:
         logger.warning(f"Folder monitor restart failed after settings update: {exc}")
         monitor_status = {"attempted": True, "ok": False, "error": str(exc)}
@@ -105,7 +104,7 @@ async def save_raw_config(req: Dict[str, Any]) -> Dict[str, Any]:
     # If a web_password is configured, enforce it. Otherwise, access is open
     # (relying on the user to secure the port at the network/host level).
     conf = get_config()
-    expected = getattr(conf, "web_password", None)
+    expected = conf.web_password
     if expected and password != expected:
         raise HTTPException(status_code=403, detail="Invalid password")
 
@@ -126,8 +125,6 @@ async def browse_folders(path: str = "/") -> Dict[str, Any]:
     Returns a list of subdirectories at the given path,
     along with the resolved parent path for navigation.
     """
-    import platform
-
     target = Path(path) if path and path != "/" else Path("/")
 
     # On Windows, list drive letters when at root

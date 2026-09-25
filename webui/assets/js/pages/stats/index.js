@@ -5,6 +5,7 @@ import {
     mapDeltaHistorySeries,
     mapHistorySeries,
     seedHistorySeries,
+    sparkWindow,
     sumNumericFields,
 } from 'page-base';
 
@@ -60,20 +61,20 @@ vue = createVuePage({
         };
     },
     computed: {
-        sparkCpu() { return this.history.cpu.slice(-45); },
-        sparkLoad() { return this.history.load.slice(-45); },
-        sparkMemory() { return this.history.memory.slice(-45); },
-        sparkSwap() { return this.history.swap.slice(-45); },
-        sparkDisk() { return this.history.disk.slice(-45); },
-        sparkFreeSpace() { return this.history.freeSpace.slice(-45); },
-        sparkUpload() { return this.history.upload.slice(-45); },
-        sparkDownload() { return this.history.download.slice(-45); },
-        sparkSent() { return this.history.sent.slice(-45); },
-        sparkRecv() { return this.history.recv.slice(-45); },
-        sparkConns() { return this.history.conns.slice(-45); },
-        sparkRead() { return this.history.read.slice(-45); },
-        sparkWrite() { return this.history.write.slice(-45); },
-        sparkErrors() { return this.history.errors.slice(-45); },
+        sparkCpu() { return sparkWindow(this.history.cpu, 45); },
+        sparkLoad() { return sparkWindow(this.history.load, 45); },
+        sparkMemory() { return sparkWindow(this.history.memory, 45); },
+        sparkSwap() { return sparkWindow(this.history.swap, 45); },
+        sparkDisk() { return sparkWindow(this.history.disk, 45); },
+        sparkFreeSpace() { return sparkWindow(this.history.freeSpace, 45); },
+        sparkUpload() { return sparkWindow(this.history.upload, 45); },
+        sparkDownload() { return sparkWindow(this.history.download, 45); },
+        sparkSent() { return sparkWindow(this.history.sent, 45); },
+        sparkRecv() { return sparkWindow(this.history.recv, 45); },
+        sparkConns() { return sparkWindow(this.history.conns, 45); },
+        sparkRead() { return sparkWindow(this.history.read, 45); },
+        sparkWrite() { return sparkWindow(this.history.write, 45); },
+        sparkErrors() { return sparkWindow(this.history.errors, 45); },
 
         cpuGridStyle() {
             return {

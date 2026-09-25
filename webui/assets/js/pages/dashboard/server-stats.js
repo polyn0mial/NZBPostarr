@@ -5,6 +5,7 @@ import {
     computePositiveRateDelta,
     mapDeltaHistorySeries,
     mapHistorySeries,
+    sparkWindow,
     sumNumericFields,
 } from 'page-base';
 
@@ -25,14 +26,14 @@ export const SERVER_STATS_MODULES = [
 
 export const serverStatsComputed = {
     // Sparkline data (limited to 30 points for visibility)
-    sparkCpu() { return this.history.cpu.slice(-30); },
-    sparkMemory() { return this.history.memory.slice(-30); },
-    sparkUpload() { return this.history.upload.slice(-30); },
-    sparkDownload() { return this.history.download.slice(-30); },
-    sparkDisk() { return this.history.disk.slice(-30); },
-    sparkFreeSpace() { return this.history.freeSpace.slice(-30); },
-    sparkConns() { return this.history.conns.slice(-30); },
-    sparkNetErrors() { return this.history.netErrors.slice(-30); },
+    sparkCpu() { return sparkWindow(this.history.cpu, 30); },
+    sparkMemory() { return sparkWindow(this.history.memory, 30); },
+    sparkUpload() { return sparkWindow(this.history.upload, 30); },
+    sparkDownload() { return sparkWindow(this.history.download, 30); },
+    sparkDisk() { return sparkWindow(this.history.disk, 30); },
+    sparkFreeSpace() { return sparkWindow(this.history.freeSpace, 30); },
+    sparkConns() { return sparkWindow(this.history.conns, 30); },
+    sparkNetErrors() { return sparkWindow(this.history.netErrors, 30); },
 
     normalizedServerStatsOrder() {
         return normalizeOrderedIds(this.dashboardServerStatsOrder, SERVER_STATS_MODULES.map(module => module.id));

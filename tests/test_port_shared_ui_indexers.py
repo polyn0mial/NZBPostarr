@@ -64,7 +64,8 @@ def test_infotip_styles_include_base_arrow_and_wrapping() -> None:
 
 
 def test_active_job_name_and_counter_use_server_wording() -> None:
-    page_base_js = _page_base_js()
+    # The job name wording lives in shared/jobs.js; page-base.js keeps the counters.
+    page_base_js = _page_base_js() + _read_repo_text("webui", "assets", "js", "shared", "jobs.js")
 
     assert "both: 'Both'," in page_base_js
     assert "anime: 'Anime'," in page_base_js

@@ -26,7 +26,7 @@ _AUTH_PUBLIC_PATHS = {"/api/system/revision"} | {path for alias in PAGE_ALIASES 
 
 def _verify_mcp_token(request: Request) -> bool:
     """Constant-time bearer-token check for the MCP endpoint."""
-    expected = str(getattr(get_config(), "mcp_token", "") or "").strip()
+    expected = (get_config().mcp_token or "").strip()
     if not expected:
         return False
 
@@ -54,7 +54,7 @@ async def session_auth_middleware(request: Request, call_next: Callable[[Request
 
     # Read through api.deps, the one config seam the page and stats routes share.
     conf = deps.get_config()
-    if getattr(conf, "enable_password", False) and getattr(conf, "web_password", None):
+    if conf.enable_password and conf.web_password:
         token = request.cookies.get(AUTH_COOKIE, "")
         if not verify_auth_cookie(token):
             if path.startswith("/api/"):
@@ -67,7 +67,8 @@ async def session_auth_middleware(request: Request, call_next: Callable[[Request
 @router.get("/login", response_class=HTMLResponse)
 async def get_login(request: Request) -> Response:
     """Login page - only shown when auth is enabled; otherwise redirects home."""
-    if not (getattr(get_config(), "enable_password", False) and getattr(get_config(), "web_password", None)):
+    conf = get_config()
+    if not (conf.enable_password and conf.web_password):
         return RedirectResponse(url="/", status_code=302)
     error = request.query_params.get("error", "")
     next_url = request.query_params.get("next", "/")
@@ -82,8 +83,8 @@ async def post_login(
 ) -> Response:
     """Process login form; set auth cookie on success."""
     conf = get_config()
-    expected_username = getattr(conf, "web_username", "admin")
-    expected_password = getattr(conf, "web_password", None) or ""
+    expected_username = conf.web_username
+    expected_password = conf.web_password or ""
 
     if hmac.compare_digest(username, expected_username) and hmac.compare_digest(password, expected_password):
         safe_next = next_url if next_url.startswith("/") and not next_url.startswith("//") else "/"

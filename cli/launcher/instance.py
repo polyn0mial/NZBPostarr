@@ -1,4 +1,8 @@
-"""Single-instance guard, the configured port, and the WebUI address."""
+"""Single-instance guard, the configured port, and the WebUI address.
+
+psutil and core.config are imported inside functions: the launcher runs before bootstrap() has built the venv
+they come from. msvcrt and fcntl are imported where used because each exists on one platform only.
+"""
 
 from __future__ import annotations
 
@@ -68,6 +72,7 @@ def _port_listener_details(port: int) -> list[str]:
                 cmd = "unknown"
             details.append(f"pid={conn.pid} cmd={cmd}")
     except Exception:
+        # The listener list only enriches the port-in-use message; psutil missing or denied leaves it empty.
         pass
 
     if details:
@@ -106,6 +111,7 @@ def configured_port() -> int:
 
         return int(get_config().port)
     except Exception:
+        # Before the venv exists, or with an invalid config, the launcher assumes the default port.
         return 8000
 
 

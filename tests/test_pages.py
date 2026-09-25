@@ -14,7 +14,13 @@ from tests.conftest import _read_repo_text, patch_hit
 
 @pytest.fixture()
 def client(monkeypatch) -> TestClient:
-    stats_on = SimpleNamespace(stats_page_enabled=True, dashboard_stats_enabled=True, dashboard_stats_modules=[])
+    stats_on = SimpleNamespace(
+        stats_page_enabled=True,
+        dashboard_stats_enabled=True,
+        dashboard_stats_modules=[],
+        enable_password=False,
+        web_password=None,
+    )
     monkeypatch.setattr(deps_api, "get_config", lambda: stats_on)
     return TestClient(app_mod.app)
 
@@ -67,7 +73,13 @@ def test_non_page_files_under_webui_are_not_served(client, path) -> None:
 
 
 def test_stats_page_is_404_when_disabled(monkeypatch) -> None:
-    stats_off = SimpleNamespace(stats_page_enabled=False, dashboard_stats_enabled=True, dashboard_stats_modules=["cpu"])
+    stats_off = SimpleNamespace(
+        stats_page_enabled=False,
+        dashboard_stats_enabled=True,
+        dashboard_stats_modules=["cpu"],
+        enable_password=False,
+        web_password=None,
+    )
     patch_hit(monkeypatch, deps_api, "get_config", lambda: stats_off)
     client = TestClient(app_mod.app)
 

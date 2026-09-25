@@ -1,5 +1,6 @@
 """One-shot and cached system information for the stats page and CLI."""
 
+import os
 import platform
 import socket
 import threading
@@ -79,23 +80,7 @@ def collect_instant_system_info(interval_seconds: float = 0.25) -> Dict[str, Any
         total_up += up
         total_down += down
 
-    conn_count = 0
-    if platform.system() == "Linux":
-        try:
-            with open("/proc/net/sockstat", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("TCP:"):
-                        parts = line.split()
-                        if len(parts) > 2:
-                            conn_count = int(parts[2])
-                            break
-        except Exception:
-            conn_count = 0
-    else:
-        try:
-            conn_count = len(psutil.net_connections(kind="inet"))
-        except Exception:
-            conn_count = 0
+    conn_count = collector.active_connection_count()
 
     collector._CPU_STATS["percent"] = cpu_pct
     collector._CPU_STATS["per_core"] = per_core
@@ -105,7 +90,7 @@ def collect_instant_system_info(interval_seconds: float = 0.25) -> Dict[str, Any
         {
             "upload": total_up / _B_IN_MIB,
             "download": total_down / _B_IN_MIB,
-            "connections": conn_count,
+            "connections": collector._NETWORK_SPEED.get("connections", 0) if conn_count is None else conn_count,
         }
     )
 
@@ -140,7 +125,7 @@ def _cached_temps(now: float) -> List[Dict[str, Any]]:
                             "current": entry.current,
                         }
                     )
-        except Exception:
+        except Exception:  # sensor drivers fail in many platform-specific ways; no temperatures is fine
             fresh = []
         _TEMPS_CACHE = fresh
         _TEMPS_CACHE_TS = now
@@ -164,7 +149,7 @@ def _cached_battery(now: float) -> Optional[Dict[str, Any]]:
                     "plugged": bi.power_plugged,
                     "secs_left": bi.secsleft if bi.secsleft != psutil.POWER_TIME_UNLIMITED else None,
                 }
-        except Exception:
+        except Exception:  # sensor drivers fail in many platform-specific ways; no battery is fine
             fresh_batt = None
 
         _BATT_CACHE = fresh_batt
@@ -197,9 +182,9 @@ def _cached_partitions(now: float) -> List[Dict[str, Any]]:
                             "percent": usage.percent,
                         }
                     )
-                except Exception:
+                except OSError:  # an unmounted or unreadable mount point is skipped
                     continue
-        except Exception:
+        except Exception:  # a partition table psutil cannot read shows as no partitions
             fresh_parts = []
         _PARTITIONS_CACHE = fresh_parts
         _PARTITIONS_CACHE_TS = now
@@ -223,7 +208,7 @@ def _cached_users(now: float) -> List[Dict[str, Any]]:
                         "started": u.started,
                     }
                 )
-        except Exception:
+        except Exception:  # psutil.users() is unsupported in some containers; no users is fine
             fresh_users = []
         _USERS_CACHE = fresh_users
         _USERS_CACHE_TS = now
@@ -244,7 +229,7 @@ def _cached_iface_ip(now: float) -> Dict[str, str]:
                     if addr.family == socket.AF_INET:
                         fresh_ip[iface_name] = addr.address
                         break
-        except Exception:
+        except Exception:  # an interface table psutil cannot read shows as no addresses
             fresh_ip = {}
         _IFACE_IP_CACHE = fresh_ip
         _IFACE_IP_CACHE_TS = now
@@ -253,8 +238,6 @@ def _cached_iface_ip(now: float) -> Dict[str, str]:
 
 def get_full_system_info() -> Dict[str, Any]:
     """Retrieve comprehensive system statistics for the stats page."""
-    import os
-
     now = time.time()
 
     # CPU
@@ -263,7 +246,7 @@ def get_full_system_info() -> Dict[str, Any]:
     cpu_freq = psutil.cpu_freq()
     try:
         load_avg = list(psutil.getloadavg())
-    except Exception:
+    except Exception:  # load average is not available on every platform
         load_avg = [0.0, 0.0, 0.0]
 
     # Memory
@@ -274,7 +257,7 @@ def get_full_system_info() -> Dict[str, Any]:
     device_root = os.path.splitdrive(os.path.abspath(__file__))[0] + "\\" if os.name == "nt" else "/"
     try:
         disk = psutil.disk_usage(device_root)
-    except Exception:
+    except OSError:  # the install drive is unreadable; fall back to the root filesystem
         disk = psutil.disk_usage("/")
     disk_io = psutil.disk_io_counters()
 

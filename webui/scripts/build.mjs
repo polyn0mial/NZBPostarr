@@ -9,15 +9,15 @@ const jsDir = path.join(webuiDir, 'assets', 'js');
 const pagesDir = path.join(jsDir, 'pages');
 const outdir = path.join(jsDir, 'dist');
 
-// Every page is an entry: pages/<name>.js or pages/<name>/index.js. The queue-*.js files
-// are the queue page's split modules, imported by pages/queue.js, not pages of their own.
+// Every page is an entry: pages/<name>.js or pages/<name>/index.js. The other modules in a
+// page folder are imported by its index.js, not pages of their own.
 async function pageEntries() {
     const entries = [];
     for (const dirent of await readdir(pagesDir, { withFileTypes: true })) {
         if (dirent.isDirectory()) {
             const pageDir = path.join(pagesDir, dirent.name);
             if ((await readdir(pageDir)).includes('index.js')) entries.push(path.join(pageDir, 'index.js'));
-        } else if (dirent.name.endsWith('.js') && !dirent.name.startsWith('queue-')) {
+        } else if (dirent.name.endsWith('.js')) {
             entries.push(path.join(pagesDir, dirent.name));
         }
     }

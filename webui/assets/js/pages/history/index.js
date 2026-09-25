@@ -1,14 +1,12 @@
 import { createVuePage, statusConfig, categoryMeta } from 'page-base';
-import dayjs from 'dayjs';
-import utc from 'dayjs/plugin/utc';
 import debounce from 'lodash.debounce';
 import { statusBadgeClass } from '../../shared/status.js';
+import { resolveCategoryKey, categoryIconTint } from '../../shared/category.js';
+import { formatDateCompact, formatDateFull, formatWhenAge, formatWhenTime } from '../../shared/format.js';
 
 import { buildUploadGroupFromServerGroup } from './groups.js';
 import { knownIssuesMethods } from './known-issues.js';
 import { selectionMethods } from './selection.js';
-
-dayjs.extend(utc);
 
 // ============================================================
 //  UPLOADS PAGE - Full Vue Reactive Implementation
@@ -278,105 +276,36 @@ createVuePage({
         // ============================================================
         //  Category Icon Helpers
         // ============================================================
-        _resolveCategoryKey(typeOrCategory) {
-            if (!typeOrCategory) return null;
-            const t = typeOrCategory.toLowerCase();
-            // Direct match
-            if (categoryMeta[t]) return t;
-            // Map media_type values to categoryMeta keys
-            if (t === 'movie') return 'movies';
-            if (t === 'tv' || t === 'episode') return 'tv';
-            if (t === 'other') return 'misc';
-            return null;
+        _categoryFor(typeOrCategory) {
+            const key = resolveCategoryKey(typeOrCategory, categoryMeta);
+            return key ? categoryMeta[key] : null;
         },
 
         getCategoryIconName(typeOrCategory) {
-            const key = this._resolveCategoryKey(typeOrCategory);
-            return key && categoryMeta[key] ? categoryMeta[key].icon : 'file-video';
+            return this._categoryFor(typeOrCategory)?.icon || 'file-video';
         },
 
         getCategoryIconColor(typeOrCategory) {
-            const key = this._resolveCategoryKey(typeOrCategory);
-            if (!key || !categoryMeta[key]) return 'text-notion-text-tertiary';
-            const color = categoryMeta[key].color;
-            return `text-${color}-400`;
+            const meta = this._categoryFor(typeOrCategory);
+            return meta ? categoryIconTint(meta.color).text : 'text-notion-text-tertiary';
         },
 
         getCategoryIconBg(typeOrCategory) {
-            const key = this._resolveCategoryKey(typeOrCategory);
-            if (!key || !categoryMeta[key]) return 'bg-notion-bg-hover';
-            const color = categoryMeta[key].color;
-            return `bg-${color}-500/15`;
+            const meta = this._categoryFor(typeOrCategory);
+            return meta ? categoryIconTint(meta.color).bg : 'bg-notion-bg-hover';
         },
 
         getCategoryLabel(typeOrCategory) {
-            const key = this._resolveCategoryKey(typeOrCategory);
-            return key && categoryMeta[key] ? categoryMeta[key].label : (typeOrCategory || 'Unknown');
+            return this._categoryFor(typeOrCategory)?.label || typeOrCategory || 'Unknown';
         },
 
         // ============================================================
-        //  Date Formatting (compact)
+        //  Date Formatting (compact; shared/format.js)
         // ============================================================
-        parseHistoryDate(dateValue) {
-            if (!dateValue) return null;
-            if (dayjs.isDayjs(dateValue)) return dateValue;
-            if (dateValue instanceof Date) return dayjs(dateValue);
-
-            if (typeof dateValue === 'string') {
-                const value = dateValue.trim();
-                if (!value) return null;
-
-                const hasExplicitTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(value);
-                const looksIsoLike = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/i.test(value);
-
-                if (!hasExplicitTimezone && looksIsoLike) {
-                    return dayjs.utc(value).local();
-                }
-
-                return dayjs(value);
-            }
-
-            return dayjs(dateValue);
-        },
-
-        formatDateCompact(dateStr) {
-            if (!dateStr) return '-';
-            const d = this.parseHistoryDate(dateStr);
-            if (!d || !d.isValid()) return '-';
-            return d.format('M/D h:mm A');
-        },
-
-        formatDateFull(dateStr) {
-            if (!dateStr) return '';
-            const d = this.parseHistoryDate(dateStr);
-            if (!d || !d.isValid()) return '';
-            return d.format('M/D/YYYY h:mm:ss A');
-        },
-
-        formatWhenAge(dateStr) {
-            if (!dateStr) return '-';
-            const d = this.parseHistoryDate(dateStr);
-            if (!d || !d.isValid()) return '-';
-
-            const now = dayjs();
-            const minutes = Math.max(0, now.diff(d, 'minute'));
-            const hours = Math.max(0, now.diff(d, 'hour'));
-            const days = Math.max(0, now.diff(d, 'day'));
-
-            if (minutes < 1) return 'Just now';
-            if (hours < 1) return `${minutes}m ago`;
-            if (hours < 48) return `${hours}h ago`;
-            if (days < 7) return d.format('ddd');
-            if (now.year() === d.year()) return d.format('M/D');
-            return d.format('M/D/YY');
-        },
-
-        formatWhenTime(dateStr) {
-            if (!dateStr) return '-';
-            const d = this.parseHistoryDate(dateStr);
-            if (!d || !d.isValid()) return '-';
-            return d.format('h:mm A');
-        },
+        formatDateCompact,
+        formatDateFull,
+        formatWhenAge,
+        formatWhenTime,
 
         // ============================================================
         //  Jobs View Helpers

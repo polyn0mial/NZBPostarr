@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from cli.output import _non_negative_int, _restart_delay
+from version import __version__
 
 
 def build_headless_parser() -> argparse.ArgumentParser:
@@ -390,8 +391,6 @@ def build_headless_parser() -> argparse.ArgumentParser:
     )
 
     # ── version ──
-    from version import __version__
-
     parser.add_argument(
         "--version",
         action="version",

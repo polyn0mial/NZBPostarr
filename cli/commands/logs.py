@@ -1,4 +1,7 @@
-"""`logs`: recent console lines from the shared buffer."""
+"""`logs`: recent console lines from the shared buffer.
+
+App modules are imported inside the functions that use them, so the CLI starts without loading the app.
+"""
 
 from __future__ import annotations
 

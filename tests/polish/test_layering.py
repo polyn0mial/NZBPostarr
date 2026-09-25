@@ -53,6 +53,18 @@ def test_bootstrap_imports_only_the_stdlib() -> None:
     assert bad == []
 
 
+def test_launcher_and_cli_load_no_app_module_at_import() -> None:
+    """main.py runs before the venv exists and the CLI must start fast: app modules load inside functions."""
+    allowed = {"cli", "version"}
+    bad = [
+        f"{path.relative_to(ROOT).as_posix()}:{lineno} {module}"
+        for path in [ROOT / "main.py", *sorted((ROOT / "cli").rglob("*.py"))]
+        for lineno, module in _imports(path, top_level_only=True)
+        if _top(module) not in sys.stdlib_module_names and _top(module) not in allowed
+    ]
+    assert bad == []
+
+
 def test_setup_imports_only_the_stdlib_before_install() -> None:
     """setup.py runs before the venv exists: module level is stdlib + the stdlib-only bootstrap.
 

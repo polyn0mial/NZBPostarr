@@ -210,39 +210,55 @@ def _find_stale_processes(
 # =====================================================================
 #  Kill logic
 # =====================================================================
-def kill_process_tree(pid: int, name: str = "", escalate: bool = True) -> bool:
-    """The one tree kill: SIGTERM the process and its descendants, then SIGKILL survivors."""
+def terminate_process_tree(pid: int) -> list[psutil.Process]:
+    """SIGTERM a process and every descendant, without waiting.
+
+    Returns the tree (root last) so the caller can SIGKILL survivors later, even after the
+    root is gone and its children were re-parented. Raises psutil.AccessDenied or
+    psutil.NoSuchProcess when the root itself cannot be signalled; returns [] if it is gone.
+    """
     try:
         root = psutil.Process(pid)
     except psutil.NoSuchProcess:
-        return True  # already gone
+        return []
 
     try:
         procs = [*root.children(recursive=True), root]
     except (psutil.NoSuchProcess, psutil.AccessDenied):
         procs = [root]
 
-    try:
-        root.terminate()  # SIGTERM
-    except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
-        logger.warning(f"[reaper] Cannot terminate pid {pid} ({name}): {exc}")
-        return False
+    root.terminate()  # SIGTERM
     for child in procs[:-1]:
         try:
             child.terminate()
         except (psutil.NoSuchProcess, psutil.AccessDenied):
             pass
+    return procs
 
-    if not escalate:
+
+def kill_survivors(procs: list[psutil.Process]) -> None:
+    """SIGKILL every process of a terminated tree that is still running."""
+    for proc in procs:
+        try:
+            if proc.is_running():
+                proc.kill()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
+
+def kill_process_tree(pid: int, name: str = "", escalate: bool = True) -> bool:
+    """The one tree kill: SIGTERM the process and its descendants, then SIGKILL survivors."""
+    try:
+        procs = terminate_process_tree(pid)
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as exc:
+        logger.warning(f"[reaper] Cannot terminate pid {pid} ({name}): {exc}")
+        return False
+    if not procs or not escalate:
         return True
 
     # Give them a moment to die gracefully, then SIGKILL what is left
     _gone, alive = psutil.wait_procs(procs, timeout=3)
-    for proc in alive:
-        try:
-            proc.kill()
-        except (psutil.NoSuchProcess, psutil.AccessDenied):
-            pass
+    kill_survivors(alive)
     _gone, alive = psutil.wait_procs(alive, timeout=2)
     if any(proc.pid == pid for proc in alive):
         logger.warning(f"[reaper] Failed to kill pid {pid} ({name})")

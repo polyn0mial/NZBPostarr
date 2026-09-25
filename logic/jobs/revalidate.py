@@ -1,10 +1,15 @@
-"""Revalidation of queued/paused processing jobs against the current classification rules."""
+"""Revalidation of queued/paused processing jobs against the current classification rules, and
+applying each outcome to the engine's jobs."""
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable, Optional
 
-from logic.jobs.models import job_target_paths, normalize_job_path_identity
+from logic.jobs.models import job_target_paths, normalize_job_path_identity, set_job_target_paths
+from logic.jobs.staging import prepare_start_items
+
+if TYPE_CHECKING:
+    from logic.jobs.engine import JobEngine
 
 _HINT_KEYS_DROPPED = frozenset({"auto_select_ignored", "skipped", "completed", "indexers", "indexer_errors"})
 
@@ -80,3 +85,102 @@ def revalidated_plan(prepared: Any) -> tuple[list[str], list[dict[str, Any]], st
     )
     new_category = new_categories[0] if len(new_categories) == 1 else ("mixed" if new_categories else "")
     return new_paths, new_hints, new_category
+
+
+def _apply_revalidation_result(
+    engine: JobEngine, snapshot: dict[str, Any], prepared: Any
+) -> Optional[tuple[str, dict[str, Any]]]:
+    """Apply one job's revalidation outcome. Returns ("updated"|"cancelled", job_update) or None."""
+    new_paths, new_hints, new_category = revalidated_plan(prepared)
+
+    with engine._lock:
+        job = engine._jobs.get(snapshot["job_id"])
+        if not job:
+            return None
+        current_status = str(job.get("status") or "")
+        if current_status not in ("queued", "paused"):
+            return None
+
+        if new_paths:
+            set_job_target_paths(job, new_paths)
+            kwargs = dict(job.get("_kwargs") or {})
+            kwargs["item_hints"] = tuple(new_hints)
+            job["_kwargs"] = kwargs
+            if new_category:
+                job["category"] = new_category
+            if not str(job.get("display_name") or "").strip():
+                job["display_name"] = engine._default_job_name(
+                    str(job.get("category") or "misc"),
+                    len(new_paths),
+                    new_paths,
+                )
+            job["progress"] = "Revalidated against current rules"
+            outcome = (
+                "updated",
+                {
+                    "job_id": snapshot["job_id"],
+                    "status": current_status,
+                    "changed": True,
+                    "kept": len(new_paths),
+                    "skipped": len(prepared.skipped_items),
+                },
+            )
+        else:
+            job["status"] = "cancelled"
+            job["progress"] = "Cancelled after revalidation"
+            job["stop_requested"] = False
+            job["pause_requested"] = False
+            job.pop("_kwargs", None)
+            job.pop("_paths", None)
+            engine._cleanup_job_artifacts_locked(job)
+            outcome = (
+                "cancelled",
+                {
+                    "job_id": snapshot["job_id"],
+                    "status": current_status,
+                    "changed": True,
+                    "kept": 0,
+                    "skipped": len(prepared.skipped_items),
+                },
+            )
+        engine._persist_jobs_locked()
+        return outcome
+
+def revalidate_queued_jobs(engine: JobEngine, *, include_paused: bool = True) -> dict[str, Any]:
+    """Re-scan queued/paused processing jobs against the current rules."""
+    with engine._lock:
+        snapshots = revalidation_targets(engine._jobs.values(), include_paused)
+
+    if not snapshots:
+        return {"inspected": 0, "updated": 0, "cancelled": 0, "jobs": []}
+
+    from logic.classify.walk import begin_scan_cache, end_scan_cache
+
+    inspected = 0
+    updated = 0
+    cancelled = 0
+    job_updates: list[dict[str, Any]] = []
+    cache_token = begin_scan_cache()
+    try:
+        for snapshot in snapshots:
+            inspected += 1
+            candidates = revalidation_candidates(snapshot)
+            prepared = prepare_start_items(candidates)
+            outcome = _apply_revalidation_result(engine, snapshot, prepared)
+            if outcome is None:
+                continue
+            kind, job_update = outcome
+            if kind == "updated":
+                updated += 1
+            else:
+                cancelled += 1
+            job_updates.append(job_update)
+    finally:
+        end_scan_cache(cache_token)
+
+    return {
+        "inspected": inspected,
+        "updated": updated,
+        "cancelled": cancelled,
+        "jobs": job_updates,
+    }

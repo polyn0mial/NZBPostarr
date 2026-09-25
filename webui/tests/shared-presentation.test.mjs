@@ -17,7 +17,7 @@ register(`data:text/javascript,${encodeURIComponent(hooks)}`);
 
 const { statusBadgeClass } = await import('../assets/js/shared/status.js');
 const { formatBytesCompact } = await import('../assets/js/shared/format.js');
-const { categoryBadgeClass } = await import('../assets/js/shared/categories.js');
+const { categoryBadgeClass } = await import('../assets/js/shared/category.js');
 
 // page-base statusConfig as it stood before the move.
 const statusConfig = {

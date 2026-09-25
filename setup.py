@@ -17,11 +17,13 @@ Handles:
 
 from __future__ import annotations
 
+import getpass
 import os
 import platform
 import shutil
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -145,8 +147,6 @@ def ask(prompt: str, default: str = "", password: bool = False) -> str:
     suffix = f" [{C['cyan']}{default}{C['reset']}]" if default else ""
     try:
         if password:
-            import getpass
-
             val = getpass.getpass(f"  {C['white']}▸ {prompt}{suffix}: {C['reset']}")
         else:
             val = input(f"  {C['white']}▸ {prompt}{suffix}: {C['reset']}")
@@ -244,7 +244,7 @@ def check_system(total: int) -> Dict[str, Any]:
             ok(f"Disk free: {free_gb} GB")
         else:
             warn(f"Disk free: {free_gb} GB (low - 2 GB+ recommended)")
-    except Exception:
+    except OSError:
         dim("Disk: could not detect")
 
     return results
@@ -661,12 +661,14 @@ def _write_config_atomically(content: str) -> None:
     """
     CONFIG_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        from core import config as app_config
+        # Imported here: setup runs before the dependencies core.config needs are installed.
+        from core.config import get_config_path, replace_config_content
     except ImportError:
-        app_config = None  # type: ignore[assignment]
-    if app_config is not None and app_config.get_config_path().resolve() == CONFIG_FILE.resolve():
-        app_config.replace_config_content(content)
-        return
+        pass
+    else:
+        if get_config_path().resolve() == CONFIG_FILE.resolve():
+            replace_config_content(content)
+            return
     tmp = CONFIG_FILE.with_name(f"{CONFIG_FILE.name}.{os.getpid()}.tmp")
     try:
         tmp.write_text(content, encoding="utf-8")
@@ -859,6 +861,7 @@ def smoke_test(total: int) -> None:
                         except OSError as e:
                             fail(f"  Could not create: {e}")
         except Exception:
+            # The folder check is advisory: an unreadable or malformed config.yaml only skips it.
             pass
 
     # Summary
@@ -901,6 +904,7 @@ def show_summary() -> None:
                 data = yaml.safe_load(f) or {}
             port = data.get("port", 8000)
     except Exception:
+        # An unreadable or malformed config.yaml only means the hint shows the default port.
         pass
 
     print(f"      http://YOUR_SERVER_IP:{port}")
@@ -920,8 +924,6 @@ def show_summary() -> None:
 #  HELPERS
 # =====================================================================
 def _now_str() -> str:
-    from datetime import datetime, timezone
-
     return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
 

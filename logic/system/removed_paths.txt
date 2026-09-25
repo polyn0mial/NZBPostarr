@@ -62,3 +62,4 @@ webui/assets/js/pages/stats.js
 webui/assets/js/vendor/lucide.min.js
 webui/scripts/build-js.mjs
 webui/tailwind.config.cjs
+logic/queue_metrics.py

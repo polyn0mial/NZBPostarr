@@ -1,4 +1,7 @@
-"""`config get|set`: dotted configuration keys through the validated writer."""
+"""`config get|set`: dotted configuration keys through the validated writer.
+
+App modules are imported inside the functions that use them, so the CLI starts without loading the app.
+"""
 
 from __future__ import annotations
 

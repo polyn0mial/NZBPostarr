@@ -14,15 +14,18 @@ import yaml
 
 from core import config as config_mod
 from core.config import APP_ROOT, DEFAULT_TV_PACK_IGNORE, Config
-from core.redaction import SECRET_MASK
 from core.fs import atomic_write_text
+from core.indexers import categories as indexer_categories
+from core.indexers import models as indexer_models
+from core.indexers import registry as indexer_registry
+from core.redaction import SECRET_MASK
 
 _SECRET_KEYS = frozenset({"api_keys", "usernames", "web_password", "password", "pass", "user", "username"})
 
 
 def mask_config_secrets(value: Any, *, key: str = "") -> Any:
     """Replace every configured credential with SECRET_MASK; blanks stay blank."""
-    normalized_key = str(key or "").strip().lower()
+    normalized_key = key.strip().lower()
     if normalized_key in _SECRET_KEYS or normalized_key.endswith("_api_key"):
         if isinstance(value, dict):
             return {str(child_key): SECRET_MASK if child_value not in (None, "") else child_value for child_key, child_value in value.items()}
@@ -37,29 +40,25 @@ def mask_config_secrets(value: Any, *, key: str = "") -> Any:
     return value
 
 
-def merge_masked_secret_updates(updates: Dict[str, Any], conf: Any) -> Dict[str, Any]:
+def merge_masked_secret_updates(updates: Dict[str, Any], conf: Config) -> Dict[str, Any]:
     """Replace unchanged UI mask markers with the current private values."""
     merged = copy.deepcopy(updates)
     if merged.get("web_password") == SECRET_MASK:
-        merged["web_password"] = str(getattr(conf, "web_password", "") or "")
+        merged["web_password"] = conf.web_password or ""
 
     for field_name in ("api_keys", "usernames"):
         incoming = merged.get(field_name)
-        current = getattr(conf, field_name, {}) or {}
-        if not isinstance(incoming, dict) or not isinstance(current, dict):
+        if not isinstance(incoming, dict):
             continue
+        current: Dict[str, str] = conf.api_keys if field_name == "api_keys" else conf.usernames
         for item_key, item_value in list(incoming.items()):
             if item_value == SECRET_MASK:
                 incoming[item_key] = current.get(item_key, "")
 
     incoming_servers = merged.get("nntp_servers")
-    current_servers = list(getattr(conf, "nntp_servers", []) or [])
     if isinstance(incoming_servers, list):
-        current_by_name = {
-            str(getattr(server, "name", "")): server
-            for server in current_servers
-            if str(getattr(server, "name", ""))
-        }
+        current_servers = list(conf.nntp_servers)
+        current_by_name = {server.name: server for server in current_servers if server.name}
         normalized_servers: list[Any] = []
         for index, incoming_server in enumerate(incoming_servers):
             if not isinstance(incoming_server, dict):
@@ -72,11 +71,11 @@ def merge_masked_secret_updates(updates: Dict[str, Any], conf: Any) -> Dict[str,
 
             incoming_user = server.get("user")
             if incoming_user == SECRET_MASK and current_server is not None:
-                server["user"] = str(getattr(current_server, "user", ""))
+                server["user"] = current_server.user
 
             incoming_password = server.pop("password", server.get("pass"))
             if incoming_password == SECRET_MASK and current_server is not None:
-                incoming_password = str(getattr(current_server, "password", ""))
+                incoming_password = current_server.password
             if incoming_password is not None:
                 server["pass"] = incoming_password
             normalized_servers.append(server)
@@ -84,34 +83,34 @@ def merge_masked_secret_updates(updates: Dict[str, Any], conf: Any) -> Dict[str,
     return merged
 
 
-def settings_view(conf: Any) -> Dict[str, Any]:
-    """The active configuration grouped for the Settings page, secrets masked."""
-    from core.indexers.categories import get_available_categories
-    from core.indexers.models import resolve_indexer_backfill, resolve_indexer_enabled, resolve_indexer_priority
-    from core.indexers.registry import get_all_indexers
+def settings_view(conf: Config) -> Dict[str, Any]:
+    """The active configuration grouped for the Settings page, secrets masked.
 
+    The indexer helpers are looked up on their modules at call time so test patches apply.
+    """
     destinations = {
         "enable_backfill": conf.enable_backfill,
-        "enable_duplicate_bypass": getattr(conf, "enable_duplicate_bypass", False),
+        "enable_duplicate_bypass": conf.enable_duplicate_bypass,
     }
-    for idx in get_all_indexers():
-        destinations[f"enable_{idx.id}"] = resolve_indexer_enabled(idx, conf)
-        destinations[f"backfill_{idx.id}"] = resolve_indexer_backfill(idx, conf)
-        destinations[f"priority_{idx.id}"] = resolve_indexer_priority(idx, conf)
+    for idx in indexer_registry.get_all_indexers():
+        destinations[f"enable_{idx.id}"] = indexer_models.resolve_indexer_enabled(idx, conf)
+        destinations[f"backfill_{idx.id}"] = indexer_models.resolve_indexer_backfill(idx, conf)
+        destinations[f"priority_{idx.id}"] = indexer_models.resolve_indexer_priority(idx, conf)
 
     return {
         "destinations": destinations,
         "processing": {
             "verbose": conf.verbose,
+            # Configs that predate these keys still get the defaults (client fixes app-routes-01/03/04).
             "process_tv_episodes": getattr(conf, "process_tv_episodes", True),
             "enable_duplicate_checking": conf.enable_duplicate_checking,
-            "enable_anime_checking": getattr(conf, "enable_anime_checking", False),
-            "item_limit_per_category": getattr(conf, "item_limit_per_category", None),
-            "folder_size_limit_gb": getattr(conf, "folder_size_limit_gb", 99),
-            "folder_size_limit_enabled": getattr(conf, "folder_size_limit_enabled", True),
-            "file_size_limit_gb": getattr(conf, "file_size_limit_gb", 0),
-            "file_size_limit_enabled": getattr(conf, "file_size_limit_enabled", True),
-            "dynamic_packs": getattr(conf, "dynamic_packs", True),
+            "enable_anime_checking": conf.enable_anime_checking,
+            "item_limit_per_category": conf.item_limit_per_category,
+            "folder_size_limit_gb": conf.folder_size_limit_gb,
+            "folder_size_limit_enabled": conf.folder_size_limit_enabled,
+            "file_size_limit_gb": conf.file_size_limit_gb,
+            "file_size_limit_enabled": conf.file_size_limit_enabled,
+            "dynamic_packs": conf.dynamic_packs,
             "tv_pack_ignore": getattr(conf, "tv_pack_ignore", dict(DEFAULT_TV_PACK_IGNORE)),
         },
         "upload": {
@@ -119,10 +118,10 @@ def settings_view(conf: Any) -> Dict[str, Any]:
             "poster_email": conf.poster_email,
             "rar_size": conf.rar_size,
             "article_size": conf.article_size,
-            "include_readme": getattr(conf, "include_readme", True),
-            "upload_max_retries": getattr(conf, "upload_max_retries", 3),
-            "upload_retry_delay_seconds": getattr(conf, "upload_retry_delay_seconds", 5),
-            "alt_bins": getattr(conf, "alt_bins", []),
+            "include_readme": conf.include_readme,
+            "upload_max_retries": conf.upload_max_retries,
+            "upload_retry_delay_seconds": conf.upload_retry_delay_seconds,
+            "alt_bins": conf.alt_bins,
         },
         "folders": {
             "base_folder": str(conf.base_folder),
@@ -133,32 +132,29 @@ def settings_view(conf: Any) -> Dict[str, Any]:
         "api_keys": mask_config_secrets(conf.api_keys, key="api_keys"),
         "usernames": mask_config_secrets(conf.usernames, key="usernames"),
         "ui": {
-            "dashboard_stats_enabled": getattr(conf, "dashboard_stats_enabled", True),
-            "ui_refresh_seconds": getattr(conf, "ui_refresh_seconds", 2),
-            "dashboard_stats_modules": getattr(
-                conf,
-                "dashboard_stats_modules",
-                ["cpu", "memory", "disk", "free_space", "upload", "download"],
-            ),
-            "stats_page_enabled": getattr(conf, "stats_page_enabled", True),
+            "dashboard_stats_enabled": conf.dashboard_stats_enabled,
+            "ui_refresh_seconds": conf.ui_refresh_seconds,
+            "dashboard_stats_modules": conf.dashboard_stats_modules,
+            "stats_page_enabled": conf.stats_page_enabled,
             "category_appearance_profiles": getattr(conf, "category_appearance_profiles", {}),
         },
+        # skip_files is not a declared Config field; it arrives through model_extra.
         "skip_files": getattr(
             conf,
             "skip_files",
             {"enabled": False, "display_mode": "disabled", "patterns": []},
         ),
         "auth": {
-            "enable_password": getattr(conf, "enable_password", False),
-            "web_username": getattr(conf, "web_username", "admin"),
+            "enable_password": conf.enable_password,
+            "web_username": conf.web_username,
             # web_password intentionally NOT exposed
         },
-        "categories": get_available_categories(),
-        "indexers": [idx.to_ui_dict(conf) for idx in get_all_indexers()],
+        "categories": indexer_categories.get_available_categories(),
+        "indexers": [idx.to_ui_dict(conf) for idx in indexer_registry.get_all_indexers()],
     }
 
 
-def flat_config_view(conf: Any) -> Dict[str, Any]:
+def flat_config_view(conf: Config) -> Dict[str, Any]:
     """The active configuration as one flat mapping, secrets masked."""
     return mask_config_secrets(conf.model_dump(by_alias=True))
 
@@ -168,12 +164,12 @@ def settings_touch_indexers(section: str, updates: Dict[str, Any]) -> bool:
     return section in ("destinations", "credentials") or any(str(key).startswith("enable_") for key in updates)
 
 
-def update_settings(updates: Dict[str, Any], conf: Any) -> bool:
+def update_settings(updates: Dict[str, Any], conf: Config) -> bool:
     """Save a settings section; a masked secret left untouched keeps its value."""
     return config_mod.save_config(merge_masked_secret_updates(updates, conf))
 
 
-def config_preview(updates: Dict[str, Any], conf: Any) -> str:
+def config_preview(updates: Dict[str, Any], conf: Config) -> str:
     """The YAML the active config would become with these updates applied."""
     path = config_mod.get_config_path()
     with open(path, "r", encoding="utf-8") as f:
@@ -197,7 +193,7 @@ def read_masked_raw_config() -> tuple[str, Path]:
     return yaml.safe_dump(masked, default_flow_style=False, sort_keys=False, allow_unicode=True), path
 
 
-def save_raw_config(content: str, conf: Any) -> Config:
+def save_raw_config(content: str, conf: Config) -> Config:
     """Validate and install raw YAML, restoring any mask the operator left untouched.
 
     Raises yaml.YAMLError for unparseable content.

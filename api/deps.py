@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from core.config import StatsFeatures, get_config
 from core.paths import is_at_or_below, resolve_path
+from logic.runtime import sync_stats_collector
 
 # The 404 detail each disabled stats feature answers with.
 _FEATURE_DISABLED_DETAIL: Dict[str, str] = {
@@ -45,8 +46,6 @@ def _stats_collector_required(conf: Optional[Any] = None) -> bool:
     return feature_enabled("history", conf)
 
 async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
-    from logic.runtime import sync_stats_collector
-
     await sync_stats_collector(conf)
 
 def _normalize_request_strings(values: List[str]) -> List[str]:
@@ -61,10 +60,8 @@ def _normalize_request_strings(values: List[str]) -> List[str]:
 
 def _bulk_selection_excluded_roots(conf: Any) -> tuple[Path, ...]:
     """Return configured roots which must not participate in mass selection."""
-    get_entries = getattr(conf, "get_folder_path_entries", None)
-    entries = get_entries() if callable(get_entries) else getattr(conf, "folder_paths", [])
     roots: list[Path] = []
-    for entry in entries or []:
+    for entry in conf.folder_paths:
         if not isinstance(entry, dict) or bool(entry.get("allow_bulk_selection", True)):
             continue
         raw_path = str(entry.get("path") or "").strip()

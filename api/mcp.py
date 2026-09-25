@@ -29,7 +29,14 @@ from fastapi import FastAPI
 from loguru import logger
 
 from core.config import get_config
+from core.db import job_history
+from core.indexers.registry import get_all_indexers
+from core.logging import console
 from core.redaction import redact_mapping
+from logic import runtime
+from logic.jobs import views as job_views
+from logic.jobs.models import ProcessingJobRequest
+from logic.stats import collector
 from version import __version__
 
 MCP_PATH = "/mcp"
@@ -52,30 +59,26 @@ _MUTATING_TOOLS = frozenset(
 def mcp_available() -> bool:
     """Report whether the optional mcp package is importable."""
     try:
-        import mcp.server.fastmcp  # noqa: F401
+        import mcp.server.fastmcp  # noqa: F401 - imported only to probe that the optional extra loads
     except Exception:
+        # Not only ImportError: a broken install of the extra fails inside its own imports.
         return False
     return True
 
 
 def mcp_configured(conf: Any) -> bool:
     """Report whether the operator has switched the endpoint on and set a token."""
-    if not getattr(conf, "mcp_enabled", False):
+    if not conf.mcp_enabled:
         return False
-    return bool(str(getattr(conf, "mcp_token", "") or "").strip())
+    return bool((conf.mcp_token or "").strip())
 
 
 def _service() -> Any:
-    from logic.runtime import ensure_engine_started
-
-    return ensure_engine_started()
+    return runtime.ensure_engine_started()
 
 
 def _safe_indexer_list() -> list[dict[str, Any]]:
     """Indexer metadata with credentials stripped."""
-    from core.config import get_config
-    from core.indexers.registry import get_all_indexers
-
     conf = get_config()
     # to_ui_dict is the same credential-free projection the WebUI receives.
     return [dict(idx.to_ui_dict(conf)) for idx in get_all_indexers()]
@@ -90,14 +93,12 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
 
     def get_status() -> dict[str, Any]:
         """System status: configured tools, enabled indexers and queue health."""
-        from core.config import get_config
-
         conf = get_config()
         service = _service()
         return {
             "version": __version__,
-            "host": getattr(conf, "host", ""),
-            "port": getattr(conf, "port", 0),
+            "host": conf.host,
+            "port": conf.port,
             "indexers": [
                 {"id": idx.get("id"), "name": idx.get("name"), "enabled": idx.get("enabled")}
                 for idx in _safe_indexer_list()
@@ -118,25 +119,19 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
 
     def get_job_items(job_id: str, finished: bool = False) -> dict[str, Any]:
         """Items belonging to a job. Set finished=true for completed items."""
-        from logic.jobs.views import finished_job_items, queued_job_items
-
         service = _service()
-        items = finished_job_items(service, job_id) if finished else queued_job_items(service, job_id)
+        items = job_views.finished_job_items(service, job_id) if finished else job_views.queued_job_items(service, job_id)
         if items is None:
             return {"error": f"No such job: {job_id}"}
         return {"job_id": job_id, "finished": finished, "items": items}
 
     def get_dashboard() -> dict[str, Any]:
         """Dashboard summary: pending counts by category plus queue state."""
-        from logic.stats.collector import get_dashboard_summary
-
-        return dict(get_dashboard_summary())
+        return dict(collector.get_dashboard_summary())
 
     def get_stats() -> dict[str, Any]:
         """Aggregate upload statistics."""
-        from logic.stats.collector import get_statistics
-
-        return dict(get_statistics())
+        return dict(collector.get_statistics())
 
     def list_indexers() -> dict[str, Any]:
         """Configured indexers. Never includes API keys or usernames."""
@@ -144,21 +139,15 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
 
     def get_history(limit: int = 25) -> dict[str, Any]:
         """Recent job history, newest first."""
-        from core.db.job_history import get_job_history
-
-        rows = get_job_history(limit=max(1, min(int(limit), 200)))
+        rows = job_history.get_job_history(limit=max(1, min(int(limit), 200)))
         return {"history": [redact_mapping(dict(row)) if isinstance(row, dict) else row for row in rows]}
 
     def get_recent_errors(limit: int = 25) -> dict[str, Any]:
         """Recent failed jobs and failed per-indexer uploads."""
-        from logic.jobs.views import get_recent_errors as _errors
-
-        return {"errors": _errors(limit=max(1, min(int(limit), 200)))}
+        return {"errors": job_views.get_recent_errors(limit=max(1, min(int(limit), 200)))}
 
     def get_logs(lines: int = 100) -> dict[str, Any]:
         """Tail of the in-memory application log."""
-        from core.logging import console
-
         entries, _seq = console.get_tail(max(1, min(int(lines), 1000)))
         return {"logs": entries}
 
@@ -168,8 +157,6 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
         Non-blocking on purpose: a real upload runs far longer than any MCP client
         tool-call timeout. Poll get_job with the returned id for progress.
         """
-        from logic.jobs.models import ProcessingJobRequest
-
         service = _service()
         request = ProcessingJobRequest(category=category, limit=int(limit) or None, test_mode=bool(test))
         job_id = service.start_processing_job_request(request)
@@ -234,10 +221,11 @@ def build_mcp_asgi_app(conf: Any) -> Optional[Any]:
         logger.warning("MCP is enabled in config but the 'mcp' package is not installed; run: pip install mcp")
         return None
 
+    # The optional extra is imported only once mcp_available() has confirmed it is installed.
     from mcp.server.fastmcp import FastMCP
     from mcp.server.transport_security import TransportSecuritySettings
 
-    allow_mutations = bool(getattr(conf, "mcp_allow_mutations", False))
+    allow_mutations = conf.mcp_allow_mutations
 
     # The SDK's DNS-rebinding protection validates the Host header against an
     # explicit allow-list, and an empty list rejects everything with HTTP 421.
@@ -246,7 +234,7 @@ def build_mcp_asgi_app(conf: Any) -> Optional[Any]:
     # narrow it with mcp_allowed_hosts. The mandatory bearer token, not the Host
     # header, is what actually guards this endpoint - and a browser cannot set
     # an Authorization header cross-origin without passing CORS preflight.
-    allowed_hosts = [str(h) for h in (getattr(conf, "mcp_allowed_hosts", None) or ["*"])]
+    allowed_hosts = [str(h) for h in (conf.mcp_allowed_hosts or ["*"])]
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=allowed_hosts != ["*"],
         allowed_hosts=allowed_hosts,

@@ -1,4 +1,8 @@
-"""The detached background WebUI: state file, lifecycle lock, start, stop and status."""
+"""The detached background WebUI: state file, lifecycle lock, start, stop and status.
+
+psutil and core.config are imported inside functions: the launcher runs before bootstrap() has built the venv
+they come from. msvcrt and fcntl are imported where used because each exists on one platform only.
+"""
 
 from __future__ import annotations
 
@@ -224,6 +228,7 @@ def _stop_daemon() -> int:
             process.terminate()
             process.wait(timeout=10)
         except Exception:
+            # Any failure to stop gracefully (timeout, access denied, gone) falls through to kill().
             try:
                 process.kill()
                 process.wait(timeout=5)

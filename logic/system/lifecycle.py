@@ -29,12 +29,13 @@ def runtime_revision() -> Dict[str, Any]:
                 }
         except (OSError, ValueError, TypeError):
             pass
-    env_revision = str(os.getenv("NZBPOSTARR_REVISION") or "").strip()
+    env_revision = os.getenv("NZBPOSTARR_REVISION", "").strip()
     return {"revision": env_revision or "unknown", "dirty": False, "deployed_at": None}
 
 
 def stop_all_service_activity(clear_staged_items: bool, wait_timeout_seconds: float) -> Dict[str, Any]:
     """Stop active jobs, clear waiting work, and wait until quiet."""
+    # Deferred: logic.runtime loads the whole job engine, and tests patch runtime.ensure_engine_started.
     from logic.runtime import ensure_engine_started
 
     stop_result = ensure_engine_started().stop_all_jobs_and_wait(
@@ -63,6 +64,7 @@ def restart_service(
     """Optionally stop all work, then schedule a process restart without changing files."""
     stop_result: Optional[Dict[str, Any]] = None
     if stop_before_restart:
+        # Deferred: logic.runtime loads the whole job engine, and tests patch runtime.ensure_engine_started.
         from logic.runtime import ensure_engine_started
 
         stop_result = ensure_engine_started().stop_all_jobs_and_wait(
@@ -80,7 +82,7 @@ def restart_service(
 
 def rollback_update(backup_id: str, restart: bool) -> Dict[str, Any]:
     """Restore files from a previous updater snapshot."""
-    from logic.system import updater
+    from logic.system import updater  # deferred: updater imports schedule_restart from this module
 
     return updater.rollback_to_backup(backup_id=backup_id, restart=restart)
 
@@ -90,8 +92,8 @@ def schedule_restart(delay_seconds: float = 2.0) -> None:
 
     cmd = [sys.executable, *sys.argv]
     try:
-        restart_port = int(getattr(get_config(), "port", 8000))
-    except Exception:
+        restart_port = int(get_config().port)
+    except Exception:  # a config that no longer loads must not block the restart; fall back to the default port
         restart_port = 8000
 
     def _restart_worker() -> None:

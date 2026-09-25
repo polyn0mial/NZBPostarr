@@ -10,10 +10,12 @@ from typing import Any, Deque, Dict, List, Optional, Tuple, cast
 
 import humanfriendly  # type: ignore[import-untyped]
 import psutil
+from apscheduler.jobstores.base import JobLookupError
 from loguru import logger
 
-from core.config import get_config
+from core.config import StatsFeatures, get_config
 from core.db import stats as db_stats
+from core.scheduler import get_scheduler
 from logic.pending.index import get_pending_index_manager
 from logic.pending.view import build_dashboard_summary
 from logic.stats.process_stats import ProcessStatsCollector
@@ -101,7 +103,7 @@ def _seed_ring_from_db() -> None:
             _IFACE_RING[if_name] = ring
 
         logger.debug(f"Ring buffer seeded: {len(_STATS_RING)} system, {len(_IFACE_RING)} ifaces")
-    except Exception as e:
+    except Exception as e:  # a missing or unreadable history only means empty sparklines until the next sample
         logger.debug(f"Ring seed from DB failed (OK on first run): {e}")
     _RING_SEEDED = True
 
@@ -172,69 +174,11 @@ def mark_ui_active(mode: str = "mini", collapsed: Optional[List[str]] = None) ->
     _COLLAPSED_SECTIONS = collapsed or []
 
 
-def _dashboard_stats_modules(conf: Optional[Any] = None) -> List[str]:
-    from core.config import get_config
-
-    current = conf or get_config()
-    modules = getattr(current, "dashboard_stats_modules", []) or []
-    return [str(module).strip() for module in modules if str(module).strip()][:6]
-
-
-def _stats_page_enabled(conf: Optional[Any] = None) -> bool:
-    from core.config import get_config
-
-    current = conf or get_config()
-    return bool(getattr(current, "stats_page_enabled", True))
-
-
-def _dashboard_stats_enabled(conf: Optional[Any] = None) -> bool:
-    from core.config import get_config
-
-    current = conf or get_config()
-    return bool(getattr(current, "dashboard_stats_enabled", True) and _dashboard_stats_modules(current))
-
-
-def _history_tracking_enabled(conf: Optional[Any] = None) -> bool:
-    return _stats_page_enabled(conf) or _dashboard_stats_enabled(conf)
-
-
-def _connections_tracking_enabled(conf: Optional[Any] = None) -> bool:
-    modules = set(_dashboard_stats_modules(conf))
-    return _stats_page_enabled(conf) or "connections" in modules or "net_errors" in modules
-
-
-def get_dashboard_stats_modules(conf: Optional[Any] = None) -> List[str]:
-    """Public wrapper for dashboard stats module resolution."""
-    return _dashboard_stats_modules(conf)
-
-
-def stats_page_enabled(conf: Optional[Any] = None) -> bool:
-    """Public wrapper for stats page visibility."""
-    return _stats_page_enabled(conf)
-
-
-def dashboard_stats_enabled(conf: Optional[Any] = None) -> bool:
-    """Public wrapper for dashboard stats visibility."""
-    return _dashboard_stats_enabled(conf)
-
-
-def history_tracking_enabled(conf: Optional[Any] = None) -> bool:
-    """Public wrapper for stats history/collector visibility."""
-    return _history_tracking_enabled(conf)
-
-
-def connections_tracking_enabled(conf: Optional[Any] = None) -> bool:
-    """Public wrapper for connection-tracking visibility."""
-    return _connections_tracking_enabled(conf)
-
-
 def sync_collector_schedule() -> None:
     """Keep the periodic stats prune job aligned with the dedicated stats page setting."""
-    from core.scheduler import get_scheduler
-
     scheduler = get_scheduler()
     job_id = "prune_system_stats"
-    if _stats_page_enabled():
+    if StatsFeatures.from_config(get_config()).stats_page:
         scheduler.add_job(
             db_stats.prune_system_stats,
             "interval",
@@ -246,7 +190,7 @@ def sync_collector_schedule() -> None:
 
     try:
         scheduler.remove_job(job_id)
-    except Exception as e:
+    except JobLookupError as e:
         logger.debug(f"Stats prune job not removed (not scheduled): {e}")
 
 
@@ -285,6 +229,26 @@ def _collect_top_processes() -> None:
         _TOP_PROCS.update(snapshot)
 
 
+def active_connection_count() -> Optional[int]:
+    """Count open TCP connections: /proc/net/sockstat on Linux, psutil elsewhere; None when unreadable
+    (callers keep the last good count, as before the merge)."""
+    if platform.system() == "Linux":
+        try:
+            with open("/proc/net/sockstat", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("TCP:"):
+                        parts = line.split()
+                        if len(parts) > 2:
+                            return int(parts[2])
+        except (OSError, ValueError) as e:
+            logger.debug(f"Reading /proc/net/sockstat failed: {e}")
+        return None
+    try:
+        return len(psutil.net_connections(kind="inet"))
+    except Exception:  # psutil raises AccessDenied or platform errors here; keep the last good count
+        return None
+
+
 def _refresh_active_connection_count(connections_tracking_enabled: bool) -> None:
     """Update _NETWORK_SPEED["connections"] for the mini-mode (non stats-page) path.
 
@@ -293,28 +257,14 @@ def _refresh_active_connection_count(connections_tracking_enabled: bool) -> None
     if not connections_tracking_enabled:
         _NETWORK_SPEED["connections"] = 0
         return
-    if platform.system() == "Linux":
-        try:
-            with open("/proc/net/sockstat", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("TCP:"):
-                        parts = line.split()
-                        if len(parts) > 2:
-                            _NETWORK_SPEED["connections"] = int(parts[2])
-                            break
-        except (OSError, ValueError) as e:
-            logger.debug(f"Reading /proc/net/sockstat failed: {e}")
-    else:
-        try:
-            _NETWORK_SPEED["connections"] = len(psutil.net_connections(kind="inet"))
-        except Exception:
-            _NETWORK_SPEED["connections"] = 0
+    count = active_connection_count()
+    if count is not None:
+        _NETWORK_SPEED["connections"] = count
 
 
 async def _stats_collector() -> None:
     """Background task to collect system resources and network I/O."""
     global _INTERFACE_SPEEDS, _NET_DELTA_1H, _UI_MODE
-    from core.config import get_config
     from logic.stats.system_info import _get_1h_network_delta  # system_info imports this module
 
     last_net_io = psutil.net_io_counters(pernic=True)
@@ -330,9 +280,10 @@ async def _stats_collector() -> None:
     while True:
         try:
             conf = get_config()
-            stats_page_enabled = _stats_page_enabled(conf)
-            history_tracking_enabled = _history_tracking_enabled(conf)
-            connections_tracking_enabled = _connections_tracking_enabled(conf)
+            features = StatsFeatures.from_config(conf)
+            stats_page_enabled = features.stats_page
+            history_tracking_enabled = features.history
+            connections_tracking_enabled = features.connections
 
             # Dynamic sleep based on UI activity
             # If no activity in 30s, drop to check every 15s.
@@ -345,7 +296,7 @@ async def _stats_collector() -> None:
             elif _UI_MODE == "full" and stats_page_enabled:
                 sleep_time = 2.0
             else:
-                sleep_time = float(getattr(conf, "ui_refresh_seconds", 2))
+                sleep_time = float(conf.ui_refresh_seconds)
 
             await asyncio.sleep(sleep_time)
             now = time.time()
@@ -501,7 +452,7 @@ async def _stats_collector() -> None:
                         ]
                         if iface_data:
                             await asyncio.to_thread(db_stats.record_interface_stats, iface_data)
-                    except Exception as e:  # pylint: disable=broad-exception-caught
+                    except Exception as e:  # a failed flush only loses this batch; the ring still holds it
                         logger.debug(f"DB flush failed: {e}")
 
                 global _DB_RECORD_TASK
@@ -510,7 +461,7 @@ async def _stats_collector() -> None:
 
         except asyncio.CancelledError:
             break
-        except Exception as e:
+        except Exception as e:  # one bad sample must never stop the collector loop
             logger.debug(f"Stats error: {e}")
 
 
@@ -533,10 +484,8 @@ async def stop_collector() -> None:
         _STATS_TASK = None
 
     try:
-        from core.scheduler import get_scheduler
-
         get_scheduler().remove_job("prune_system_stats")
-    except Exception as e:
+    except JobLookupError as e:
         logger.debug(f"Stats prune job not removed on stop: {e}")
 
     # Flush recent ring buffer snapshots to DB for restart persistence
@@ -563,7 +512,7 @@ async def stop_collector() -> None:
                 drops_out=s["drops_out"],
             )
         logger.debug(f"Flushed {len(recent)} stats snapshots to DB on shutdown")
-    except Exception as e:
+    except Exception as e:  # shutdown must finish even when the DB is already gone
         logger.debug(f"Shutdown flush failed (non-fatal): {e}")
 
 
@@ -604,7 +553,7 @@ def invalidate_statistics_cache() -> None:
 def get_dashboard_summary() -> Dict[str, Any]:
     """Return dashboard summary derived from the pending-index snapshot and live stats."""
     conf = get_config()
-    stats_ttl = float(max(1.0, min(5.0, getattr(conf, "ui_refresh_seconds", 2) or 2)))
+    stats_ttl = float(max(1.0, min(5.0, conf.ui_refresh_seconds or 2)))
     stats = get_statistics_cached(time.time(), stats_ttl)
     pending_state = get_pending_index_manager().get_state()
     if not isinstance(pending_state, dict) or pending_state.get("snapshot") is None:

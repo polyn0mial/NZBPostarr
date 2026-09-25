@@ -97,7 +97,8 @@ def _template_candidates() -> dict[str, str]:
     appears in. Values holding bound template syntax are skipped: they are not literal. The
     page scripts' own template strings are scanned too."""
     found: dict[str, str] = {}
-    sources = _templates() + [WEBUI / "assets" / "js" / "page-base.js"] + sorted((WEBUI / "assets" / "js" / "pages").rglob("*.js"))
+    components = [WEBUI / "assets" / "js" / "components" / name for name in ("lucide-icon.js", "modal.js", "sparkline.js", "stats-card.js")]
+    sources = _templates() + [WEBUI / "assets" / "js" / "page-base.js"] + components + sorted((WEBUI / "assets" / "js" / "pages").rglob("*.js"))
     for path in sources:
         for value in _STATIC_CLASS_ATTR.findall(path.read_text(encoding="utf-8")):
             if "{{" in value or "[[" in value or "${" in value:

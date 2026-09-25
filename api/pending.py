@@ -550,7 +550,7 @@ async def mark_items_uploaded(req: MarkUploadedRequest) -> Dict[str, Any]:
 
     created = db_uploads.mark_as_uploaded(req.item_keys, req.indexer_ids, itype=req.itype)
     if created > 0:
-        from logic.queue_metrics import request_live_queue_refresh
+        from logic.jobs.metrics import request_live_queue_refresh
 
         request_live_queue_refresh(reason="manual-mark-uploaded")
     return {
