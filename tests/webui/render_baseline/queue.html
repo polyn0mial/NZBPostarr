@@ -2056,47 +2056,6 @@
     })();
 </script>
 <script type="module" crossorigin src="/assets/js/dist/pages/queue.js?t=0"></script>
-<!--
-    Must live in `scripts`, not `content`: everything in `content` is rendered
-    inside #app, and Vue's template compiler silently discards <script> tags in
-    a client component template. While this block sat in `content` the FAB had
-    no click handler and its icon never toggled.
--->
-<script>
-    (function () {
-        function init() {
-            var fab = document.getElementById('scroll-fab-btn');
-            var target = document.getElementById('upload-queue-section');
-            var iconDn = document.getElementById('fab-icon-queue');
-            var iconUp = document.getElementById('fab-icon-top');
-            if (!fab || !target) return;
-            var inView = false;
-            var obs = new IntersectionObserver(
-                function (entries) {
-                    inView = entries[0].isIntersecting;
-                    fab.title = inView ? 'Back to top' : 'Jump to Job Staging Area';
-                    fab.ariaLabel = fab.title;
-                    iconDn.style.display = inView ? 'none' : '';
-                    iconUp.style.display = inView ? '' : 'none';
-                },
-                { threshold: 0.15 },
-            );
-            obs.observe(target);
-            fab.addEventListener('click', function () {
-                if (inView) {
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                } else {
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                }
-            });
-        }
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
-        } else {
-            setTimeout(init, 50);
-        }
-    })();
-</script>
 
     </body>
 </html>
