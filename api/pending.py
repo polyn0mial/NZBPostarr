@@ -25,7 +25,8 @@ from logic.pending.selection import stamp_upload_itype
 from logic.pending.index import get_pending_index_manager
 from logic.pending.roots import get_configured_folders
 from logic.jobs.models import ProcessingJobRequest
-from logic.services import get_upload_service, UploadService
+from logic.jobs.engine import JobEngine
+from logic.runtime import ensure_engine_started
 
 
 router = APIRouter(prefix="/api/pending", tags=["pending"])
@@ -286,7 +287,7 @@ def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, A
 @router.post("/force-upload")
 async def force_upload_items(
     req: ForceUploadRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Force-upload specific items from the pending queue.
 

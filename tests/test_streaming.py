@@ -5,7 +5,7 @@
 from tests.support import *
 
 def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
-    from logic import services, usenet_stream
+    from logic import runtime, usenet_stream
 
     captured: dict[str, object] = {}
 
@@ -14,8 +14,8 @@ def test_headless_stream_command_queues_stream_job(monkeypatch, capsys) -> None:
             captured.update(kwargs)
             return "stream-job-123"
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
-    monkeypatch.setattr(services, "get_upload_service", lambda: FakeService())
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: FakeService())
     monkeypatch.setattr(usenet_stream, "resolve_source_nzb_paths", lambda _source: [Path("D:/tmp/example.nzb")])
 
     rc = cli_run.run_headless(
@@ -80,11 +80,11 @@ def test_stream_request_normalization_contract() -> None:
             )
 
 def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys) -> None:
-    from logic import services, usenet_stream
+    from logic import runtime, usenet_stream
 
     captured: dict[str, object] = {}
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
 
     def fake_add_stream_monitor(**kwargs):
         captured.update(kwargs)
@@ -130,9 +130,9 @@ def test_headless_stream_command_can_save_monitor_definition(monkeypatch, capsys
     assert "active folder watching only runs in the long-lived app/WebUI process" in output
 
 def test_headless_stream_monitors_list_json(monkeypatch, capsys) -> None:
-    from logic import services, usenet_stream
+    from logic import runtime, usenet_stream
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
     monkeypatch.setattr(
         usenet_stream,
         "list_stream_monitors",

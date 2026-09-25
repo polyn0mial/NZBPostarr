@@ -99,7 +99,7 @@ def test_process_stats_collector_skips_idle_quiet_ui(monkeypatch) -> None:
 
 
 def test_headless_stats_command_outputs_json_without_starting_collector(monkeypatch, capsys) -> None:
-    from logic import services, stats_engine
+    from logic import runtime, stats_engine
 
     sample = {
         "hostname": "test-host",
@@ -119,7 +119,7 @@ def test_headless_stats_command_outputs_json_without_starting_collector(monkeypa
         },
     }
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
     monkeypatch.setattr(stats_engine, "collect_instant_system_info", lambda interval_seconds=0.25: sample)
 
     def fail_start_collector(*_args, **_kwargs):
@@ -164,7 +164,7 @@ def test_headless_stats_watch_stops_cleanly(monkeypatch, capsys) -> None:
     assert "Stopped." in output
 
 def test_arm_process_reaper_schedules_boot_scan_in_background(monkeypatch) -> None:
-    from logic import process_reaper
+    from logic import process_reaper, runtime
 
     calls: list[str] = []
 
@@ -187,9 +187,9 @@ def test_arm_process_reaper_schedules_boot_scan_in_background(monkeypatch) -> No
     monkeypatch.setattr(process_reaper, "schedule_reaper", lambda: calls.append("schedule_reaper"))
     monkeypatch.setattr(process_reaper, "schedule_wal_checkpoint", lambda: calls.append("schedule_wal_checkpoint"))
     monkeypatch.setattr(asyncio, "create_task", fake_create_task)
-    monkeypatch.setattr(app_mod, "_boot_reaper_task", None)
+    monkeypatch.setattr(runtime, "_boot_reaper_task", None)
 
-    app_mod._arm_process_reaper()
+    runtime._arm_process_reaper()
 
     assert calls == [
         "schedule_reaper",
@@ -1035,7 +1035,7 @@ def test_resolve_source_nzb_paths_supports_file_and_directory(tmp_path) -> None:
     ]
 
 def test_resolve_force_flag(monkeypatch) -> None:
-    from logic.services import UploadService
+    from logic.jobs.requests import resolve_force_flag
 
     cases = [
         ("skip-dupe-check-forces-upload", True, {"enable_duplicate_check": False}, True),
@@ -1049,7 +1049,7 @@ def test_resolve_force_flag(monkeypatch) -> None:
 
     for case_name, global_duplicate_checking_enabled, kwargs, expected in cases:
         _set_duplicate_checking(monkeypatch, enabled=global_duplicate_checking_enabled)
-        assert UploadService._resolve_force_flag(**kwargs) is expected, case_name
+        assert resolve_force_flag(**kwargs) is expected, case_name
 
 def test_check_success_word_boundary() -> None:
     from core.registry import _check_success

@@ -18,7 +18,7 @@ from core import database
 from core.config import get_config
 from logic import updater
 from logic.pending.roots import get_configured_folders
-from logic.services import get_upload_service
+from logic.runtime import ensure_engine_started
 
 
 dashboard_router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
@@ -348,7 +348,7 @@ async def rollback_update(req: UpdateRollbackRequest) -> Dict[str, Any]:
 @router.post("/restart")
 async def restart_service(req: RestartRequest) -> Dict[str, Any]:
     """Schedule a process restart without changing files."""
-    service = get_upload_service()
+    service = ensure_engine_started()
     stop_result: Optional[Dict[str, Any]] = None
 
     if req.stop_before_restart:
@@ -368,7 +368,7 @@ async def restart_service(req: RestartRequest) -> Dict[str, Any]:
 @router.post("/stop-all")
 async def stop_all_service_activity(req: StopAllRequest) -> Dict[str, Any]:
     """Stop active jobs, clear waiting work, and wait until quiet."""
-    service = get_upload_service()
+    service = ensure_engine_started()
     stop_result = await asyncio.to_thread(
         service.stop_all_jobs_and_wait,
         clear_staged_items=req.clear_staged_items,

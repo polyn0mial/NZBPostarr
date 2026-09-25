@@ -11,7 +11,7 @@ from cli.output import _print_stream_jobs_queued, _print_stream_monitor_saved
 def cmd_stream(args: argparse.Namespace) -> int:
     """Queue one-shot NZB stream/repost jobs or save a stream monitor definition."""
     from logic import usenet_stream
-    from logic.services import get_upload_service
+    from logic.runtime import ensure_engine_started
 
     submit_mode = usenet_stream.normalize_submit_mode(args.submit_mode)
     source = str(args.source).strip()
@@ -37,7 +37,7 @@ def cmd_stream(args: argparse.Namespace) -> int:
             return 0
 
         paths = usenet_stream.resolve_source_nzb_paths(source)
-        service = get_upload_service()
+        service = ensure_engine_started()
         job_ids: list[str] = []
 
         if len(paths) > 1 and args.release_name:

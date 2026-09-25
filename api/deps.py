@@ -27,18 +27,9 @@ def _stats_collector_required(conf: Optional[Any] = None) -> bool:
     return _stats_history_enabled(conf)
 
 async def _sync_stats_collector_state(conf: Optional[Any] = None) -> None:
-    current = conf or get_config()
-    from logic.stats_engine import (
-        start_collector,
-        stop_collector,
-        sync_collector_schedule,
-    )
+    from logic.runtime import sync_stats_collector
 
-    if _stats_collector_required(current):
-        await start_collector()
-    else:
-        await stop_collector()
-    sync_collector_schedule()
+    await sync_stats_collector(conf)
 
 def _resolved_policy_path(value: Any) -> Path:
     path = Path(str(value or "").strip())

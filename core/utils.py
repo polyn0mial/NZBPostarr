@@ -341,9 +341,9 @@ def run_command(
     quiet: bool = False,
 ) -> Tuple[bool, Deque[str]]:
     """Run a command with stop-check capability and live logging."""
-    from logic.services import UploadService
+    from logic.runtime import get_engine
 
-    service = UploadService()
+    processes = get_engine().process_registry()
     job_id = job.get("job_id") if job else None
     output_lines: Deque[str] = deque(maxlen=2000)
 
@@ -369,7 +369,7 @@ def run_command(
         return False, output_lines
 
     if job_id:
-        service.register_process(job_id, process)
+        processes.register(job_id, process)
 
     reader: Optional[threading.Thread] = None
     try:
@@ -381,7 +381,7 @@ def run_command(
         if reader is not None:
             reader.join(timeout=1.0)
         if job_id:
-            service.unregister_process(job_id, process)
+            processes.unregister(job_id, process)
 
     if process.returncode != 0:
         if not (job and job.get("stop_requested")):

@@ -45,7 +45,7 @@ def _restart_managed_daemon(delay_seconds: float = 0.0) -> tuple[bool, str]:
 def cmd_system(args: argparse.Namespace) -> int:
     """Run deployment controls through the same updater and queue services as the API."""
     from logic import updater
-    from logic.services import get_upload_service
+    from logic.runtime import ensure_engine_started
 
     command = getattr(args, "system_command", None)
     update_command = getattr(args, "update_command", None)
@@ -79,7 +79,7 @@ def cmd_system(args: argparse.Namespace) -> int:
         if command == "restart":
             stopped = None
             if not args.no_stop:
-                stopped = get_upload_service().stop_all_jobs_and_wait(
+                stopped = ensure_engine_started().stop_all_jobs_and_wait(
                     clear_staged_items=not args.keep_staged_items,
                     wait_timeout_s=args.wait_timeout,
                 )
@@ -117,7 +117,7 @@ def cmd_system(args: argparse.Namespace) -> int:
                 rc=0 if restarted else 1,
             )
         if command == "stop-all":
-            result = get_upload_service().stop_all_jobs_and_wait(
+            result = ensure_engine_started().stop_all_jobs_and_wait(
                 clear_staged_items=not args.keep_staged_items,
                 wait_timeout_s=args.wait_timeout,
             )

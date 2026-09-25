@@ -1,7 +1,7 @@
 """Send mutating CLI commands to a running WebUI daemon.
 
 When the WebUI already serves the configured port, a CLI that built its own
-UploadService would run a second engine over the same queue and database.
+JobEngine would run a second engine over the same queue and database.
 Mutating queue, job and stream commands therefore call the daemon's existing
 HTTP routes on localhost, signed with a session cookie from core.auth, and
 print exactly what the in-process commands print.

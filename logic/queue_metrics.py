@@ -69,8 +69,8 @@ def request_live_queue_refresh(reason: str = "manual") -> None:
         logger.debug(f"Pending queue refresh request failed ({reason}): {exc}")
 
     try:
-        from logic.services import get_upload_service
+        from logic.stats.collector import invalidate_statistics_cache
 
-        get_upload_service().invalidate_statistics_cache()
+        invalidate_statistics_cache()
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.debug(f"Live statistics invalidation failed ({reason}): {exc}")

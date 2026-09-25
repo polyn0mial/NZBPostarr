@@ -1,10 +1,10 @@
 """Model Context Protocol endpoint for NZBPostarr.
 
 Mounted at ``/mcp`` inside the running FastAPI application rather than shipped as
-a standalone stdio process. That is deliberate: ``UploadService`` is a
-process-local singleton (logic/services.py), so its job table, locks and child
+a standalone stdio process. That is deliberate: the ``JobEngine`` is a
+process-local singleton (logic/runtime.py), so its job table, locks and child
 process handles only exist in the process that built it. A separate stdio server
-would construct its own empty ``UploadService`` and could neither see nor control
+would construct its own empty ``JobEngine`` and could neither see nor control
 the jobs the WebUI is actually running.
 
 The ``mcp`` package is an OPTIONAL dependency and is intentionally absent from
@@ -66,9 +66,9 @@ def mcp_configured(conf: Any) -> bool:
 
 
 def _service() -> Any:
-    from logic.services import get_upload_service
+    from logic.runtime import ensure_engine_started
 
-    return get_upload_service()
+    return ensure_engine_started()
 
 
 def _safe_indexer_list() -> list[dict[str, Any]]:
@@ -118,19 +118,25 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
 
     def get_job_items(job_id: str, finished: bool = False) -> dict[str, Any]:
         """Items belonging to a job. Set finished=true for completed items."""
+        from logic.jobs.views import finished_job_items, queued_job_items
+
         service = _service()
-        items = service.get_finished_job_items(job_id) if finished else service.get_queued_job_items(job_id)
+        items = finished_job_items(service, job_id) if finished else queued_job_items(service, job_id)
         if items is None:
             return {"error": f"No such job: {job_id}"}
         return {"job_id": job_id, "finished": finished, "items": items}
 
     def get_dashboard() -> dict[str, Any]:
         """Dashboard summary: pending counts by category plus queue state."""
-        return dict(_service().get_dashboard_summary())
+        from logic.stats.collector import get_dashboard_summary
+
+        return dict(get_dashboard_summary())
 
     def get_stats() -> dict[str, Any]:
         """Aggregate upload statistics."""
-        return dict(_service().get_statistics())
+        from logic.stats.collector import get_statistics
+
+        return dict(get_statistics())
 
     def list_indexers() -> dict[str, Any]:
         """Configured indexers. Never includes API keys or usernames."""
@@ -145,13 +151,13 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
 
     def get_recent_errors(limit: int = 25) -> dict[str, Any]:
         """Recent failed jobs and failed per-indexer uploads."""
-        from logic.services import get_recent_errors as _errors
+        from logic.jobs.views import get_recent_errors as _errors
 
         return {"errors": _errors(limit=max(1, min(int(limit), 200)))}
 
     def get_logs(lines: int = 100) -> dict[str, Any]:
         """Tail of the in-memory application log."""
-        from logic.services import console
+        from core.logging import console
 
         entries, _seq = console.get_tail(max(1, min(int(lines), 1000)))
         return {"logs": entries}

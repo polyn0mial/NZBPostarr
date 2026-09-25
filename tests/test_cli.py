@@ -4,12 +4,12 @@
 
 import shutil
 
-from logic import services as services_mod
+from logic import runtime as runtime_mod
 from tests.support import *
 
 
 class _FakeQueueService:
-    """Minimal stand-in for UploadService exposing only the queue methods the CLI calls."""
+    """Minimal stand-in for JobEngine exposing only the queue methods the CLI calls."""
 
     def __init__(self, jobs=None, control=None):
         self.jobs = list(jobs or [])
@@ -191,11 +191,11 @@ def test_cmd_upload_invalid_category_json(monkeypatch, capsys) -> None:
 
 
 def test_cmd_upload_json_success(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
 
     monkeypatch.setattr(registry_mod, "get_available_categories", lambda: [{"id": "tv"}])
 
-    class _FakeUploadService:
+    class _FakeJobEngine:
         def run_job_sync(self, **_kwargs):
             return {
                 "status": "completed",
@@ -203,7 +203,7 @@ def test_cmd_upload_json_success(monkeypatch, capsys) -> None:
                 "summary": {"duration": "1m 2s", "processed": "2/2", "skipped": 0},
             }
 
-    monkeypatch.setattr(services, "get_upload_service", lambda: _FakeUploadService())
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: _FakeJobEngine())
 
     rc = cli_upload.cmd_upload(
         SimpleNamespace(
@@ -466,7 +466,7 @@ def test_cmd_system_check_error_and_stop_timeout_return_nonzero(monkeypatch, cap
     check_payload = json.loads(capsys.readouterr().out)
 
     service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
-    monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
+    monkeypatch.setattr(runtime_mod, "ensure_engine_started", lambda: service)
     stop_rc = cli_system.cmd_system(
         SimpleNamespace(
             system_command="stop-all",
@@ -494,7 +494,7 @@ def test_cmd_system_restart_uses_managed_daemon_lifecycle(monkeypatch, capsys) -
             return {"timed_out": False, "stopped": 1}
 
     monkeypatch.setattr(updater, "check_for_updates", lambda: {"update_available": True})
-    monkeypatch.setattr(services_mod, "get_upload_service", lambda: Service())
+    monkeypatch.setattr(runtime_mod, "ensure_engine_started", lambda: Service())
     monkeypatch.setattr(cli_system, "_managed_daemon_is_running", lambda: True)
     monkeypatch.setattr(
         cli_system,
@@ -530,7 +530,7 @@ def test_cmd_system_restart_uses_managed_daemon_lifecycle(monkeypatch, capsys) -
 
 def test_cmd_system_restart_timeout_requires_force(monkeypatch, capsys) -> None:
     service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
-    monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
+    monkeypatch.setattr(runtime_mod, "ensure_engine_started", lambda: service)
     monkeypatch.setattr(
         cli_system,
         "_managed_daemon_is_running",
@@ -559,7 +559,7 @@ def test_cmd_system_restart_timeout_requires_force(monkeypatch, capsys) -> None:
 def test_cmd_system_restart_force_proceeds_after_timeout(monkeypatch, capsys) -> None:
     calls: list[float] = []
     service = SimpleNamespace(stop_all_jobs_and_wait=lambda **_kwargs: {"timed_out": True})
-    monkeypatch.setattr(services_mod, "get_upload_service", lambda: service)
+    monkeypatch.setattr(runtime_mod, "ensure_engine_started", lambda: service)
     monkeypatch.setattr(cli_system, "_managed_daemon_is_running", lambda: True)
     monkeypatch.setattr(
         cli_system,
@@ -739,19 +739,28 @@ def test_cmd_indexers_json_and_exit_code(monkeypatch, capsys) -> None:
 # ============================================================
 
 
-def test_cmd_queue_status_json(monkeypatch, capsys) -> None:
-    from logic import services
+def test_cmd_queue_status_json(monkeypatch, capsys, tmp_path) -> None:
+    from logic import runtime
 
-    jobs = [
-        {"job_id": "j1", "status": "running", "category": "tv", "progress": "Uploading"},
-        {"job_id": "j2", "status": "queued", "category": "movies", "priority": 0, "started_at": "2026-01-01"},
-        {"job_id": "j3", "status": "completed", "category": "misc"},
-    ]
-    fake_service = _FakeQueueService(
-        jobs=jobs,
-        control={"paused": False, "active": {"job_id": "j1", "status": "running", "category": "tv"}},
+    state_file = tmp_path / "data" / "state" / "job_queue_state.json"
+    state_file.parent.mkdir(parents=True)
+    state_file.write_text(
+        json.dumps(
+            {
+                "queue_processing_paused": False,
+                "jobs": [
+                    {"job_id": "j1", "status": "paused", "category": "tv", "progress": "Paused by user"},
+                    {"job_id": "j2", "status": "queued", "category": "movies", "priority": 0, "started_at": "2026-01-01"},
+                    {"job_id": "j3", "status": "completed", "category": "misc"},
+                ],
+            }
+        ),
+        encoding="utf-8",
     )
-    monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
+    before = state_file.read_text(encoding="utf-8")
+    monkeypatch.setattr(config_mod, "get_config", lambda: SimpleNamespace(script_dir=tmp_path))
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: pytest.fail("queue status must not start the engine"))
+    monkeypatch.setattr(runtime, "get_engine", lambda: pytest.fail("queue status must not build the engine"))
 
     rc = cli_queue.cmd_queue(SimpleNamespace(json=True))  # no queue_command -> defaults to status
 
@@ -762,13 +771,15 @@ def test_cmd_queue_status_json(monkeypatch, capsys) -> None:
     assert payload["queued"][0]["job_id"] == "j2"
     assert payload["finished"][0]["job_id"] == "j3"
     assert payload["control"]["paused"] is False
+    assert payload["control"]["active"]["job_id"] == "j1"
+    assert state_file.read_text(encoding="utf-8") == before
 
 
 def test_cmd_queue_pause_and_resume(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
 
     fake_service = _FakeQueueService()
-    monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: fake_service)
 
     rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="pause", json=True))
     assert rc == 0
@@ -785,10 +796,10 @@ def test_cmd_queue_pause_and_resume(monkeypatch, capsys) -> None:
 
 
 def test_cmd_queue_stop_and_stop_clear(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
 
     fake_service = _FakeQueueService()
-    monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: fake_service)
 
     rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="stop", clear=False, json=True))
     assert rc == 0
@@ -806,10 +817,10 @@ def test_cmd_queue_stop_and_stop_clear(monkeypatch, capsys) -> None:
 
 
 def test_cmd_queue_clear_and_revalidate(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
 
     fake_service = _FakeQueueService()
-    monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: fake_service)
 
     rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="clear", json=True))
     assert rc == 0
@@ -829,10 +840,10 @@ def test_cmd_queue_clear_and_revalidate(monkeypatch, capsys) -> None:
 
 
 def test_cmd_queue_job_pause_resume_not_found(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
 
     fake_service = _FakeQueueService()
-    monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: fake_service)
 
     rc = cli_queue.cmd_queue(SimpleNamespace(queue_command="job", job_command="pause", job_id="job-ok", json=True))
     assert rc == 0
@@ -846,10 +857,10 @@ def test_cmd_queue_job_pause_resume_not_found(monkeypatch, capsys) -> None:
 
 
 def test_cmd_queue_job_stop_retry_promote(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
 
     fake_service = _FakeQueueService()
-    monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: fake_service)
 
     rc = cli_queue.cmd_queue(
         SimpleNamespace(queue_command="job", job_command="stop", job_id="job-ok", clear=False, json=True)
@@ -918,11 +929,11 @@ def test_cmd_logs_empty_buffer_human_output(capsys) -> None:
 
 
 def test_run_headless_dispatches_queue_and_logs(monkeypatch, capsys) -> None:
-    from logic import services
+    from logic import runtime
 
-    monkeypatch.setattr(services, "init_app", lambda: None)
+    monkeypatch.setattr(runtime, "init_core", lambda: None)
     fake_service = _FakeQueueService()
-    monkeypatch.setattr(services, "get_upload_service", lambda: fake_service)
+    monkeypatch.setattr(runtime, "ensure_engine_started", lambda: fake_service)
 
     rc = cli_run.run_headless(["queue", "status", "--json"])
     assert rc == 0

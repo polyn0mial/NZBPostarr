@@ -13,7 +13,8 @@ from api.deps import _filter_bulk_selectable_items, _log_selected_payload, _norm
 from core.config import get_config
 from logic import processing
 from logic.jobs.models import ProcessingJobRequest
-from logic.services import get_upload_service, UploadService
+from logic.jobs.engine import JobEngine
+from logic.runtime import ensure_engine_started
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -21,7 +22,7 @@ router = APIRouter(prefix="/api/uploads", tags=["uploads"])
 @router.post("/queue/items")
 async def add_queue_items(
     req: AddQueueItemsRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Add items to the upload queue (from the pending page)."""
     if not req.items:
@@ -36,7 +37,7 @@ async def add_queue_items(
             detail="All selected items belong to folders excluded from mass selection",
         )
     _log_selected_payload("QUEUE", selected_items)
-    added = service.add_queue_items(selected_items)
+    added = service.staging.add(selected_items)
     logger.info(
         f"[QUEUE] Staging request received {len(req.items)} item(s); "
         f"added={len(added)} skipped={len(selected_items) - len(added)} bulk_excluded={excluded_count}"
@@ -45,17 +46,17 @@ async def add_queue_items(
         "status": "added",
         "added": len(added),
         "items": added,
-        "total": len(service.get_queue_items()),
+        "total": len(service.staging.list_items()),
         "bulk_excluded": excluded_count,
     }
 
 @router.post("/queue/preview")
 async def preview_queue(
     req: StartQueueRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Preview the staged queue without removing items or creating a job."""
-    items = service.get_queue_items()
+    items = service.staging.list_items()
     preview = await _preview_selected_items(
         list(items),
         enable_duplicate_check=req.enable_duplicate_check,
@@ -90,38 +91,38 @@ class StartQueueRequest(BaseModel):
 
 @router.get("/queue/items")
 def get_queue_items(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Retrieve all items in the upload queue."""
-    items = service.get_queue_items()
+    items = service.staging.list_items()
     return {"items": items, "count": len(items)}
 
 @router.delete("/queue/items/{item_id}")
 async def remove_queue_item(
     item_id: int,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Remove a single item from the queue."""
-    if service.remove_queue_item(item_id):
+    if service.staging.remove(item_id):
         return {"status": "removed", "item_id": item_id}
     raise HTTPException(status_code=404, detail="Queue item not found")
 
 @router.post("/queue/items/clear")
 async def clear_queue_items(
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Clear all items from the upload queue."""
-    cleared = service.clear_queue_items()
+    cleared = service.staging.clear()
     return {"cleared": cleared}
 
 @router.post("/queue/items/{item_id}/start")
 async def force_start_queue_item(
     item_id: int,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Remove a single item from the queue and immediately start a force-upload job for it."""
     # Find and remove the item from the queue
-    items = service.get_queue_items()
+    items = service.staging.list_items()
     target = None
     for qi in items:
         if qi["id"] == item_id:
@@ -142,7 +143,7 @@ async def force_start_queue_item(
         reuse_running=False,
         source="queue-item-start",
     )
-    if not service.remove_queue_item(item_id):
+    if not service.staging.remove(item_id):
         logger.warning(f"[QUEUE-ITEM-START] Started job {jid} but could not remove staged item {item_id}")
     return {"status": "started", "job_id": jid, "item": target}
 
@@ -173,10 +174,10 @@ async def _preview_selected_items(
 @router.put("/queue/items/reorder")
 async def reorder_queue_items(
     req: ReorderQueueRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Reorder queue items. Provide all item IDs in the desired order."""
-    if service.reorder_queue_items(req.item_ids):
+    if service.staging.reorder(req.item_ids):
         return {"status": "reordered"}
     raise HTTPException(
         status_code=400,
@@ -186,7 +187,7 @@ async def reorder_queue_items(
 @router.post("/queue/start")
 async def start_queue(
     req: StartQueueRequest,
-    service: UploadService = Depends(get_upload_service),
+    service: JobEngine = Depends(ensure_engine_started),
 ) -> Dict[str, Any]:
     """Process all queued items as one unified upload job."""
     try:

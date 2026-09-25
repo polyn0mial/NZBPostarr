@@ -7,8 +7,8 @@ import tarfile
 from tests.support import *
 
 from logic.pending import overrides as pending_overrides
-from logic.queueing import ProcessingJobRequest as _RealProcessingJobRequest
-from logic.services import UploadService
+from logic.jobs.models import ProcessingJobRequest as _RealProcessingJobRequest
+from logic.jobs.engine import JobEngine
 
 
 # app-routes-02: DELETE /api/uploads/queue/{job_id}/active-items
@@ -53,11 +53,11 @@ def test_remove_active_job_item_route_reports_why_it_failed() -> None:
 
 
 @pytest.mark.skipif(
-    not hasattr(UploadService, "remove_active_job_item"),
-    reason="contract: queue-processing adds UploadService.remove_active_job_item(job_id, path) -> bool",
+    not hasattr(JobEngine, "remove_active_job_item"),
+    reason="contract: queue-processing adds JobEngine.remove_active_job_item(job_id, path) -> bool",
 )
 def test_upload_service_implements_remove_active_job_item() -> None:
-    assert callable(UploadService.remove_active_job_item)
+    assert callable(JobEngine.remove_active_job_item)
 
 
 # app-routes-03: POST /api/system/backup/create

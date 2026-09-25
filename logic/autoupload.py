@@ -137,9 +137,9 @@ def _resolve_monitored_category(configured_category: str, item_path: Path, folde
 def _trigger_uploads(folder_path: str, item_categories: Dict[str, str]) -> None:
     """Start explicit-path upload jobs grouped by auto-detected category."""
     try:
-        from logic.services import get_upload_service
+        from logic.runtime import ensure_engine_started
 
-        service = get_upload_service()
+        service = ensure_engine_started()
         grouped_paths: Dict[str, list[str]] = {}
         for item_name, configured_category in item_categories.items():
             item_path = Path(folder_path) / item_name

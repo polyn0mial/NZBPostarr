@@ -9,15 +9,19 @@ from typing import Any
 from cli.output import _emit_result
 
 
-def _cmd_queue_status(args: argparse.Namespace, service: Any) -> int:
+def _cmd_queue_status(args: argparse.Namespace) -> int:
     """Show running/queued/finished jobs and the queue-pause state.
 
-    Shares build_queue_snapshot with GET /queue so the CLI and the WebUI can
+    Reads the persisted job state without building the engine, so it never starts the
+    scheduler. Shares build_queue_snapshot with GET /queue so the CLI and the WebUI can
     never disagree about how a job is classified.
     """
-    from logic.services import build_queue_snapshot
+    from core.config import get_config
+    from logic.jobs.store import JobStore, state_paths
+    from logic.jobs.views import PersistedQueue, build_queue_snapshot
 
-    payload = build_queue_snapshot(service)
+    jobs, paused = JobStore(*state_paths(get_config().script_dir)).load_readonly()
+    payload = build_queue_snapshot(PersistedQueue(jobs, paused=paused))
     running = payload["running"]
     queued = payload["queued"]
     finished = payload["finished"]
@@ -147,16 +151,16 @@ def cmd_queue_job(args: argparse.Namespace, service: Any) -> int:
 def cmd_queue(args: argparse.Namespace) -> int:
     """Inspect or control the shared upload queue (mirrors the /queue routes).
 
-    Every action here calls the same UploadService/QueueServiceMixin methods
+    Every action here calls the same JobEngine methods
     that app.py's /queue and /jobs routes call - no queue logic lives here.
     """
-    from logic.services import get_upload_service
-
-    service = get_upload_service()
     action = getattr(args, "queue_command", None) or "status"
-
     if action == "status":
-        return _cmd_queue_status(args, service)
+        return _cmd_queue_status(args)
+
+    from logic.runtime import ensure_engine_started
+
+    service = ensure_engine_started()
 
     if action == "pause":
         service.pause_queue(pause_active=True)

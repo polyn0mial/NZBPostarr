@@ -4,7 +4,8 @@
 
 from tests.support import *
 
-from logic import queueing_base
+import importlib.util
+
 from tests.characterization.test_surface import _route_table
 
 _REMOVED_ROUTES = {
@@ -72,5 +73,11 @@ def test_old_config_with_removed_keys_still_loads(tmp_path, monkeypatch) -> None
     ]
 
 
-def test_queueing_uses_the_classifier_season_folder_predicate() -> None:
-    assert queueing_base.looks_like_generic_tv_season_folder is classify_names.looks_like_generic_tv_season_folder
+def test_queue_engine_keeps_no_copy_of_the_classifier_season_folder_predicate() -> None:
+    # W12-B12 dissolved logic/queueing*.py and logic/services.py into logic/jobs/.
+    for removed in ("logic.services", "logic.queueing", "logic.queueing_base"):
+        assert importlib.util.find_spec(removed) is None, removed
+    for module in ("engine", "staging", "executors", "views"):
+        source = (REPO_ROOT / "logic" / "jobs" / f"{module}.py").read_text(encoding="utf-8")
+        assert "def looks_like_generic_tv_season_folder" not in source, module
+    assert callable(classify_names.looks_like_generic_tv_season_folder)

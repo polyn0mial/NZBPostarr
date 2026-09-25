@@ -415,9 +415,9 @@ class _StreamMonitorEventHandler(FileSystemEventHandler):  # type: ignore[misc]
 
 def _queue_monitored_stream(entry: dict[str, Any], nzb_path: Path) -> None:
     try:
-        from logic.services import UploadService
+        from logic.runtime import ensure_engine_started
 
-        service = UploadService()
+        service = ensure_engine_started()
         job_id = service.start_usenet_stream_job(
             category=resolve_stream_category(nzb_path, entry.get("category")),
             stream_source_path=str(nzb_path),

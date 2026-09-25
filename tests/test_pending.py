@@ -16,7 +16,7 @@ def test_start_upload_job_rejects_empty_explicit_path_request(tmp_path) -> None:
         )
 
 def test_queue_start_filters_misc_and_missing_category_but_runs_valid_items(tmp_path, monkeypatch) -> None:
-    from logic import queueing
+    from logic.jobs import engine as engine_mod
 
     movie = tmp_path / "Movie.Title.(1993).mkv"
     special = tmp_path / "Show.Name.S00E01.Special.mkv"
@@ -42,8 +42,7 @@ def test_queue_start_filters_misc_and_missing_category_but_runs_valid_items(tmp_
         return "job-fixed-queue"
 
     service.start_processing_job_request = fake_start_processing_job_request
-    monkeypatch.setattr(queueing.database, "db_remove_queue_items", lambda item_ids: len(item_ids))
-    service.get_queue_items = lambda: list(service._queue_items)
+    monkeypatch.setattr(engine_mod.database, "db_remove_queue_items", lambda item_ids: len(item_ids))
 
     result = service.start_queue_with_details(source="queue-start", enable_duplicate_check=True, test_mode=False)
 
@@ -55,11 +54,11 @@ def test_queue_start_filters_misc_and_missing_category_but_runs_valid_items(tmp_
         "remaining_staged": 1,
     }
     request = captured["request"]
-    assert isinstance(request, queueing.ProcessingJobRequest)
+    assert isinstance(request, engine_mod.ProcessingJobRequest)
     assert request.category == "mixed"
     assert request.paths == (str(movie), str(special))
     assert tuple(item["category"] for item in request.item_hints) == ("movies", "tv")
-    assert service._queue_items == [
+    assert service.staging.items == [
         {"id": 3, "path": str(misc), "category": "misc", "itype": "Misc", "name": misc.name}
     ]
 
@@ -1552,8 +1551,8 @@ def test_pending_items_anime_check_start_behavior(monkeypatch) -> None:
         else:
             assert started == [], case_name
 
-def test_upload_service_dashboard_summary_uses_pending_index_state(monkeypatch) -> None:
-    from logic import services as services_mod
+def test_dashboard_summary_uses_pending_index_state(monkeypatch) -> None:
+    from logic.stats import collector
 
     cases = [
         (
@@ -1607,17 +1606,17 @@ def test_upload_service_dashboard_summary_uses_pending_index_state(monkeypatch) 
     ]
 
     monkeypatch.setattr(
-        services_mod, "get_config", lambda: SimpleNamespace(poster_name="Poster", ui_refresh_seconds=2, nntp_servers=[])
+        collector, "get_config", lambda: SimpleNamespace(poster_name="Poster", ui_refresh_seconds=2, nntp_servers=[])
     )
 
     for case_name, manager_state, stats_payload, expected_ready, expected_refresh_reason in cases:
         pending_manager = _make_pending_index_manager([manager_state])
-        service = _make_dashboard_summary_service()
+        collector.invalidate_statistics_cache()
 
-        monkeypatch.setattr(services_mod, "get_pending_index_manager", lambda: pending_manager)
-        monkeypatch.setattr(service, "get_statistics", lambda: stats_payload)
+        monkeypatch.setattr(collector, "get_pending_index_manager", lambda: pending_manager)
+        monkeypatch.setattr(collector, "get_statistics", lambda: stats_payload)
 
-        summary = service.get_dashboard_summary()
+        summary = collector.get_dashboard_summary()
         assert summary["summary_ready"] is expected_ready, case_name
         if expected_ready:
             assert summary["pending"]["tv"] == 1, case_name
@@ -1736,7 +1735,7 @@ def test_scan_pending_snapshot_external_dir_completion_rolls_up_from_deferred_ch
     assert children[0]["indexers"] == {"idx1": True}
 
 def test_folder_monitor_trigger_uploads_respects_configured_category(monkeypatch, tmp_path) -> None:
-    from logic import services as services_mod
+    from logic import runtime as runtime_mod
 
     monitored_dir = tmp_path / "movies"
     monitored_dir.mkdir()
@@ -1750,7 +1749,7 @@ def test_folder_monitor_trigger_uploads_respects_configured_category(monkeypatch
             started.append((grouped_paths, kwargs))
             return [{"job_id": "job-1", "category": "movies", "paths": grouped_paths["movies"]}]
 
-    monkeypatch.setattr(services_mod, "get_upload_service", lambda: _FakeService())
+    monkeypatch.setattr(runtime_mod, "ensure_engine_started", lambda: _FakeService())
     monkeypatch.setattr(autoupload, "detect_auto_category", lambda _path: "tv")
 
     autoupload._trigger_uploads(str(monitored_dir), {release_dir.name: "movies"})

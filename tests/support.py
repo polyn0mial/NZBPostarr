@@ -123,7 +123,7 @@ from cli.commands import status as cli_status
 from cli.commands import system as cli_system
 from cli.commands import upload as cli_upload
 
-from logic.services import ConsoleBuffer, console
+from core.logging import ConsoleBuffer, console
 
 from logic.stats_engine import format_seconds, parse_speed_to_bps
 
@@ -228,22 +228,22 @@ def _ignored_path_reasons(result) -> list[tuple[Path, str]]:
     return [(item.path, item.reason) for item in result.ignored_paths]
 
 def _make_queue_service_stub(tmp_path: Path, *, queue_items=None):
-    from logic import queueing
+    from logic.jobs import engine as engine_mod
 
-    service = object.__new__(queueing.QueueServiceMixin)
+    service = object.__new__(engine_mod.JobEngine)
     service._lock = threading.Lock()
     service._jobs = {}
     service._processes = {}
-    service._queue_items = list(queue_items or [])
+    service.staging = engine_mod.StagingQueue(service._lock, list(queue_items or []))
     service._queue_processing_paused = False
     service._jobs_state_path = tmp_path / "job_queue_state.json"
     service._jobs_state_backup_path = tmp_path / "job_queue_state.json.bak"
     return service
 
 def _make_upload_service_stub(*, jobs=None, queue_paused=False):
-    from logic.services import UploadService
+    from logic.jobs.engine import JobEngine
 
-    service = object.__new__(UploadService)
+    service = object.__new__(JobEngine)
     service._lock = threading.Lock()
     service._jobs = dict(jobs or {})
     service._processes = {}
@@ -471,15 +471,6 @@ def _make_pending_index_manager(states: list[dict[str, object]]):
             self.reasons.append(reason)
 
     return _FakeIndex(states)
-
-def _make_dashboard_summary_service():
-    from logic.services import UploadService
-
-    service = object.__new__(UploadService)
-    service._lock = threading.Lock()
-    service._stats_cache = {}
-    service._stats_cache_ts = 0.0
-    return service
 
 def _configure_pending_snapshot_environment(
     monkeypatch,

@@ -12,7 +12,11 @@ from logic.pending import rules as pending_rules
 from logic.pending import tree as pending_tree
 from logic import processing
 from logic.processing_g2 import _iter_work_items
-from logic.queueing_base import ProcessingJobRequest
+from logic.jobs import models as job_models
+from logic.jobs import requests as job_requests
+from logic.jobs import staging as job_staging
+from logic.jobs.models import ProcessingJobRequest
+from logic.jobs.revalidate import revalidation_targets
 
 
 def _touch_file(path: Path, data: bytes = b"x") -> Path:
@@ -247,8 +251,8 @@ def test_pause_keeps_lane_and_restored_pause_requeues_on_resume(tmp_path, monkey
     held = service._jobs["held"]
     assert held["status"] == "paused"
     assert held["progress"] == "Recovered after restart - paused."
-    assert service._snapshot_revalidation_targets(include_paused=True) == [
-        snap for snap in service._snapshot_revalidation_targets(include_paused=True) if snap["job_id"] == "waiting"
+    assert revalidation_targets(service._jobs.values(), True) == [
+        snap for snap in revalidation_targets(service._jobs.values(), True) if snap["job_id"] == "waiting"
     ]
 
     service._try_start_queued()
@@ -265,7 +269,7 @@ def test_remove_active_item_is_honoured_by_the_processing_loop(tmp_path) -> None
     service = _make_queue_service_stub(tmp_path)
     items = [_touch_file(tmp_path / f"Movie.{idx}.2026.mkv") for idx in range(3)]
     job = {"job_id": "active", "category": "movies", "status": "running", "started_at": "2026-01-01T00:00:00+00:00"}
-    service._set_job_target_paths(job, [str(path) for path in items])
+    job_models.set_job_target_paths(job, [str(path) for path in items])
     job.pop("_paths", None)  # launched jobs read target_paths
     service._jobs = {"active": job}
 
@@ -289,7 +293,7 @@ def test_remove_last_active_item_does_not_resurrect_the_original_list(tmp_path) 
     service = _make_queue_service_stub(tmp_path)
     items = [_touch_file(tmp_path / f"Movie.{idx}.2026.mkv") for idx in range(2)]
     job = {"job_id": "active", "category": "movies", "status": "paused", "started_at": "2026-01-01T00:00:00+00:00"}
-    service._set_job_target_paths(job, [str(path) for path in items])
+    job_models.set_job_target_paths(job, [str(path) for path in items])
     job.pop("_paths", None)
     service._jobs = {"active": job}
 
@@ -355,8 +359,6 @@ def test_force_upload_request_skips_pack_expansion(tmp_path, monkeypatch) -> Non
 
 def test_selected_season_folder_expands_into_pack_and_episodes(tmp_path) -> None:
     # queue-backend-01: pack row plus exactly the valid episodes; extras excluded.
-    from logic.queueing import QueueServiceMixin
-
     season = tmp_path / "Show.Name.S01.1080p.WEB-DL"
     ep2 = _touch_file(season / "Show.Name.S01E02.1080p.WEB-DL.mkv")
     ep1 = _touch_file(season / "Show.Name.S01E01.1080p.WEB-DL.mkv")
@@ -367,7 +369,7 @@ def test_selected_season_folder_expands_into_pack_and_episodes(tmp_path) -> None
         item_hints=({"path": str(season), "category": "tv", "itype": "TV Show"},),
     )
 
-    expanded = QueueServiceMixin._expand_explicit_pack_request_paths(request)
+    expanded = job_requests.expand_explicit_pack_request_paths(request)
 
     assert list(expanded.paths) == [str(season), str(ep1), str(ep2)]
     assert [hint["queue_category_source"] for hint in expanded.item_hints] == [
@@ -379,8 +381,6 @@ def test_selected_season_folder_expands_into_pack_and_episodes(tmp_path) -> None
 
 def test_queue_start_collapses_selected_pack_children_without_injecting_episodes(tmp_path) -> None:
     # queue-backend-03/04
-    from logic.queueing import QueueServiceMixin
-
     season = tmp_path / "Show.Name.S01.1080p.WEB-DL"
     ep1 = _touch_file(season / "Show.Name.S01E01.1080p.WEB-DL.mkv")
     _touch_file(season / "Show.Name.S01E02.1080p.WEB-DL.mkv")
@@ -389,7 +389,7 @@ def test_queue_start_collapses_selected_pack_children_without_injecting_episodes
         {"path": str(ep1), "category": "tv", "itype": "TV Episode"},
     ]
 
-    summary = QueueServiceMixin._prepare_queue_start_items(items)
+    summary = job_staging.prepare_start_items(items)
 
     assert [item["path"] for item in summary.runnable_items] == [str(season)]
 

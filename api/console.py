@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import FileResponse
 
-from logic.services import console
+from core.logging import console
 
 
 router = APIRouter(prefix="/api/console", tags=["console"])

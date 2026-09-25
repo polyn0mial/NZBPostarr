@@ -83,13 +83,15 @@ REAPER_INTERVAL_MINUTES: int = 10
 def _get_protected_pids() -> Set[int]:
     """Return PIDs of subprocesses registered with an active upload job.
 
-    These are managed by UploadService._processes and must NOT be killed.
+    These are managed by JobEngine._processes and must NOT be killed.
     """
     protected: Set[int] = set()
     try:
-        from logic.services import UploadService
+        from logic.runtime import ensure_engine_started
 
-        svc = UploadService()
+        # The boot reaper scan is the engine's first use at startup, so restored queued
+        # work starts here as it did before the runtime split (start-at-boot is the owner's call).
+        svc = ensure_engine_started()
         with svc._lock:
             for job_id, procs in svc._processes.items():
                 job = svc._jobs.get(job_id, {})
@@ -111,7 +113,7 @@ def _get_protected_pids() -> Set[int]:
                         except (TypeError, ValueError):
                             pass
     except Exception as exc:
-        logger.debug(f"[reaper] Could not read UploadService state: {exc}")
+        logger.debug(f"[reaper] Could not read job engine state: {exc}")
     return protected
 
 
@@ -394,7 +396,7 @@ def reap_all_tools(include_active: bool = False) -> Dict[str, Any]:
 #  Tracked process audit (in-memory Popen objects)
 # =====================================================================
 def audit_tracked_processes() -> Dict[str, Any]:
-    """Check UploadService._processes for dead Popen objects and clean them up.
+    """Check JobEngine._processes for dead Popen objects and clean them up.
 
     This handles the case where a Popen was registered but its owning thread
     crashed before unregistering it.
@@ -402,9 +404,9 @@ def audit_tracked_processes() -> Dict[str, Any]:
     result: Dict[str, Any] = {"cleaned": 0, "active": 0, "jobs_checked": 0}
 
     try:
-        from logic.services import UploadService
+        from logic.runtime import ensure_engine_started
 
-        svc = UploadService()
+        svc = ensure_engine_started()
         with svc._lock:
             dead_entries: List[tuple[Any, Any]] = []
 
