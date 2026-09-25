@@ -84,5 +84,6 @@ dev = [
   "ruff==0.14.10",
   "mypy==2.1.0",
   "types-psutil==7.2.2.20260518",
+  "types-PyYAML==6.0.12.20250915",
   "pip-audit==2.10.1",
 ]
