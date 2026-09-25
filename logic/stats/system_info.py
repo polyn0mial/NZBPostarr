@@ -7,6 +7,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 import psutil
+from loguru import logger
 
 from logic.stats import collector
 from logic.stats.collector import _B_IN_GIB, _B_IN_MIB
@@ -36,8 +37,8 @@ def _get_1h_network_delta() -> Tuple[float, float]:
                 sent_delta if sent_delta > 0 else 0,
                 recv_delta if recv_delta > 0 else 0,
             )
-    except Exception:
-        pass
+    except (KeyError, TypeError, RuntimeError) as e:
+        logger.debug(f"1h network delta unavailable: {e}")
     return (0, 0)
 
 

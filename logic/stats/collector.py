@@ -246,8 +246,8 @@ def sync_collector_schedule() -> None:
 
     try:
         scheduler.remove_job(job_id)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Stats prune job not removed (not scheduled): {e}")
 
 
 def parse_speed_to_bps(speed_str: str) -> float:
@@ -302,8 +302,8 @@ def _refresh_active_connection_count(connections_tracking_enabled: bool) -> None
                         if len(parts) > 2:
                             _NETWORK_SPEED["connections"] = int(parts[2])
                             break
-        except Exception:
-            pass
+        except (OSError, ValueError) as e:
+            logger.debug(f"Reading /proc/net/sockstat failed: {e}")
     else:
         try:
             _NETWORK_SPEED["connections"] = len(psutil.net_connections(kind="inet"))
@@ -536,8 +536,8 @@ async def stop_collector() -> None:
         from core.scheduler import get_scheduler
 
         get_scheduler().remove_job("prune_system_stats")
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Stats prune job not removed on stop: {e}")
 
     # Flush recent ring buffer snapshots to DB for restart persistence
     try:
