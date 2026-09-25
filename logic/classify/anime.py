@@ -1,19 +1,4 @@
-"""
-Jikan-backed anime identification cache.
-
-Queries the free Jikan v4 API (MyAnimeList proxy) to determine whether a
-given show title is an anime.  Results are cached persistently in a JSON
-file so repeated scans never re-query the same title.
-
-Rate-limit compliance
-─────────────────────
-Jikan allows **3 requests / second** and **60 requests / minute**.
-We enforce both limits with a simple token-bucket approach:
-  • A deque of recent request timestamps gates the per-second burst.
-  • A counter + minute-window gates the per-minute budget.
-If the budget is exhausted the lookup returns ``None`` (unknown) and the
-caller should fall back to the non-anime classification.
-"""
+"""Anime verdicts: the persistent Jikan-backed cache and the cached lookup the classifier uses."""
 
 from __future__ import annotations
 
@@ -24,17 +9,33 @@ import time
 import unicodedata
 from collections import deque
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Callable, Dict, Mapping, Optional, Set, Tuple
 
 import requests
 from loguru import logger
 
+from core.utils import VIDEO_EXTENSIONS
+from logic.classify.patterns import (
+    _ANIME_EXTRA_RE,
+    _ANIME_LOOKUP_CLEAN_RE,
+    _ANIME_SEASONAL_FOLDER_RE,
+    _AUTO_ANIME_FANSUB_RE,
+    _AUTO_YEAR_TOKEN_RE,
+    _EXPLICIT_EPISODE_RE,
+    _GENERIC_ANIME_FOLDER_RE,
+    _SERIES_SIGNATURE_STRIP_RE,
+)
+from logic.classify.walk import _iter_video_candidates
+
+
 # ── Jikan API ───────────────────────────────────────────────────────────────
 _JIKAN_SEARCH_URL = "https://api.jikan.moe/v4/anime"
+
 _REQ_TIMEOUT = 8  # seconds
 
 # ── Rate-limit constants ────────────────────────────────────────────────────
 _MAX_PER_SECOND = 3
+
 _MAX_PER_MINUTE = 60
 
 # ── Module-level state (thread-safe via _lock) ──────────────────────────────
@@ -51,25 +52,33 @@ _CACHE_VERSION = 8
 # we require a much higher bar - only genuinely famous franchise titles
 # like Demon Slayer (8.4) or Jujutsu Kaisen (8.7) should clear it.
 _MIN_SCORE_2WORD = 7.0  # primary title has word overlap with query
+
 _MIN_SCORE_2WORD_ENG_ONLY = 8.0  # match is only on english/alt title
+
 _MIN_MEMBERS_2WORD_UNSCORED = 20_000  # unscored, primary overlap
+
 _MIN_MEMBERS_2WORD_ENG_ONLY = 100_000  # unscored, english-only match
 
 _lock = threading.Lock()
+
 _cache: Dict[str, bool] = {}  # normalised_name → is_anime
+
 _cache_loaded = False
+
 _cache_path: Optional[Path] = None
 
 # Token-bucket timestamps
 _second_window: deque[float] = deque()  # timestamps of last N requests
+
 _minute_window: deque[float] = deque()
 
 # ── Helpers ────────────────────────────────────────────────────────────────
 _PUNC_RE = re.compile(r"[^\w\s]")
+
 _RELEASE_YEAR_RE = re.compile(r"(?:^|[.\s_(-])((?:19|20)\d{2})(?=$|[.\s_)-])")
+
 # Common English articles/prepositions excluded from word-overlap scoring
 _STOPWORDS = frozenset({"a", "an", "the", "of", "in", "on", "at", "to", "and", "or", "is", "for", "no"})
-
 
 def _fold_latin_diacritics(value: str) -> str:
     """Fold Latin accents without altering non-Latin scripts."""
@@ -84,17 +93,14 @@ def _fold_latin_diacritics(value: str) -> str:
         folded.append(char)
     return unicodedata.normalize("NFC", "".join(folded))
 
-
 def _strip_punc(s: str) -> str:
     """Remove punctuation and collapse whitespace for fuzzy title comparison."""
     folded = _fold_latin_diacritics(s)
     return re.sub(r"\s+", " ", _PUNC_RE.sub(" ", folded)).strip()
 
-
 def _content_words(s: str) -> list[str]:
     """Return significant (non-stopword) words from a cleaned title string."""
     return [w for w in _strip_punc(s.lower()).split() if w not in _STOPWORDS]
-
 
 def _title_matches(query: str, candidate: str) -> bool:
     """Return True when *query* and *candidate* refer to the same title.
@@ -142,7 +148,6 @@ def _title_matches(query: str, candidate: str) -> bool:
     c_coverage = len(common) / len(c_set)
     return q_coverage >= 0.75 and c_coverage >= 0.75
 
-
 # ── Name normalisation ──────────────────────────────────────────────────────
 _STRIP_TAGS_RE = re.compile(
     r"(?:"
@@ -154,8 +159,8 @@ _STRIP_TAGS_RE = re.compile(
     r")",
     re.IGNORECASE,
 )
-_SEPARATOR_RE = re.compile(r"[.\-_]+")
 
+_SEPARATOR_RE = re.compile(r"[.\-_]+")
 
 def _normalise_title(raw: str) -> str:
     """Strip structural metadata from a release name to get a searchable title.
@@ -205,24 +210,20 @@ def _normalise_title(raw: str) -> str:
 
     return name
 
-
 def _cache_key(title: str) -> str:
     """Consistent lowercase key for the cache dict."""
     return _strip_punc(title.strip().casefold())
-
 
 def _release_year(raw_name: str) -> Optional[int]:
     """Return the last release-year token carried by a raw release name."""
     matches = _RELEASE_YEAR_RE.findall(str(raw_name or ""))
     return int(matches[-1]) if matches else None
 
-
 def _cache_key_for_release(raw_name: str, title: str) -> str:
     """Keep year-specific verdicts from affecting another release of a title."""
     key = _cache_key(title)
     year = _release_year(raw_name)
     return f"{key}::{year}" if year is not None else key
-
 
 def _jikan_entry_year(entry: Mapping[str, Any]) -> Optional[int]:
     """Read a production year from the fields returned by Jikan v4."""
@@ -240,10 +241,6 @@ def _jikan_entry_year(entry: Mapping[str, Any]) -> Optional[int]:
             return int(match.group(1))
     return None
 
-
-# ── Persistence ─────────────────────────────────────────────────────────────
-
-
 def _get_cache_path() -> Path:
     """Return the path to the anime cache JSON file."""
     global _cache_path
@@ -252,7 +249,6 @@ def _get_cache_path() -> Path:
 
         _cache_path = APP_ROOT / "data" / "cache" / "anime.json"
     return _cache_path
-
 
 def _load_cache() -> None:
     """Load the cache from disk (called once on first access).
@@ -287,7 +283,6 @@ def _load_cache() -> None:
             _cache = {}
     _cache_loaded = True
 
-
 def _save_cache() -> None:
     """Persist the cache to disk (includes version stamp)."""
     path = _get_cache_path()
@@ -297,10 +292,6 @@ def _save_cache() -> None:
             json.dump({"__version__": _CACHE_VERSION, **_cache}, f, indent=2)
     except Exception as e:
         logger.warning(f"Failed to save anime cache: {e}")
-
-
-# ── Rate limiting ───────────────────────────────────────────────────────────
-
 
 def _can_request() -> bool:
     """Check whether we can make another Jikan request within limits."""
@@ -314,13 +305,11 @@ def _can_request() -> bool:
 
     return len(_second_window) < _MAX_PER_SECOND and len(_minute_window) < _MAX_PER_MINUTE
 
-
 def _record_request() -> None:
     """Record that a request was made."""
     now = time.monotonic()
     _second_window.append(now)
     _minute_window.append(now)
-
 
 def _wait_for_slot() -> bool:
     """Block (up to ~2 s) until a rate-limit slot opens, or give up.
@@ -332,10 +321,6 @@ def _wait_for_slot() -> bool:
             return True
         time.sleep(0.1)
     return False
-
-
-# ── Jikan lookup ────────────────────────────────────────────────────────────
-
 
 def _jikan_short_title_hit(
     entry: dict[str, Any],
@@ -411,7 +396,6 @@ def _jikan_short_title_hit(
     )
     return False
 
-
 def _query_jikan(title: str, *, release_year: Optional[int] = None) -> Optional[bool]:
     """Query Jikan to determine if *title* is an anime.
 
@@ -480,10 +464,6 @@ def _query_jikan(title: str, *, release_year: Optional[int] = None) -> Optional[
         logger.debug(f"Jikan request failed for '{title}': {e}")
         return None
 
-
-# ── Public API ──────────────────────────────────────────────────────────────
-
-
 def is_anime(raw_name: str) -> Optional[bool]:
     """Check whether *raw_name* (release/folder name) is an anime title.
 
@@ -518,7 +498,6 @@ def is_anime(raw_name: str) -> Optional[bool]:
         logger.debug(f"Anime cache: '{title}' → {'anime' if result else 'not anime'}")
 
     return result
-
 
 def check_titles_batch(raw_names: list[str]) -> Dict[str, Optional[bool]]:
     """Check multiple titles, respecting rate limits.
@@ -559,7 +538,6 @@ def check_titles_batch(raw_names: list[str]) -> Dict[str, Optional[bool]]:
         _save_cache()
     return results
 
-
 def get_cached(raw_name: str) -> Optional[bool]:
     """Return cached anime status without making any network requests.
 
@@ -572,7 +550,6 @@ def get_cached(raw_name: str) -> Optional[bool]:
             return None
         return _cache.get(_cache_key_for_release(raw_name, title))
 
-
 def set_cached(raw_name: str, value: bool) -> bool:
     """Persist a user-confirmed anime verdict for one normalized release."""
     with _lock:
@@ -583,7 +560,6 @@ def set_cached(raw_name: str, value: bool) -> bool:
         _cache[_cache_key_for_release(raw_name, title)] = bool(value)
         _save_cache()
         return True
-
 
 def invalidate(raw_name: str) -> bool:
     """Remove one cached anime verdict without affecting other releases."""
@@ -598,3 +574,108 @@ def invalidate(raw_name: str) -> bool:
         del _cache[key]
         _save_cache()
         return True
+
+def _is_non_episode_anime_extra(name: str) -> bool:
+    stem = Path(name).stem
+    return bool(_ANIME_EXTRA_RE.search(stem)) and not _EXPLICIT_EPISODE_RE.search(stem)
+
+def _series_signature(name: str) -> str:
+    stem = Path(name).stem
+    stem = _AUTO_ANIME_FANSUB_RE.sub("", stem)
+    metadata_match = _SERIES_SIGNATURE_STRIP_RE.search(stem)
+    if metadata_match:
+        stem = stem[: metadata_match.start()]
+    decomposed = unicodedata.normalize("NFKD", stem)
+    stem = "".join(char for char in decomposed if not unicodedata.combining(char))
+    stem = re.sub(r"[^a-zA-Z0-9]+", " ", stem)
+    stem = re.sub(r"\b\d{1,3}(?:v\d+)?\b", " ", stem)
+    cleaned = re.sub(r"\s+", " ", stem).strip().lower()
+    if not cleaned:
+        return ""
+    return " ".join(cleaned.split()[:5])
+
+def _normalize_lookup_title(value: str) -> str:
+    stem = Path(str(value or "")).stem
+    stem = _AUTO_ANIME_FANSUB_RE.sub("", stem)
+    metadata_match = _ANIME_LOOKUP_CLEAN_RE.search(stem)
+    if metadata_match:
+        stem = stem[: metadata_match.start()]
+    stem = re.sub(r"\b\d{1,3}(?:v\d+)?\b", " ", stem)
+    decomposed = unicodedata.normalize("NFKD", stem)
+    stem = "".join(char for char in decomposed if not unicodedata.combining(char))
+    stem = re.sub(r"[^a-zA-Z0-9]+", " ", stem)
+    cleaned = re.sub(r"\s+", " ", stem).strip().lower()
+    return cleaned
+
+def _best_series_lookup_name(video_files: Tuple[Path, ...]) -> str:
+    signatures: dict[str, int] = {}
+    for path in video_files:
+        signature = _series_signature(path.name)
+        if len(signature) < 4:
+            continue
+        signatures[signature] = signatures.get(signature, 0) + 1
+    if not signatures:
+        return ""
+    return max(signatures.items(), key=lambda item: (item[1], len(item[0])))[0]
+
+def _anime_lookup_candidates(entry: Path, video_files: Tuple[Path, ...]) -> Tuple[str, ...]:
+    candidates: list[str] = []
+
+    def add(value: str) -> None:
+        raw_text = str(value or "").strip()
+        if not raw_text or not _normalize_lookup_title(raw_text):
+            return
+        if raw_text not in candidates:
+            candidates.append(raw_text)
+
+    if entry.is_file():
+        add(entry.name)
+        add(entry.stem)
+    else:
+        folder_name = entry.name
+        add(folder_name)
+        if re.fullmatch(r"(?:S\d{1,2}|Season[ ._-]?\d{1,2}|Series[ ._-]?\d{1,2})", folder_name, re.IGNORECASE):
+            add(entry.parent.name)
+        if _ANIME_SEASONAL_FOLDER_RE.search(folder_name) or _GENERIC_ANIME_FOLDER_RE.search(folder_name):
+            add(entry.parent.name)
+
+    series_name = _best_series_lookup_name(video_files)
+    if series_name:
+        add(series_name)
+
+    return tuple(candidates)
+
+def anime_lookup_candidates(
+    entry: Path,
+    *,
+    video_extensions: Optional[Set[str]] = None,
+) -> Tuple[str, ...]:
+    """Return detector queries derived from a release and its video leaves."""
+    video_files = _iter_video_candidates(entry, video_extensions or VIDEO_EXTENSIONS)
+    if not video_files:
+        return ()
+    return _anime_lookup_candidates(entry, video_files)
+
+def _lookup_anime_status(
+    entry: Path,
+    video_files: Tuple[Path, ...],
+    lookup: Callable[[str], Optional[bool]],
+) -> Optional[bool]:
+    saw_false = False
+    for candidate in _anime_lookup_candidates(entry, video_files):
+        try:
+            status = lookup(candidate)
+        except Exception:
+            continue
+        if status is True:
+            return True
+        if status is False:
+            saw_false = True
+            if _AUTO_YEAR_TOKEN_RE.search(candidate):
+                return False
+    return False if saw_false else None
+
+
+def cached_lookup(name: str) -> Optional[bool]:
+    """The classifier's default anime lookup: the persistent cache only, never the network."""
+    return get_cached(name)

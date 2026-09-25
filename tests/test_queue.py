@@ -1148,10 +1148,10 @@ def test_queue_mutates_queued_job_items_by_path_identity(tmp_path) -> None:
 def test_tv_path_rewrites_ignore_forged_client_category_hints(tmp_path, monkeypatch) -> None:
     from types import SimpleNamespace
 
-    from logic import pending_scan
+    from logic.classify import explicit as classify_explicit
     from logic.queueing import ProcessingJobRequest, QueueServiceMixin
 
-    monkeypatch.setattr(pending_scan, "resolve_explicit_path", lambda _path: SimpleNamespace(category="movies"))
+    monkeypatch.setattr(classify_explicit, "resolve_explicit_path", lambda _path: SimpleNamespace(category="movies"))
 
     pack = tmp_path / "Forged.Show.S01.1080p.WEB-DL"
     pack.mkdir()
@@ -1510,7 +1510,7 @@ def test_run_job_rejects_relative_target_paths(tmp_path, monkeypatch) -> None:
     assert seen == []
 
 def test_run_job_fails_when_targeted_selection_resolves_to_zero_items(tmp_path, monkeypatch) -> None:
-    import logic.pending_scan as pending_scan
+    import logic.classify.explicit as classify_explicit
     import logic.processing as processing
     from core.utils import set_thread_job
 
@@ -1527,7 +1527,7 @@ def test_run_job_fails_when_targeted_selection_resolves_to_zero_items(tmp_path, 
     )
 
     def fake_resolve_explicit_path(*_args, **_kwargs):
-        return pending_scan.ExplicitPathResolution(
+        return classify_explicit.ExplicitPathResolution(
             source_path=item,
             category="misc",
             itype="Misc",

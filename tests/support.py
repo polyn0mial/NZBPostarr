@@ -94,7 +94,13 @@ from core.registry import (
     submit_to_indexer,
 )
 
-from logic import folder_monitor, pending_scan, updater
+from logic import folder_monitor, updater
+from logic.classify import content as classify_content
+from logic.classify import explicit as classify_explicit
+from logic.classify import names as classify_names
+from logic.classify import tv_packs as classify_tv_packs
+from logic.classify.anime import cached_lookup as anime_cached_lookup
+from logic.pending import roots as pending_roots
 
 from logic import pending_snapshot as pending_snapshot_mod
 
@@ -533,7 +539,7 @@ def _configure_pending_scan_all(
         "get_configured_category_folders",
         lambda _conf, include_external=True, must_exist=True: [(folder_category, folder_path)],
     )
-    monkeypatch.setattr("logic.anime_cache.get_cached", anime_cache_lookup)
+    monkeypatch.setattr("logic.classify.anime.get_cached", anime_cache_lookup)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: _Registry())
     monkeypatch.setattr(registry_mod, "get_available_categories", lambda: list(available_categories or []))
 
@@ -632,7 +638,7 @@ def _run_pending_items_anime_check(monkeypatch, *, cached_lookup_result) -> tupl
     monkeypatch.setattr(threading, "Thread", _DummyThread)
     monkeypatch.setattr(pending_api, "_anime_check_inflight", False)
     monkeypatch.setattr(pending_api, "_anime_check_thread", None)
-    monkeypatch.setattr("logic.anime_cache.get_cached", lambda _name: cached_lookup_result)
+    monkeypatch.setattr("logic.classify.anime.get_cached", lambda _name: cached_lookup_result)
 
     _ = pending_api.get_pending_items()
 

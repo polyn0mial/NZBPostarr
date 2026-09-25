@@ -287,7 +287,7 @@ def test_anime_check_has_no_cooldown_after_an_empty_batch(monkeypatch) -> None:
         "collect_uncached_anime_check_names",
         lambda _data: uncached_calls.append(_data) or ["Some Title"],
     )
-    monkeypatch.setattr("logic.anime_cache.check_titles_batch", lambda names: {n: None for n in names})
+    monkeypatch.setattr("logic.classify.anime.check_titles_batch", lambda names: {n: None for n in names})
     monkeypatch.setattr(threading, "Thread", _Thread)
     monkeypatch.setattr(pending_api, "_anime_check_thread", None)
     monkeypatch.setattr(pending_api, "_anime_check_inflight", False)

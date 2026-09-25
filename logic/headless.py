@@ -306,10 +306,7 @@ def cmd_pending(args: argparse.Namespace) -> int:
     from core import database
     from core.config import get_config
     from core.registry import get_registry
-    from logic.pending_scan import (
-        collect_configured_scan_items,
-        relative_key,
-    )
+    from logic.pending.roots import collect_configured_scan_items, relative_key
 
     conf = get_config()
     registry = get_registry()

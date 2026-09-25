@@ -60,7 +60,7 @@ def test_legacy_multi_episode_folder_stays_tv_across_detectors(tmp_path) -> None
     _touch(show_dir / "Season 01 - TV" / "Aliens in the Family - 101 - Meet the Brodys (Divx).avi", b"a")
     _touch(show_dir / "Season 01 - TV" / "Aliens in the Family - 102 - Bobut Conquers All (Divx).avi", b"b")
 
-    assert pending_snapshot_mod.detect_content_itype(show_dir.name, show_dir, "") == "TV Show"
-    assert pending_snapshot_mod.detect_external_category(show_dir.name, show_dir) == "tv"
-    assert pending_scan.detect_auto_itype(show_dir) == "TV Show"
-    assert pending_scan.detect_auto_category(show_dir) == "tv"
+    assert classify_content.detect_content_itype(show_dir.name, show_dir, "") == "TV Show"
+    assert classify_content.detect_external_category(show_dir.name, show_dir) == "tv"
+    assert classify_content.detect_auto_itype(show_dir) == "TV Show"
+    assert classify_content.detect_auto_category(show_dir) == "tv"

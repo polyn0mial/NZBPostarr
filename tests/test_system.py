@@ -266,7 +266,7 @@ def test_oversized_folder_still_processes_inner_files(tmp_path, monkeypatch):
     from unittest.mock import patch
 
     from logic import processing
-    from logic.pending_scan import PendingScanItem
+    from logic.pending.roots import PendingScanItem
 
     monkeypatch.setenv("NZBPOSTARR_VALIDATE_ISOLATE", "0")
     monkeypatch.setattr(
@@ -899,18 +899,18 @@ def test_ambiguous_dvd_folder_is_movie_across_detectors(tmp_path) -> None:
     _touch(release_dir / "DISC_1" / "VIDEO_TS" / "VIDEO_TS.IFO", b"a")
     _touch(release_dir / "DISC_1" / "VIDEO_TS" / "VTS_01_1.VOB", b"b")
 
-    assert pending_snapshot_mod.detect_content_itype(release_dir.name, release_dir, "") == "Movie"
-    assert pending_snapshot_mod.detect_external_category(release_dir.name, release_dir) == "movies"
-    assert pending_scan.detect_auto_itype(release_dir) == "Movie"
-    assert pending_scan.detect_auto_category(release_dir) == "movies"
+    assert classify_content.detect_content_itype(release_dir.name, release_dir, "") == "Movie"
+    assert classify_content.detect_external_category(release_dir.name, release_dir) == "movies"
+    assert classify_content.detect_auto_itype(release_dir) == "Movie"
+    assert classify_content.detect_auto_category(release_dir) == "movies"
 
 def test_detect_content_itype_prefers_video_over_audiobook_sidecars(tmp_path) -> None:
     release_dir = tmp_path / "Movie.Name.2026.1080p.WEB-DL"
     _touch(release_dir / "Movie.Name.2026.1080p.WEB-DL.mkv", b"a")
     _touch(release_dir / "Movie.Name.2026.1080p.WEB-DL-commentary.m4b", b"b")
 
-    assert pending_snapshot_mod.detect_content_itype(release_dir.name, release_dir, "") == "Movie"
-    assert pending_scan.detect_auto_category(release_dir) == "movies"
+    assert classify_content.detect_content_itype(release_dir.name, release_dir, "") == "Movie"
+    assert classify_content.detect_auto_category(release_dir) == "movies"
 
 def test_scan_configured_items_preserves_tv_episode_metadata(tmp_path) -> None:
     tv_dir = tmp_path / "tv"
@@ -923,7 +923,7 @@ def test_scan_configured_items_preserves_tv_episode_metadata(tmp_path) -> None:
 
     conf = SimpleNamespace(folder_paths=[{"category": "tv", "path": str(tv_dir)}])
 
-    items = pending_scan.scan_configured_items(conf, must_exist=True)
+    items = pending_roots.scan_configured_items(conf, must_exist=True)
 
     assert len(items) == 1
     assert items[0].category == "tv"

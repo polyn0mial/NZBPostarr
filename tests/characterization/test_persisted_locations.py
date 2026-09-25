@@ -13,7 +13,8 @@ from api import pending as pending_api
 from api import system as system_api
 from core import config as config_mod
 from core import database as db
-from logic import anime_cache, category_overrides, queueing, updater, usenet_stream
+from logic import category_overrides, queueing, updater, usenet_stream
+from logic.classify import anime as anime_cache
 from tests.support import _run_async
 
 APP_ROOT = config_mod.APP_ROOT

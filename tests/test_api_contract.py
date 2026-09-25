@@ -151,7 +151,7 @@ def test_anime_cache_correction_persists_and_refreshes(monkeypatch) -> None:
     refresh_reasons: list[str] = []
 
     monkeypatch.setattr(
-        "logic.anime_cache.set_cached",
+        "logic.classify.anime.set_cached",
         lambda name, is_anime: calls.append((name, is_anime)) or True,
         raising=False,
     )

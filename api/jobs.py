@@ -16,7 +16,7 @@ from api.deps import (
     _resolved_policy_path,
 )
 from core.config import get_config
-from logic.pending_scan import scan_configured_items
+from logic.pending.roots import scan_configured_items
 from logic.queueing import ProcessingJobRequest
 from logic.services import get_upload_service, UploadService
 

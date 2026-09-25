@@ -21,10 +21,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from core.utils import start_watchdog_observer, stop_watchdog_observer
-from logic.pending_scan import (
-    detect_auto_category,
-    infer_folder_category_hint,
-)
+from logic.classify.content import detect_auto_category
+from logic.classify.hints import infer_folder_category_hint
 
 # Settle time - wait this many seconds after the last modification before uploading
 SETTLE_SECONDS = 30

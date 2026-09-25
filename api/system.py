@@ -17,7 +17,7 @@ from pydantic import BaseModel
 from core import database
 from core.config import get_config
 from logic import updater
-from logic.pending_scan import get_configured_folders
+from logic.pending.roots import get_configured_folders
 from logic.services import get_upload_service
 
 
