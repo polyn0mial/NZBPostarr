@@ -115,7 +115,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
             await _mcp_stack.enter_async_context(_MCP_ASGI_APP.router.lifespan_context(_MCP_ASGI_APP))
         yield
 
-    from core.database import checkpoint_wal
+    from core.db.engine import checkpoint_wal
     from logic.autoupload import stop_folder_monitor
     from logic.process_reaper import shutdown_scheduler
     from logic.stats_engine import stop_collector

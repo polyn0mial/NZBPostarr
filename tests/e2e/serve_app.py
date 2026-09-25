@@ -26,10 +26,11 @@ def _state_path(root: Path, *parts: str, is_dir: bool = True) -> property:
 
 
 def _seed_history() -> None:
-    from core import database as db
+    from core.db import schema as db_schema
+    from core.db import uploads as db_uploads
 
-    db.init_database()
-    db.record_nntp_success("/media/TV/Example.Show.S01E01.1080p.WEB-DL.x264-GRP", 734003200, "TV Episode")
+    db_schema.init_database()
+    db_uploads.record_nntp_success("/media/TV/Example.Show.S01E01.1080p.WEB-DL.x264-GRP", 734003200, "TV Episode")
 
 
 def main() -> None:

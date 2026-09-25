@@ -107,8 +107,8 @@ def scan_root(root: Path) -> list[str]:
         )
         stack.enter_context(
             mock.patch.object(
-                pending_completion.database,
-                "get_dashboard_data",
+                pending_completion.db_ledger,
+                "completion_index",
                 lambda _ids: (set(), {}, {}, {}),
             )
         )

@@ -305,7 +305,7 @@ def test_cmd_pending_json_output(monkeypatch, capsys, tmp_path) -> None:
     conf = SimpleNamespace(folder_paths=[])
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: [SimpleNamespace(id="geek")]))
-    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
+    monkeypatch.setattr(db, "completion_index", lambda _ids: (set(), {}, {}, {}))
 
     tv_folder = tmp_path / "tv"
     movie_folder = tmp_path / "movies"
@@ -333,7 +333,7 @@ def test_cmd_pending_json_empty(monkeypatch, capsys) -> None:
     conf = SimpleNamespace(folder_paths=[])
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: []))
-    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
+    monkeypatch.setattr(db, "completion_index", lambda _ids: (set(), {}, {}, {}))
     monkeypatch.setattr(pending_roots, "collect_configured_scan_items", lambda _conf: [])
 
     rc = cli_pending.cmd_pending(SimpleNamespace(category=None, verbose=False, json=True))
@@ -347,7 +347,7 @@ def test_cmd_pending_filters_folder_and_limits_verbose_items(monkeypatch, capsys
     conf = SimpleNamespace(folder_paths=[])
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: []))
-    monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
+    monkeypatch.setattr(db, "completion_index", lambda _ids: (set(), {}, {}, {}))
     tv_folder = tmp_path / "tv"
     other_folder = tmp_path / "other"
     monkeypatch.setattr(

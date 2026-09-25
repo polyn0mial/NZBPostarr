@@ -2,8 +2,9 @@
 # W11-B10: revalidation rules live in logic/jobs/revalidate.py.
 
 from logic.jobs.revalidate import revalidated_plan, revalidation_candidates, revalidation_targets
+from core.db import queue_items as db_queue_items
 from logic.queueing_base import (
-    Any, Optional, Path, database, datetime, log_info, logger, threading, time, timedelta, timezone, usenet_stream,
+    Any, Optional, Path, datetime, log_info, logger, threading, time, timedelta, timezone, usenet_stream,
 )
 
 class _QueueServiceMixinPart4:
@@ -562,7 +563,7 @@ class _QueueServiceMixinPart4:
 
     def add_queue_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         with self._lock:
-            added = database.db_add_queue_items(items)
+            added = db_queue_items.db_add_queue_items(items)
             if not added:
                 return []
 
@@ -589,14 +590,14 @@ class _QueueServiceMixinPart4:
 
     def remove_queue_item(self, item_id: int) -> bool:
         with self._lock:
-            removed = database.db_remove_queue_item(item_id)
+            removed = db_queue_items.db_remove_queue_item(item_id)
             if removed:
                 self._queue_items = [queue_item for queue_item in self._queue_items if queue_item["id"] != item_id]
         return removed
 
     def clear_queue_items(self) -> int:
         with self._lock:
-            count = database.db_clear_queue()
+            count = db_queue_items.db_clear_queue()
             self._queue_items.clear()
         return count
 
@@ -605,7 +606,7 @@ class _QueueServiceMixinPart4:
             id_map = {queue_item["id"]: queue_item for queue_item in self._queue_items}
             if set(item_ids) != set(id_map.keys()):
                 return False
-            ok = database.db_reorder_queue(item_ids)
+            ok = db_queue_items.db_reorder_queue(item_ids)
             if ok:
                 self._queue_items = [id_map[item_id] for item_id in item_ids]
         return ok

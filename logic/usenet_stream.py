@@ -32,11 +32,8 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 
 from core.config import NNTPServer, get_config
-from core.database import (
-    check_duplicate_dynamic,
-    record_nntp_success,
-    update_db_destination,
-)
+from core.db.ledger import destinations_for
+from core.db.uploads import record_nntp_success, update_db_destination
 from core.registry import get_enabled_indexers
 from core.utils import (
     get_thread_job,
@@ -1066,7 +1063,7 @@ def stream_nzb_upload(
     update_job_progress(total=1, processed=0, skipped=0, percent=0)
 
     if target_ids and not force:
-        dupes = check_duplicate_dynamic(chosen_release, itype, target_ids)
+        dupes = destinations_for(chosen_release, itype, target_ids)
         if all(dupes.get(dest) is not None for dest in target_ids):
             log_info(f"Skipping stream for {chosen_release}: already present on all target indexers.")
             update_job_progress(processed=0, skipped=1, percent=100, msg="Skipped - already uploaded")
@@ -1115,7 +1112,10 @@ def stream_nzb_upload(
         )
         submission_results.append((dest, result.success, result.reason))
         if result.success:
-            update_db_destination(dest, chosen_release, total_size, chosen_release, itype=itype, **upload_result)
+            if update_db_destination(dest, chosen_release, total_size, chosen_release, itype=itype, **upload_result):
+                from logic.queue_metrics import request_live_queue_refresh
+
+                request_live_queue_refresh(reason="upload-success")
         else:
             update_db_destination(
                 dest,

@@ -138,7 +138,7 @@ def build_tool_table() -> dict[str, Callable[..., Any]]:
 
     def get_history(limit: int = 25) -> dict[str, Any]:
         """Recent job history, newest first."""
-        from core.database import get_job_history
+        from core.db.job_history import get_job_history
 
         rows = get_job_history(limit=max(1, min(int(limit), 200)))
         return {"history": [redact_mapping(dict(row)) if isinstance(row, dict) else row for row in rows]}

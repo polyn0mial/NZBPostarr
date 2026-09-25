@@ -8,7 +8,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Response
 
 from api.deps import _dashboard_server_stats_enabled, _stats_history_enabled, _stats_page_enabled
-from core import database
+from core.db import stats as db_stats
 from logic.services import get_upload_service, UploadService
 
 
@@ -115,7 +115,7 @@ async def get_mini_stats() -> Dict[str, Any]:
 async def get_top_directories(limit: int = 25) -> Dict[str, Any]:
     """Retrieve top-level storage usage data based on processed items."""
     _require_stats_page_enabled()
-    return await asyncio.to_thread(database.get_top_directories, limit=limit)
+    return await asyncio.to_thread(db_stats.get_top_directories, limit=limit)
 
 @router.get("/history")
 def get_stats_history(response: Response, limit: int = 100) -> Dict[str, Any]:
@@ -156,7 +156,7 @@ async def record_stats(
 ) -> Dict[str, Any]:
     """Record current performance stats to the database."""
     _require_stats_page_enabled()
-    database.record_system_stats(
+    db_stats.record_system_stats(
         cpu=cpu,
         mem=memory,
         up=upload_mbps,

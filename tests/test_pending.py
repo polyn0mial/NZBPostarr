@@ -42,7 +42,7 @@ def test_queue_start_filters_misc_and_missing_category_but_runs_valid_items(tmp_
         return "job-fixed-queue"
 
     service.start_processing_job_request = fake_start_processing_job_request
-    monkeypatch.setattr(queueing.database, "db_remove_queue_items", lambda item_ids: len(item_ids))
+    monkeypatch.setattr(db_queue_items, "db_remove_queue_items", lambda item_ids: len(item_ids))
     service.get_queue_items = lambda: list(service._queue_items)
 
     result = service.start_queue_with_details(source="queue-start", enable_duplicate_check=True, test_mode=False)

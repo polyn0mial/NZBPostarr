@@ -17,11 +17,7 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, cast
 import humanfriendly  # type: ignore[import-untyped]
 from loguru import logger
 from core.config import get_config
-from core.database import (
-    pin_folder_ts_to_children,
-    record_nntp_success,
-    update_db_destination,
-)
+from core.db.uploads import pin_folder_ts_to_children, record_nntp_success, update_db_destination
 from core.utils import (
     AUDIOBOOK_EXTENSIONS,
     EBOOK_EXTENSIONS,

@@ -5,8 +5,9 @@
 from logic.jobs import requests as job_requests
 from logic.jobs import store as job_store
 from logic.jobs.models import normalize_job_name, normalize_run_after, parse_iso_datetime_utc
+from core.db import job_history as db_job_history
 from logic.queueing_base import (
-    Any, Optional, ProcessingJobRequest, database, datetime, log_success, logger, timezone, usenet_stream,
+    Any, Optional, ProcessingJobRequest, datetime, log_success, logger, timezone, usenet_stream,
 )
 
 class _QueueServiceMixinPart2:
@@ -151,7 +152,7 @@ class _QueueServiceMixinPart2:
         if snapshot:
             job["_completed_paths"] = snapshot
 
-        database.save_job_history(
+        db_job_history.save_job_history(
             job_id,
             category=job.get("category"),
             status=job.get("status"),

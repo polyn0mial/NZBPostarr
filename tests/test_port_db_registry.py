@@ -6,7 +6,7 @@ from loguru import logger
 
 from tests.support import *
 
-from core.database import pin_folder_ts_to_children
+from core.db.uploads import pin_folder_ts_to_children
 
 _OLD_TS = "2020-01-01 00:00:00.000000"
 
@@ -14,7 +14,7 @@ _OLD_TS = "2020-01-01 00:00:00.000000"
 def _set_updated_at(key: str, value: str) -> None:
     with session_scope() as session:
         session.execute(
-            db.text("UPDATE uploads SET updated_at = :ts WHERE item_name = :name"),
+            text("UPDATE uploads SET updated_at = :ts WHERE item_name = :name"),
             {"ts": value, "name": key},
         )
 
@@ -22,7 +22,7 @@ def _set_updated_at(key: str, value: str) -> None:
 def _raw_updated_at(key: str) -> str:
     with session_scope() as session:
         return session.execute(
-            db.text("SELECT updated_at FROM uploads WHERE item_name = :name"),
+            text("SELECT updated_at FROM uploads WHERE item_name = :name"),
             {"name": key},
         ).scalar_one()
 
@@ -30,7 +30,7 @@ def _raw_updated_at(key: str) -> str:
 def _set_filesize(key: str, value) -> None:
     with session_scope() as session:
         session.execute(
-            db.text("UPDATE uploads SET filesize = :size WHERE item_name = :name"),
+            text("UPDATE uploads SET filesize = :size WHERE item_name = :name"),
             {"size": value, "name": key},
         )
 
@@ -44,7 +44,7 @@ def _success(key: str, dest: str = "geek", size: int = 100, **extra) -> bool:
 
 @pytest.mark.usefixtures("isolated_sqlite_db")
 def test_engine_pool_matches_server_sizing() -> None:
-    engine = db.get_engine()
+    engine = db_engine.get_engine()
     assert engine.pool.size() == 10
     assert engine.pool._max_overflow == 5
 
@@ -146,14 +146,14 @@ def test_failed_retry_never_overwrites_prior_success() -> None:
         assert result.error is None
         assert result.server_name == "first"
 
-    _fully_done, success_map, failed_map, _sizes = db.get_dashboard_data(["geek"])
+    _fully_done, success_map, failed_map, _sizes = db_ledger.completion_index(["geek"])
     assert success_map[key] == {"geek"}
     assert key not in failed_map
 
     # A failure with no prior success is still recorded.
     other = "Show/Show.S01E04.1080p.WEB-DL.mkv"
     assert update_db_destination("geek", other, 100, other, status="failed", error="boom") is True
-    _fully_done, _success_map, failed_map, _sizes = db.get_dashboard_data(["geek"])
+    _fully_done, _success_map, failed_map, _sizes = db_ledger.completion_index(["geek"])
     assert failed_map[other] == {"geek": "boom"}
 
 
@@ -167,11 +167,11 @@ def test_check_duplicate_dynamic_ignores_suffix_matches_without_size() -> None:
     _set_filesize(stored, None)
 
     new_key = "New.Folder/Show.S02E01.mkv"
-    assert db.check_duplicate_dynamic(new_key, "TV Episode", ["geek"], filesize=100)["geek"] is None
+    assert db_ledger.destinations_for(new_key, "TV Episode", ["geek"], filesize=100)["geek"] is None
     # Without a size to compare the old behaviour stays.
-    assert db.check_duplicate_dynamic(new_key, "TV Episode", ["geek"])["geek"] is not None
+    assert db_ledger.destinations_for(new_key, "TV Episode", ["geek"])["geek"] is not None
     # An exact-key record still counts even when its size is unknown.
-    assert db.check_duplicate_dynamic(stored, "TV Episode", ["geek"], filesize=100)["geek"] is not None
+    assert db_ledger.destinations_for(stored, "TV Episode", ["geek"], filesize=100)["geek"] is not None
 
 
 # --- db-registry-06 -----------------------------------------------------------
@@ -187,15 +187,15 @@ def test_duplicate_status_batch_is_size_aware() -> None:
     suffix_key = "Folder.C/Show.S03E02.mkv"
     keys = [sized, unsized, suffix_key]
 
-    plain = db.get_duplicate_status_batch(keys, ["geek"])
+    plain = db_ledger.destinations_for_batch(keys, ["geek"])
     assert all(plain[key]["geek"] is not None for key in keys)
 
-    same = db.get_duplicate_status_batch(keys, ["geek"], filesizes={sized: 100, unsized: 5, suffix_key: 5})
+    same = db_ledger.destinations_for_batch(keys, ["geek"], filesizes={sized: 100, unsized: 5, suffix_key: 5})
     assert same[sized]["geek"] is not None
     assert same[unsized]["geek"] is not None
     assert same[suffix_key]["geek"] is None
 
-    replaced = db.get_duplicate_status_batch([sized], ["geek"], filesizes={sized: 200})
+    replaced = db_ledger.destinations_for_batch([sized], ["geek"], filesizes={sized: 200})
     assert replaced[sized]["geek"] is None
 
 
@@ -204,7 +204,7 @@ def test_duplicate_status_batch_is_size_aware() -> None:
 
 @pytest.mark.usefixtures("isolated_sqlite_db")
 def test_dashboard_data_returns_filesize_by_indexer() -> None:
-    assert db.get_dashboard_data([]) == (set(), {}, {}, {})
+    assert db_ledger.completion_index([]) == (set(), {}, {}, {})
 
     int_key = "Show/Show.S04E01.mkv"
     text_key = "Show/Show.S04E02.mkv"
@@ -216,7 +216,7 @@ def test_dashboard_data_returns_filesize_by_indexer() -> None:
     _set_filesize(text_key, "456")
     _set_filesize(bad_key, "not-a-size")
 
-    fully_done, success_map, failed_map, sizes = db.get_dashboard_data(["geek", "omg"])
+    fully_done, success_map, failed_map, sizes = db_ledger.completion_index(["geek", "omg"])
     assert {int_key, text_key, bad_key} <= fully_done
     assert success_map[int_key] == {"geek", "omg"}
     assert failed_map == {}
