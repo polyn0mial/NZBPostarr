@@ -53,8 +53,7 @@ _FORBIDDEN_PARTS = {
 }
 _CONTENT_RULES = {
     "developer Windows path": re.compile(
-        rb"(?i)(?:\b[A-Z]:[\\/]NEWProjects[\\/]"
-        rb"|\b[A-Z]:[\\/]Users[\\/](?!username(?:[\\/]|\b)|example(?:[\\/]|\b)|user(?:[\\/]|\b))"
+        rb"(?i)(?:\b[A-Z]:[\\/]Users[\\/](?!username(?:[\\/]|\b)|example(?:[\\/]|\b)|user(?:[\\/]|\b))"
         rb"|\b[A-Z]:[\\/](?:Documents|Downloads|Desktop)[\\/])"
     ),
     "developer Unix home path": re.compile(

@@ -2,8 +2,6 @@
 
 > Watches folders and auto-posts content to multiple Usenet indexers, or restreams NZBs server-to-server.
 
-<!-- about HAND-OWNED above the GENERATED marker. Edit freely; the docs tool carries it back into the docs tool's Codex. -->
-
 ## What it is
 
 NZBPostarr is a self-hosted, browser-based Usenet posting manager for content the operator owns or is authorized to distribute. It watches configured folders, classifies what it finds (TV/movie/anime/disc/music/ebook), packages it with rar and parpar, posts it to Usenet via nyuu, and submits the resulting NZB to any number of configured Newznab-style indexers - all from a web UI, a headless CLI, or an unattended folder/daemon mode. It also supports the reverse direction: re-streaming an existing NZB straight from one Usenet server to another without downloading to disk first.
@@ -11,7 +9,7 @@ NZBPostarr is a self-hosted, browser-based Usenet posting manager for content th
 ## Things not to forget
 
 _The intricacies worth remembering: the gotchas, the half-built parts, the decisions whose
-reason lives nowhere else. the docs tool never overwrites this section._
+reason lives nowhere else._
 
 - The MCP endpoint for AI agents ships off by default and needs a manual `pip install mcp` on top of a normal install, because the mcp SDK is deliberately kept out of requirements.lock - agent tool access is opt-in, not just config-gated. anchors: `api/mcp.py`
 - A muted known-issue signature has no expiry by design - MutedIssue is keyed only on (indexer_id, signature) with no timestamp/TTL field, so once muted it stays hidden from the History page forever until someone manually unmutes it, even after the underlying failure is fixed. anchors: `core/db/models.py`, `core/db/issues.py`
@@ -22,13 +20,7 @@ reason lives nowhere else. the docs tool never overwrites this section._
 - A background process reaper periodically kills orphaned nyuu/rar/parpar child processes left behind by crashed or interrupted jobs - anyone touching job cancellation or crash handling needs to know this is the only cleanup path for those external tool processes. anchors: `logic/system/reaper.py`
 - Self-update (install_from_github) takes an exclusive operation lock and refuses to run if an update or rollback is already in progress, applying the new release in place while preserving runtime data and keeping prior snapshots for rollback. anchors: `logic/system/updater.py`
 
-<!-- about GENERATED BEGIN - rewritten by the docs tool; edit the Codex, not this -->
-
-## What the docs tool knows about this project
-
-Everything from here down is generated from this project's project notes
-(`codex/projects/nzb-uploadrr.md` in the the docs tool clone) and is **rewritten on every publish** -
-edit the dossier, not this block. Everything ABOVE the marker is yours.
+## Reference
 
 ### At a glance
 
@@ -38,7 +30,7 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 - **Tests:** 58 test file(s) (49 pytest, 9 node)
 - **CI:** `quality.yml`, `release.yml`
 - **Domain:** usenet, nzb, nntp, nyuu, parpar, rar, newznab, indexer, guessit, release-name-parsing, anime-detection, mediainfo
-- **Remote:** https://github.com/polyn0mial/nzbpostarr
+- **Source:** https://github.com/polyn0mial/nzbpostarr
 
 ### Architecture
 
@@ -51,12 +43,12 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 - `indexers/` - One YAML file per Usenet indexer (auth, categories, submission shape) - the entire indexer plugin surface; add a site with no code change.
 - `tests/` - pytest suites grouped by domain (queueing, pending scan, indexers, streaming, etc.) with fixtures and mocked indexers.
 - `.github/` - CI workflows (quality.yml, release.yml) and release.py, which checks for leaked secrets/config and packages public source-tree releases.
-- `docs/` - Project docs plus docs/todo/, the open-work folder the docs tool also reads.
+- `docs/` - Project documentation.
 - `tools/` - Measured accuracy baseline script for the name-level content classifier, and an offline dump of the pending classifier's verdicts for one folder.
 
 ### Features
 
-23 recorded - 22 shipped, 1 partial, 0 planned. Each `path:line` is where the feature is DEFINED, checked by the docs tool.
+23 recorded - 22 shipped, 1 partial, 0 planned. Each path is where the feature is defined.
 
 **Shipped**
 
@@ -101,12 +93,8 @@ edit the dossier, not this block. Everything ABOVE the marker is yours.
 - No per-user accounts or RBAC - one shared web password (or none at all) protects the whole UI and API.
 - MCP AI-agent endpoint is off by default and requires a manual `pip install mcp`; the SDK is deliberately excluded from requirements.lock.
 - No built-in TLS - README instructs operators to put it behind a reverse proxy or trusted network before exposing it beyond localhost.
-- **Job-completion webhook notifications** [webhooks-out] suggested (effort M; feature) - Let an operator point a webhook (Discord/Slack/generic JSON) at job success/failure events so they don't have to keep the dashboard open to know an upload finished or an indexer rejected it. Evidence: Grepping every .py file for webhook|discord|slack|notify_url|ntfy returns zero matches anywhere in the codebase; the only recorded notification-shaped want is an in-app stats threshold check (posthog-derived alerts idea), which fires on system stats, not on job/indexer outcomes - outbound notification on job completion is a distinct, unrecorded gap for an unattended daemon/monitor tool. anchors: `core/`, `core/db/`
-- **Indexer connectivity test endpoint** [plugin-system] suggested (effort S; feature) - A "Test connection" action per configured indexer that fires a lightweight auth/search call and reports success or the exact error, instead of the operator only learning a bad API key or wrong category code when a real upload fails. Evidence: api/indexers.py exposes only GET "" and GET "/{indexer_id}" (list/read) and POST "/reload"; there is no test or verify route, yet the README itself warns that indexer submission shapes differ even between two Newznab sites and tells operators to "confirm the submit endpoint, API-key parameter name, and category codes" by hand before use. anchors: `api/`, `api/`
-- **Export upload history to CSV** [export-import] suggested (effort S; feature) - Add a CSV export alongside the existing JSON output for upload history, so operators can open it in a spreadsheet or archive it outside the SQLite DB. Evidence: cmd_history's --json flag is the only machine-readable output format; grepping the History page scripts (webui/assets/js/pages/history/) for export|download|csv returns no matches despite History being one of the core dashboard pages with filtering/grouping already built. anchors: `cli/commands/history.py`
-- **Auto-expiring known-issue mutes** [error-tracking] suggested (effort S; tweak) - Let a muted known-issue signature auto-unmute after N days (or on next occurrence past a date), so a since-fixed recurring failure doesn't stay silently hidden forever because someone forgot to unmute it. Evidence: MutedIssue's own docstring states a signature "stays muted across every future occurrence of the same recurring failure until explicitly unmuted" - the model has no expiry/TTL field, only indexer_id + signature, so a mute is permanent by construction. anchors: `core/db/models.py`
+- **Job-completion webhook notifications** [webhooks-out] (suggested, effort M) - Let an operator point a webhook (Discord/Slack/generic JSON) at job success/failure events so they don't have to keep the dashboard open to know an upload finished or an indexer rejected it. Evidence: Grepping every .py file for webhook|discord|slack|notify_url|ntfy returns zero matches anywhere in the codebase; the only recorded notification-shaped want is an in-app stats threshold check (posthog-derived alerts idea), which fires on system stats, not on job/indexer outcomes - outbound notification on job completion is a distinct, unrecorded gap for an unattended daemon/monitor tool. anchors: `core/`, `core/db/`
+- **Indexer connectivity test endpoint** [plugin-system] (suggested, effort S) - A "Test connection" action per configured indexer that fires a lightweight auth/search call and reports success or the exact error, instead of the operator only learning a bad API key or wrong category code when a real upload fails. Evidence: api/indexers.py exposes only GET "" and GET "/{indexer_id}" (list/read) and POST "/reload"; there is no test or verify route, yet the README itself warns that indexer submission shapes differ even between two Newznab sites and tells operators to "confirm the submit endpoint, API-key parameter name, and category codes" by hand before use. anchors: `api/`, `api/`
+- **Export upload history to CSV** [export-import] (suggested, effort S) - Add a CSV export alongside the existing JSON output for upload history, so operators can open it in a spreadsheet or archive it outside the SQLite DB. Evidence: cmd_history's --json flag is the only machine-readable output format; grepping the History page scripts (webui/assets/js/pages/history/) for export|download|csv returns no matches despite History being one of the core dashboard pages with filtering/grouping already built. anchors: `cli/commands/history.py`
+- **Auto-expiring known-issue mutes** [error-tracking] (suggested, effort S) - Let a muted known-issue signature auto-unmute after N days (or on next occurrence past a date), so a since-fixed recurring failure doesn't stay silently hidden forever because someone forgot to unmute it. Evidence: MutedIssue's own docstring states a signature "stays muted across every future occurrence of the same recurring failure until explicitly unmuted" - the model has no expiry/TTL field, only indexer_id + signature, so a mute is permanent by construction. anchors: `core/db/models.py`
 
----
-
-_Generated by the docs tool on 2026-09-09 from a project notes stamped 2026-09-05. Regenerate after the product moves; the docs tool reports drift._
-<!-- about GENERATED END sha=cff39263203f -->

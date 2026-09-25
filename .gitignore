@@ -140,10 +140,6 @@ $RECYCLE.BIN/
 # Local AI memory for this repo. Deliberately NOT published.
 /.claude/memory/
 
-# ⛔ PUBLIC REPO: the to-do list is not published (owner directive, 2026-08-29).
-# These notes are the most candid writing in the repo - what is broken, what is half-built, what is
-# waiting on a person - and a local to-do tool files them here automatically from chat history. The
-# folder's own README stays tracked (it is already tracked, and it states the convention); only the
-# items are ignored. Managed by public_todo_guard.py in the the docs tool repo.
+# Open to-do notes are local working notes and are not published; only the folder README is.
 /docs/todo/*
 !/docs/todo/README.md
