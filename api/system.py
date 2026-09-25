@@ -12,7 +12,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from loguru import logger
 from pydantic import BaseModel
 
-from core import database
+from core.db import engine as db_engine
 from core.config import get_config
 from logic.system import backup, lifecycle, updater
 from logic.pending.roots import get_configured_folders
@@ -78,7 +78,7 @@ class StopAllRequest(BaseModel):
 @dashboard_router.get("/database-health")
 async def database_health_check() -> Dict[str, Any]:
     """Check database connection, tables, and recent activity."""
-    return await asyncio.to_thread(database.get_database_health)
+    return await asyncio.to_thread(db_engine.get_database_health)
 
 @tests_router.get("/health")
 async def health() -> Dict[str, Any]:

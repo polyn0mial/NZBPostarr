@@ -480,7 +480,7 @@ WAL_CHECKPOINT_INTERVAL_HOURS: int = 6
 def _periodic_wal_checkpoint() -> None:
     """Entry point for the scheduled WAL checkpoint job."""
     try:
-        from core.database import checkpoint_wal
+        from core.db.engine import checkpoint_wal
 
         checkpoint_wal()
     except Exception as exc:

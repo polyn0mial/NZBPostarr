@@ -47,7 +47,7 @@ def test_upload_service_passes_target_paths_to_processing_run_job():
 
     with patch("logic.services.processing.run_job", side_effect=fake_run_job):
         with patch("logic.queueing.threading.Thread", ImmediateThread):
-            with patch("logic.queueing.database.save_job_history"):
+            with patch("logic.queueing_mixin_2.db_job_history.save_job_history"):
                 service.start_upload_job(
                     category="movies",
                     paths=["/tmp/example.mkv"],
@@ -313,9 +313,9 @@ def test_queue_lifecycle_stop_and_restart_restores_manual_resume_state(tmp_path,
     second_path = str(tmp_path / "Next.Movie.mkv")
 
     monkeypatch.setattr(queueing, "get_config", lambda: SimpleNamespace(script_dir=state_root))
-    monkeypatch.setattr(queueing.database, "db_load_queue", lambda: [])
-    monkeypatch.setattr(queueing.database, "db_clear_queue", lambda: 0)
-    monkeypatch.setattr(queueing.database, "save_job_history", lambda *args, **kwargs: None)
+    monkeypatch.setattr(db_queue_items, "db_load_queue", lambda: [])
+    monkeypatch.setattr(db_queue_items, "db_clear_queue", lambda: 0)
+    monkeypatch.setattr(db_job_history, "save_job_history", lambda *args, **kwargs: None)
     monkeypatch.setattr(stream_monitors, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     class DummyQueueService(queueing.QueueServiceMixin):
@@ -744,7 +744,7 @@ def test_finalize_stopping_job_keeps_partial_job_stopped(tmp_path, monkeypatch) 
 
     saved: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr(
-        queueing.database,
+        db_job_history,
         "save_job_history",
         lambda job_id, **kwargs: saved.append((job_id, kwargs)),
     )
@@ -804,7 +804,7 @@ def test_clear_queued_jobs_marks_stopping_job_for_removal(tmp_path, monkeypatch)
         queue_paused=True,
     )
 
-    monkeypatch.setattr(queueing.database, "save_job_history", lambda *args, **kwargs: None)
+    monkeypatch.setattr(db_job_history, "save_job_history", lambda *args, **kwargs: None)
     monkeypatch.setattr(stream_monitors, "record_stream_monitor_job", lambda *args, **kwargs: None)
 
     assert service.clear_queued_jobs() == 1
@@ -1095,7 +1095,7 @@ def test_queue_launch_builds_request(tmp_path, monkeypatch) -> None:
         launch_kwargs = {key: value(case_root) if callable(value) else value for key, value in kwargs.items()}
 
         with patch("logic.queueing.threading.Thread", ImmediateThread):
-            with patch("logic.queueing.database.save_job_history"):
+            with patch("logic.queueing_mixin_2.db_job_history.save_job_history"):
                 job_id = getattr(service, launcher_name)(**launch_kwargs)
 
         request = captured["request"]
@@ -1220,7 +1220,7 @@ def test_queue_start_keeps_mixed_categories_in_one_job(tmp_path, monkeypatch) ->
         return "job-mixed-1"
 
     service.start_processing_job_request = fake_start_processing_job_request
-    monkeypatch.setattr(queueing.database, "db_remove_queue_items", lambda item_ids: len(item_ids))
+    monkeypatch.setattr(db_queue_items, "db_remove_queue_items", lambda item_ids: len(item_ids))
     service.get_queue_items = lambda: list(service._queue_items)
 
     result = service.start_queue(source="queue-start", enable_duplicate_check=False, test_mode=True, indexer_id="geek")
@@ -1273,7 +1273,7 @@ def test_queue_start_preserves_staged_items_when_job_creation_fails(tmp_path, mo
 
     service.start_processing_job_request = fake_start_processing_job_request
     service.get_queue_items = lambda: list(service._queue_items)
-    monkeypatch.setattr(queueing.database, "db_remove_queue_items", fake_remove_queue_items)
+    monkeypatch.setattr(db_queue_items, "db_remove_queue_items", fake_remove_queue_items)
 
     with pytest.raises(RuntimeError, match="boom"):
         service.start_queue_with_details(source="queue-start")
@@ -1750,7 +1750,7 @@ def test_run_job_validates_duplicates_per_item_without_batch_prefetch(tmp_path, 
 
     _configure_run_job_basics(monkeypatch, processing, movies_dir)
     monkeypatch.setattr(registry_mod, "get_enabled_indexers", lambda _conf: [_Idx()])
-    monkeypatch.setattr(db, "get_all_upload_stats", lambda: {})
+    monkeypatch.setattr(db_stats, "get_all_upload_stats", lambda: {})
 
     prefetched_seen: list[dict[str, str | None] | None] = []
 
@@ -1771,8 +1771,8 @@ def test_run_job_validates_duplicates_per_item_without_batch_prefetch(tmp_path, 
         prefetched_seen.append(kwargs.get("prefetched_dest_status"))
         return 1
 
-    monkeypatch.setattr(db, "get_duplicate_status_batch", fail_batch_prefetch)
-    monkeypatch.setattr(db, "check_duplicate_dynamic", fake_check_duplicate_dynamic)
+    monkeypatch.setattr(db_ledger, "destinations_for_batch", fail_batch_prefetch)
+    monkeypatch.setattr(db_ledger, "destinations_for", fake_check_duplicate_dynamic)
     monkeypatch.setattr(processing, "process_single", fake_process_single)
 
     processing.run_job(category="movies", test_mode=True)
@@ -1797,7 +1797,7 @@ def test_run_job_starts_upload_before_validating_entire_queue(tmp_path, monkeypa
         "_run_validation_with_timeout",
         lambda path, **_kwargs: processing.QueueItemValidation("ready", path, "movies", "Movies"),
     )
-    monkeypatch.setattr(db, "get_all_upload_stats", lambda: {})
+    monkeypatch.setattr(db_stats, "get_all_upload_stats", lambda: {})
 
     def fake_validate(path: Path, **_kwargs):
         if path == second:
@@ -2019,8 +2019,8 @@ def test_preview_processing_items_reports_ready_and_duplicate_destinations(tmp_p
     monkeypatch.setattr(processing, "_resolve_submission_category", lambda *_args: "Movies")
     # An all-done prefetch is re-verified with the live size-aware check (processing-05).
     monkeypatch.setattr(
-        db,
-        "check_duplicate_dynamic",
+        db_ledger,
+        "destinations_for",
         lambda key, _itype, ids, filesize=None: {
             idx: ("2026-01-01T00:00:00+00:00" if key == first.name and filesize == 1 else None) for idx in ids
         },

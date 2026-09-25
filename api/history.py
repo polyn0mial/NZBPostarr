@@ -8,7 +8,12 @@ from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 from pydantic import BaseModel
 
-from core import database
+from core.db import engine as db_engine
+from core.db import history as db_history
+from core.db import issues as db_issues
+from core.db import job_history as db_job_history
+from core.db import stats as db_stats
+from core.db import uploads as db_uploads
 
 
 router = APIRouter(prefix="/api/uploads", tags=["uploads"])
@@ -36,7 +41,7 @@ def get_recent(
 ) -> Dict[str, Any]:
     """Fetch paginated upload history from the database."""
     try:
-        return database.get_recent_uploads(
+        return db_history.get_recent_uploads(
             limit=limit,
             offset=offset,
             search=search,
@@ -45,7 +50,7 @@ def get_recent(
             sort_by=sort_by,
             order=order,
         )
-    except database.DatabaseOperationalError as exc:
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
 
 @router.get("/grouped")
@@ -60,7 +65,7 @@ def get_grouped(
 ) -> Dict[str, Any]:
     """Fetch upload history grouped by show name, paginated by group count."""
     try:
-        return database.get_grouped_uploads(
+        return db_history.get_grouped_uploads(
             page=page,
             per_page=per_page,
             search=search,
@@ -69,19 +74,19 @@ def get_grouped(
             sort_by=sort_by,
             order=order,
         )
-    except database.DatabaseOperationalError as exc:
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
 
 @router.get("/grouped/items")
 def get_grouped_items(title_key: str, destination: str = "all") -> Dict[str, Any]:
     """Full upload rows behind one grouped-history row.
 
-    Backs the History page's group expansion; database.get_group_upload_items
+    Backs the History page's group expansion; core.db.history.get_group_upload_items
     already existed but had no route, so expanding a group 404'd.
     """
     try:
-        return database.get_group_upload_items(title_key, destination=destination)
-    except database.DatabaseOperationalError as exc:
+        return db_history.get_group_upload_items(title_key, destination=destination)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
 
 @router.get("/errors/grouped")
@@ -98,8 +103,8 @@ def get_grouped_errors(
     distinct underlying error.
     """
     try:
-        return database.get_grouped_upload_errors(indexer_id=destination, limit=limit, since_days=since_days, include_muted=include_muted)
-    except database.DatabaseOperationalError as exc:
+        return db_issues.get_grouped_upload_errors(indexer_id=destination, limit=limit, since_days=since_days, include_muted=include_muted)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
 
 class MuteIssueRequest(BaseModel):
@@ -116,8 +121,8 @@ class MuteIssueRequest(BaseModel):
 def mute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
     """Silence a known-issue group so it stops standing out in the default view."""
     try:
-        database.mute_upload_issue(body.indexer_id, body.signature)
-    except database.DatabaseOperationalError as exc:
+        db_issues.mute_upload_issue(body.indexer_id, body.signature)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
     return {"status": "success", "muted": True}
 
@@ -125,8 +130,8 @@ def mute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
 def unmute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
     """Restore a previously muted known-issue group to the default view."""
     try:
-        database.unmute_upload_issue(body.indexer_id, body.signature)
-    except database.DatabaseOperationalError as exc:
+        db_issues.unmute_upload_issue(body.indexer_id, body.signature)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
     return {"status": "success", "muted": False}
 
@@ -134,16 +139,16 @@ def unmute_grouped_error(body: MuteIssueRequest) -> Dict[str, Any]:
 async def get_history(limit: int = 100) -> List[Dict[str, Any]]:
     """Listing of completed upload jobs."""
     try:
-        return database.get_job_history(limit)
-    except database.DatabaseOperationalError as exc:
+        return db_job_history.get_job_history(limit)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
 
 @router.get("/history/{job_id}/uploads")
 async def get_job_uploads(job_id: str) -> List[Dict[str, Any]]:
     """Fetch individual items for a given job ID."""
     try:
-        return database.get_uploads_for_job(job_id)
-    except database.DatabaseOperationalError as exc:
+        return db_history.get_uploads_for_job(job_id)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
 
 @router.delete("/history")
@@ -154,22 +159,22 @@ async def delete_job_history(request: Request) -> Dict[str, Any]:
     if not job_ids:
         raise HTTPException(status_code=400, detail="No job IDs provided")
     try:
-        deleted = database.delete_job_history(job_ids)
-    except database.DatabaseOperationalError as exc:
+        deleted = db_job_history.delete_job_history(job_ids)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
     return {"status": "success", "deleted": deleted}
 
 @router.get("/hourly-stats")
 async def get_hourly_stats() -> Dict[str, Any]:
     """Fetch recent performance metrics."""
-    return database.get_hourly_upload_stats()
+    return db_stats.get_hourly_upload_stats()
 
 @router.delete("/item/{item_name}")
 async def delete_upload_item(item_name: str) -> Dict[str, Any]:
     """Remove a single item from the history database."""
     try:
-        deleted = database.delete_upload_item(item_name)
-    except database.DatabaseOperationalError as exc:
+        deleted = db_uploads.delete_upload_item(item_name)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
     if deleted:
         return {"status": "success"}
@@ -187,7 +192,7 @@ async def bulk_delete_upload_items(req: BulkDeleteRequest) -> Dict[str, Any]:
         return {"status": "success", "deleted_count": 0}
 
     try:
-        deleted_count = database.bulk_delete_upload_items(req.item_names)
-    except database.DatabaseOperationalError as exc:
+        deleted_count = db_uploads.bulk_delete_upload_items(req.item_names)
+    except db_engine.DatabaseOperationalError as exc:
         raise _history_database_error(exc) from exc
     return {"status": "success", "deleted_count": deleted_count}

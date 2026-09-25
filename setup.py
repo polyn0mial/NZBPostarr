@@ -815,7 +815,7 @@ def smoke_test(total: int) -> None:
     info("Testing database init...")
     try:
         r = run(
-            f"{VENV_PY} -c \"from core.database import init_database; init_database(); print('OK')\"",
+            f"{VENV_PY} -c \"from core.db.schema import init_database; init_database(); print('OK')\"",
             check=False,
             capture=True,
         )
