@@ -106,6 +106,7 @@ log.txt
 CODEBASE_AUDIT_REPORT.md
 .saydeploy/
 .test-tmp/
+tmp/
 .local/
 .tmp_unit
 /nzbpostarr.service

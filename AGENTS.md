@@ -230,11 +230,9 @@ weakening an assertion unless the product contract intentionally changed.
   `pydantic_core` independently of the `pydantic` version that pins it.
 - Do not port the private archiver integration, worker routes, or hardcoded
   operator paths from another deployment into this public repository.
-- Do not opportunistically split `app.py`, `logic/processing.py`,
-  `logic/queueing.py`, `core/registry.py`, or the queue page's tree traversal.
-  Make incremental, behavior-driven splits only with focused tests and a
-  measured benefit. Re-measure uploader, snapshot memory, stats, typing, and
-  orchestration before refactoring them.
+- One owner per responsibility. Never split a module by line count; treat
+  roughly 700 lines as a soft budget per module, and split only along a
+  responsibility boundary, with focused tests for the part that moves.
 - Never merge obsolete private history into public history or move an existing
   public tag. Publish changed release contents under a new version.
 
