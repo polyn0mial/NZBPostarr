@@ -248,7 +248,8 @@ export default {
             this.markIndexerSelection = sel;
           }
         }
-      } catch (e2) {
+      } catch (_summaryError) {
+        // The summary is optional; apiFetch has already reported the failure.
       }
     },
 
@@ -344,7 +345,8 @@ export default {
         if (typeof structuredClone === "function") {
           return structuredClone(items);
         }
-      } catch (_e2) {
+      } catch (_cloneError) {
+        // structuredClone refused the tree: fall back to the JSON copy below.
       }
       try {
         return JSON.parse(JSON.stringify(items));
@@ -407,7 +409,8 @@ export default {
       if (this._loadingExtChildren[itemKey]) {
         try {
           await this._loadingExtChildren[itemKey];
-        } catch (_e2) {
+        } catch (_inFlightError) {
+          // The in-flight load reports its own failure; re-read the tree below.
         }
         const refreshed = this._findCurrentPendingNode(itemKey, currentItem.path || fallbackPath);
         return this._getLoadedRowChildren(refreshed).length > 0;

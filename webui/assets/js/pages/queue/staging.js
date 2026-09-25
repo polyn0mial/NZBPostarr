@@ -336,7 +336,8 @@ export default {
       if (sectionKey === "pending") {
         try {
           localStorage.setItem("nzb_pending_expanded", String(this.queueSectionExpanded.pending !== false));
-        } catch (_e2) {
+        } catch (_storageError) {
+          // Storage full or disabled: keep the in-memory state.
         }
       }
     },

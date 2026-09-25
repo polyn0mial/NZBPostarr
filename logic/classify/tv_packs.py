@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Set, Tuple
 
+from loguru import logger
+
 from logic.classify.hints import _coerce_category_hint, _hint_category_from_itype
 from logic.classify.names import (
     _has_guessit_episode_metadata,
@@ -154,8 +156,9 @@ def _tv_pack_episode_rejection_reason(path: Path, video_extensions: Set[str]) ->
                 normalized_key = compatibility_map.get(key, key)
                 if normalized_key in rules:
                     rules[normalized_key] = bool(value)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Config unavailable (early start-up, tests without a config): the defaults apply.
+        logger.debug(f"tv_pack_ignore config unavailable, using defaults: {exc}")
 
     if not rules.get("enabled", True):
         return ""

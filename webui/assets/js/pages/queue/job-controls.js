@@ -341,7 +341,7 @@ export default {
         this.finished = [];
         this.counts.finished = 0;
         this.showFinishedModal = false;
-        try { localStorage.removeItem("nzb_finished_jobs"); } catch (_) {}
+        try { localStorage.removeItem("nzb_finished_jobs"); } catch (_storageError) { /* Storage full or disabled: keep the in-memory state. */ }
         this.showToast("success", "Cleared", "Finished jobs dismissed");
       } catch (e2) {
         this.showToast("error", "Error", "Failed to clear finished jobs");
@@ -351,7 +351,7 @@ export default {
     async deleteJob(jobId) {
       this.finished = this.finished.filter((j2) => j2.job_id !== jobId);
       this.counts.finished = this.finished.length;
-      try { localStorage.setItem("nzb_finished_jobs", JSON.stringify({ ts: Date.now(), jobs: this.finished })); } catch (_) {}
+      try { localStorage.setItem("nzb_finished_jobs", JSON.stringify({ ts: Date.now(), jobs: this.finished })); } catch (_storageError) { /* Storage full or disabled: keep the in-memory state. */ }
       try {
         await this.apiFetch(`/api/uploads/jobs/${jobId}`, { method: "DELETE" });
       } catch (e2) {

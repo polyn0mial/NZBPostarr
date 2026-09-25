@@ -13,7 +13,9 @@
             var url = '/queue-error-beacon?title=' + encodeURIComponent(message) + '&detail=' + encodeURIComponent(extra) + '&rev=' + encodeURIComponent(BUILD);
             var img = new Image();
             img.src = url;
-        } catch (_err) {}
+        } catch (_beaconError) {
+            // The beacon is best effort; reporting an error must never throw.
+        }
     }
     function uncloakApp() {
         var app = document.getElementById('app');

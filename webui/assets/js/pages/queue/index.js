@@ -276,7 +276,8 @@ persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterM
       if (stickyPending === "true" || stickyPending === "false") {
         this.queueSectionExpanded.pending = stickyPending === "true";
       }
-    } catch (_e2) {
+    } catch (_storageError) {
+      // Storage disabled: keep the default expanded state.
     }
     this.debouncedLoadPending = debounce(() => this.loadPending(), 350);
   },
@@ -372,6 +373,7 @@ persist: ["literalSearch", "selectedCategories", "collapsedCategories", "filterM
   try {
     window.__queueShowOverlay && window.__queueShowOverlay("Queue page bootstrap error", String(e2 && (e2.stack || e2.message || e2)));
   } catch (_overlayError) {
+    // The overlay is best effort; the bootstrap error is already logged above.
   }
 }
 startPageComponents();
