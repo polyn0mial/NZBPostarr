@@ -492,7 +492,7 @@ def test_error_handlers_and_stats_flags(monkeypatch) -> None:
             ),
         )
         assert deps_api._stats_collector_required() is expect_collector, case_name
-        assert deps_api._stats_history_enabled() is expect_history, case_name
+        assert deps_api.feature_enabled("history") is expect_history, case_name
 
     patch_hit(
         monkeypatch,
