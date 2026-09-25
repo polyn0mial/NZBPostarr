@@ -188,7 +188,7 @@ weakening an assertion unless the product contract intentionally changed.
 
 ## Durable Architecture Decisions
 
-- `logic/pending_scan.py` owns media classification. Snapshot code may add
+- `logic/classify/` owns media classification. Snapshot code may add
   filesystem evidence, but the browser must display the server verdict rather
   than run a second filename classifier. Only an explicit `manual_category`
   supplied by the user may override the server result.

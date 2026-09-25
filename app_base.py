@@ -40,7 +40,7 @@ from core.utils import VIDEO_EXTENSIONS, start_watchdog_observer, stop_watchdog_
 from logic import pending_snapshot as pending_snapshot_mod
 from logic import processing, updater, usenet_stream
 from logic.pending_index import get_pending_index_manager
-from logic.pending_scan import (
+from logic.pending.roots import (
     get_configured_category_folders,
     get_configured_folders,
     scan_configured_items,

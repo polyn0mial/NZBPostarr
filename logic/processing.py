@@ -34,7 +34,7 @@ from logic.processing_g1 import (
     _mediainfo_output_path as _mediainfo_output_path, _normalize_processing_category as _normalize_processing_category,
     _normalize_processing_type as _normalize_processing_type, _normalize_runtime_path as _normalize_runtime_path,
     _normalize_runtime_target_paths as _normalize_runtime_target_paths, _persist_runtime_job_checkpoint as _persist_runtime_job_checkpoint,
-    _processing_cached_anime_lookup as _processing_cached_anime_lookup, _processing_tool_commands as _processing_tool_commands,
+    _processing_tool_commands as _processing_tool_commands,
     _resolve_ambiguous_submission_category as _resolve_ambiguous_submission_category, _resolve_targeted_path as _resolve_targeted_path,
     _runtime_checkpoint_path_key as _runtime_checkpoint_path_key, _safe_fs_component as _safe_fs_component, _safe_mtime as _safe_mtime,
     _mediainfo_sidecar_has_escaped_names as _mediainfo_sidecar_has_escaped_names,
@@ -1614,7 +1614,6 @@ def _collect_targeted_job_items(
             category_hint=category_hint,
             itype_hint=itype_hint,
             respect_explicit_hint=bool(category_hint),
-            anime_lookup=_processing_cached_anime_lookup,
         )
         _log_explicit_resolution(resolution)
         if "disc" in resolution.content_flags:

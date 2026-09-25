@@ -20,21 +20,18 @@ from core.utils import (
     log_backend_timing,
     should_skip_file,
 )
-from logic.pending_scan import (
-    anime_lookup_candidates,
-    begin_scan_cache,
+from logic.classify.anime import anime_lookup_candidates, cached_lookup
+from logic.classify.content import (
+    EXTENSION_FIRST_VIDEO,
     category_from_itype,
-    classify_audio_folder,
-    classify_video_name as shared_classify_video_name,
-    classify_video_name_result,
-    detect_content_itype as shared_detect_content_itype,
-    detect_external_category as shared_detect_external_category,
-    end_scan_cache,
-    get_configured_category_folders,
-    has_video_disc_structure,
-    relative_key,
-    resolve_explicit_path,
+    classify_standalone_file_category,
+    detect_content_itype,
 )
+from logic.classify.explicit import resolve_explicit_path
+from logic.classify.names import classify_video_name_result
+from logic.classify.patterns import ANIME_BONUS_RE
+from logic.classify.walk import begin_scan_cache, end_scan_cache
+from logic.pending.roots import get_configured_category_folders, relative_key
 from logic.queue_metrics import (
     count_pending_indexer_slots,
     incomplete_pending_indexer_ids,
@@ -201,23 +198,6 @@ _SCENE_VIDEO_TAG_RE = re.compile(
     r"(?:\b(?:19|20)\d{2}\b|\b(?:480|576|720|1080|1440|2160|4320)[pi]\b|\b(?:bluray|bdrip|brrip|webrip|web[-_.\s]?dl|remux|hdtv|dvdrip|x26[45]|h\.?26[45])\b)",
     re.IGNORECASE,
 )
-_VIDEO_FILE_EXTENSIONS = {
-    ".mkv",
-    ".mp4",
-    ".avi",
-    ".mov",
-    ".m4v",
-    ".wmv",
-    ".ts",
-    ".m2ts",
-    ".mpg",
-    ".mpeg",
-    ".webm",
-    ".flv",
-}
-_AUDIOBOOK_EXTENSIONS = {".m4b"}
-_MUSIC_EXTENSIONS = {".m4a", ".mp3", ".flac", ".cue"}
-_EBOOK_EXTENSIONS = {".epub", ".pdf", ".mobi"}
 _ANIME_SEQUENCE_PATTERN = re.compile(
     r"(?i)(?:"
     r"\bS\d{1,2}[.\s_-]*E\d{1,3}(?:[.\s_-]*-[.\s_-]*\d{1,3})?\b"
@@ -241,7 +221,6 @@ _ANIME_SEQUENCE_PATTERN = re.compile(
 )
 _VIDEO_CHILD_EXTENSIONS = {".mkv", ".mp4", ".avi"}
 _CHILD_BURNLIST_PATTERN = re.compile(r"(?i)(?:\bNCED\b|\bNCOP\b|\bsample\b|\.nfo\b)")
-_ANIME_BONUS_PATTERN = re.compile(r"(?i)(?:\bncop\b|\bnced\b|\bcreditless\b|(?:^|[.\s_-])op\d{0,2}(?:$|[.\s_-])|(?:^|[.\s_-])ed\d{0,2}(?:$|[.\s_-]))")
 _EPISODIC_TV_PATTERN = re.compile(r"(?i)(?:\bS\d{1,2}X?E\d{1,3}\b|\bSeason\b|\bEp(?:isode)?\.?\s?\d{1,3}\b|\b\d{1,2}x\d{1,3}\b)")
 _SOURCE_TAG_TOKENS = [
     "Bluray",
@@ -314,38 +293,6 @@ _SOURCE_TAG_PATTERN = re.compile(
 )
 
 
-def _directory_extension_first_category(entry: Path) -> str:
-    """Classify by real file extensions inside a directory before any name/token inference."""
-    if not entry.is_dir():
-        return ""
-    counts = {"audiobooks": 0, "music": 0, "ebooks": 0, "video": 0}
-    try:
-        for root, _dirs, filenames in os.walk(str(entry)):
-            for filename in filenames:
-                ext = Path(filename).suffix.lower()
-                if ext in _VIDEO_FILE_EXTENSIONS:
-                    counts["video"] += 1
-                elif ext in _AUDIOBOOK_EXTENSIONS:
-                    counts["audiobooks"] += 1
-                elif ext in _MUSIC_EXTENSIONS:
-                    counts["music"] += 1
-                elif ext in _EBOOK_EXTENSIONS:
-                    counts["ebooks"] += 1
-    except OSError:
-        return ""
-    if counts["audiobooks"] == 0 and counts["music"] == 0 and counts["ebooks"] == 0:
-        return ""
-    audio_count = counts["audiobooks"] + counts["music"]
-    if audio_count > counts["video"]:
-        audio_category = classify_audio_folder(entry)
-        if audio_category:
-            return audio_category
-        return ""
-    if counts["ebooks"] > counts["video"] and counts["ebooks"] >= audio_count:
-        return "books"
-    return ""
-
-
 def _source_matrix_ignore_reason(category: str, title: str) -> str:
     """Return ignore reason when MOVIES/TV/ANIME item lacks source/episode signals."""
     cat = str(category or "").strip().lower()
@@ -361,7 +308,7 @@ def _has_video_container_and_source_signal(name: str, path_text: str = "") -> bo
     """True when a node is a real video container with a real video-source token."""
     combined = f"{name or ''} {path_text or ''}".lower()
     suffix = Path(path_text or name or "").suffix.lower()
-    return suffix in _VIDEO_FILE_EXTENSIONS and bool(
+    return suffix in EXTENSION_FIRST_VIDEO and bool(
         _SOURCE_TAG_PATTERN.search(combined) or _SCENE_VIDEO_TAG_RE.search(combined)
     )
 
@@ -382,14 +329,14 @@ def _force_video_processing_state(node: Dict[str, Any], fallback_folder_hint: st
         node["ignored"] = False
         node["skip_reason"] = ""
         return
-    if _ANIME_BONUS_PATTERN.search(f"{name} {ptxt}".lower()):
+    if ANIME_BONUS_RE.search(f"{name} {ptxt}".lower()):
         return
     if not _has_video_container_and_source_signal(name, ptxt):
         return
     classification = classify_video_name_result(
         name,
         fallback_folder_hint,
-        anime_lookup=_anime_cache_lookup,
+        anime_lookup=cached_lookup,
     )
     if classification.category not in {"tv", "anime", "movies"}:
         return
@@ -456,7 +403,7 @@ def _validate_child_video_items(node: Dict[str, Any]) -> None:
                 walk(child)
                 continue
             if ext in _VIDEO_CHILD_EXTENSIONS:
-                if _ANIME_BONUS_PATTERN.search(name_text):
+                if ANIME_BONUS_RE.search(name_text):
                     # Keep historical behavior: anime bonus assets are always ANIME rows,
                     # then marked ignored as bonus/non-episode content.
                     child["detected_category"] = "anime"
@@ -525,11 +472,11 @@ def _decide_child_promoted_category(
     anime_bonus_count = sum(
         1
         for c in children
-        if _ANIME_BONUS_PATTERN.search(str(c.get("name") or "").lower())
+        if ANIME_BONUS_RE.search(str(c.get("name") or "").lower())
     )
-    parent_anime_cached = _anime_cache_lookup(str(node.get("name") or "")) is True
+    parent_anime_cached = cached_lookup(str(node.get("name") or "")) is True
     has_desc_anime_cached = any(
-        _anime_cache_lookup(str(c.get("name") or "")) is True for c in children
+        cached_lookup(str(c.get("name") or "")) is True for c in children
     )
 
     if (
@@ -716,70 +663,7 @@ def collect_anime_check_names(data: Dict[str, Any]) -> list[str]:
 
 def collect_uncached_anime_check_names(data: Dict[str, Any]) -> list[str]:
     """Return anime-check candidates that are not already cached."""
-    from logic.anime_cache import get_cached
-
-    return [name for name in collect_anime_check_names(data) if get_cached(name) is None]
-
-
-def _anime_cache_lookup(name: str) -> Optional[bool]:
-    from logic.anime_cache import get_cached as anime_cached
-
-    return anime_cached(name)
-
-
-def classify_video_name(
-    name: str,
-    folder_category: str = "",
-    assume_movie_if_unknown: bool = False,
-    *,
-    explicit_category_hint: str = "",
-    explicit_itype_hint: str = "",
-) -> str:
-    """Classify a video release name as TV Show, Anime, Movie, or Misc."""
-    return shared_classify_video_name(
-        name,
-        folder_category,
-        assume_movie_if_unknown,
-        anime_lookup=_anime_cache_lookup,
-        explicit_category_hint=explicit_category_hint,
-        explicit_itype_hint=explicit_itype_hint,
-    )
-
-
-def detect_external_category(name: str, entry_path: Path) -> str:
-    """Auto-detect category for an external folder/file based on naming patterns."""
-    lower_name = str(name or "").lower()
-    if _ANIME_BONUS_PATTERN.search(lower_name):
-        return "anime"
-    anime_cached = _anime_cache_lookup(str(name or ""))
-    if anime_cached is True:
-        return "anime"
-    return shared_detect_external_category(name, entry_path)
-
-
-def detect_content_itype(name: str, entry_path: Path, folder_category: str) -> str:
-    """Detect the display content type for a pending item."""
-    return shared_detect_content_itype(
-        name,
-        entry_path,
-        folder_category,
-        anime_lookup=_anime_cache_lookup,
-    )
-
-
-def _classify_standalone_file_category(entry: Path) -> str:
-    """Classify a loose file by filename + extension only, without parent-path hints."""
-    # DISC has absolute priority over ebook/music/audiobook extension detection.
-    # A Blu-ray or DVD folder may contain companion PDFs - it is still disc, not ebooks.
-    if has_video_disc_structure(entry):
-        return "disc"
-    ext_first_category = _directory_extension_first_category(entry)
-    if ext_first_category:
-        return ext_first_category
-    ext = entry.suffix.lower()
-    if ext in _EBOOK_EXTENSIONS:
-        return "books"
-    return ""
+    return [name for name in collect_anime_check_names(data) if cached_lookup(name) is None]
 
 
 def _selection_path_identity(value: str | Path) -> str:
@@ -1205,7 +1089,7 @@ def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Di
     resolution = resolve_explicit_path(
         entry,
         category_hint=hint,
-        anime_lookup=_anime_cache_lookup,
+        anime_lookup=cached_lookup,
     )
     ignored_reason = next(
         (ignored.reason for ignored in getattr(resolution, "ignored_paths", ()) if ignored.path == entry),
@@ -1225,7 +1109,7 @@ def _build_detected_item_metadata(entry: Path, *, category_hint: str = "") -> Di
     raw_text = f"{entry.name} {entry}".lower()
     # Keep historical behavior: anime bonus assets must short-circuit to ANIME+IGNORED
     # so later video/source guards cannot rewrite them to TV/MOVIES.
-    if _ANIME_BONUS_PATTERN.search(raw_text):
+    if ANIME_BONUS_RE.search(raw_text):
         return {
             "detected_category": "anime",
             "detection_method": "anime-bonus-pattern",
@@ -1480,7 +1364,7 @@ def _build_external_tree_item(
         resolution = resolve_explicit_path(
             node,
             category_hint=top_level_hint,
-            anime_lookup=_anime_cache_lookup,
+            anime_lookup=cached_lookup,
         )
 
     indexer_status, direct_indexer_status = _compute_external_item_indexer_status(
@@ -1539,7 +1423,7 @@ def _finalize_top_level_external_item(
     top-level external tree item. Extracted from _build_external_tree_item to
     keep its own branching down; mutates item in place."""
     item["itype"] = resolution.itype
-    forced_category = _classify_standalone_file_category(node)
+    forced_category = classify_standalone_file_category(node)
     resolved_category = forced_category or resolution.category
     item["detected_category"] = resolved_category or "misc"
     if item["detected_category"]:
@@ -2332,7 +2216,7 @@ def build_external_children_snapshot(
             resolution = resolve_explicit_path(
                 parent_path,
                 category_hint=folder_category_hint,
-                anime_lookup=_anime_cache_lookup,
+                anime_lookup=cached_lookup,
             )
         except Exception as exc:  # pylint: disable=broad-exception-caught
             logger.debug(f"Lazy child resolution failed for {parent_path}: {exc}")

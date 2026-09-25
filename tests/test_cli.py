@@ -313,11 +313,11 @@ def test_cmd_pending_json_output(monkeypatch, capsys, tmp_path) -> None:
     item_movie = movie_folder / "Movie.2026"
 
     monkeypatch.setattr(
-        pending_scan,
+        pending_roots,
         "collect_configured_scan_items",
         lambda _conf: [("tv", tv_folder, item_tv), ("movies", movie_folder, item_movie)],
     )
-    monkeypatch.setattr(pending_scan, "relative_key", lambda item, _folder: item.name)
+    monkeypatch.setattr(pending_roots, "relative_key", lambda item, _folder: item.name)
 
     rc = headless_mod.cmd_pending(SimpleNamespace(category=None, verbose=True, json=True))
 
@@ -334,7 +334,7 @@ def test_cmd_pending_json_empty(monkeypatch, capsys) -> None:
     monkeypatch.setattr(config_mod, "get_config", lambda: conf)
     monkeypatch.setattr(registry_mod, "get_registry", lambda: SimpleNamespace(enabled=lambda _c: []))
     monkeypatch.setattr(db, "get_dashboard_data", lambda _ids: (set(), {}, {}, {}))
-    monkeypatch.setattr(pending_scan, "collect_configured_scan_items", lambda _conf: [])
+    monkeypatch.setattr(pending_roots, "collect_configured_scan_items", lambda _conf: [])
 
     rc = headless_mod.cmd_pending(SimpleNamespace(category=None, verbose=False, json=True))
 
@@ -351,7 +351,7 @@ def test_cmd_pending_filters_folder_and_limits_verbose_items(monkeypatch, capsys
     tv_folder = tmp_path / "tv"
     other_folder = tmp_path / "other"
     monkeypatch.setattr(
-        pending_scan,
+        pending_roots,
         "collect_configured_scan_items",
         lambda _conf: [
             ("tv", tv_folder, tv_folder / "Show.S01"),
@@ -359,7 +359,7 @@ def test_cmd_pending_filters_folder_and_limits_verbose_items(monkeypatch, capsys
             ("movies", other_folder, other_folder / "Movie.2026"),
         ],
     )
-    monkeypatch.setattr(pending_scan, "relative_key", lambda item, _folder: item.name)
+    monkeypatch.setattr(pending_roots, "relative_key", lambda item, _folder: item.name)
 
     rc = headless_mod.cmd_pending(SimpleNamespace(category=None, folder="tv", limit=1, verbose=True, json=True))
 

@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from logic import pending_scan as ps  # noqa: E402
+from logic.classify.names import classify_video_name  # noqa: E402
 
 M, T = "Movie", "TV Show"
 
@@ -77,7 +77,7 @@ def main():
     by_bucket = {}
     misses = []
     for name, want, bucket in CASES:
-        got = ps.classify_video_name(name)
+        got = classify_video_name(name)
         ok = got == want
         hit, tot = by_bucket.get(bucket, (0, 0))
         by_bucket[bucket] = (hit + (1 if ok else 0), tot + 1)

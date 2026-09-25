@@ -357,7 +357,7 @@ class _QueueServiceMixinPart4:
         if not snapshots:
             return {"inspected": 0, "updated": 0, "cancelled": 0, "jobs": []}
 
-        from logic.pending_scan import begin_scan_cache, end_scan_cache
+        from logic.classify.walk import begin_scan_cache, end_scan_cache
 
         inspected = 0
         updated = 0

@@ -65,7 +65,7 @@ def test_old_config_with_removed_keys_still_loads(tmp_path, monkeypatch) -> None
         str(tv_root),
         str(external_root),
     ]
-    assert pending_scan.get_configured_category_folders(conf, include_external=True) == [
+    assert pending_roots.get_configured_category_folders(conf, include_external=True) == [
         ("external", movies_root),
         ("external", tv_root),
         ("external", external_root),
@@ -73,4 +73,4 @@ def test_old_config_with_removed_keys_still_loads(tmp_path, monkeypatch) -> None
 
 
 def test_queueing_uses_the_classifier_season_folder_predicate() -> None:
-    assert queueing_base.looks_like_generic_tv_season_folder is pending_scan.looks_like_generic_tv_season_folder
+    assert queueing_base.looks_like_generic_tv_season_folder is classify_names.looks_like_generic_tv_season_folder

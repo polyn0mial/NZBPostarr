@@ -820,7 +820,7 @@ def _background_anime_check(data: Dict[str, Any]) -> None:
     respects 3/sec and 60/min limits internally.
     """
     global _anime_check_inflight, _anime_check_thread
-    from logic.anime_cache import check_titles_batch
+    from logic.classify.anime import check_titles_batch
 
     names = pending_snapshot_mod.collect_uncached_anime_check_names(data)
     if not names:
@@ -988,12 +988,12 @@ def correct_pending_anime_cache(req: AnimeCacheCorrectionRequest) -> Dict[str, A
     if not name:
         raise HTTPException(status_code=400, detail="A title name is required")
 
-    from logic.anime_cache import set_cached
+    from logic.classify.anime import set_cached
 
     if not set_cached(name, req.is_anime):
         raise HTTPException(status_code=400, detail="The title could not be normalized")
 
-    from logic.pending_scan import classify_video_name
+    from logic.classify.names import classify_video_name
 
     itype = classify_video_name(
         name,
